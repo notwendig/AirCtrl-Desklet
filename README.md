@@ -1,10 +1,16 @@
-# Philips AirControl – Qt6-Gerätepanel 0.3.8
+# Philips AirControl – Qt6-Gerätepanel v1.00 Stable
 
 Kompaktes C++/Qt6-Desktopwidget für den Philips AC2729/10 „Wohnzimmer“ unter
 Cinnamon. Geräteadresse voreingestellt: **192.168.77.5**, UDP-Port **5683**.
 Der bereits am Gerät funktionierende C++-CoAP-Code ist vollständig enthalten.
 
-Version 0.3.8 ergänzt den gespeicherten Kontextmenü-Haken **Fensterdekoration
+**v1.00 Stable** ist die erste stabile Ausgabe auf Basis von 0.3.8.
+Funktionsumfang, Oberfläche, Gerätesteuerung und gespeicherte Einstellungen bleiben
+unverändert. Aktualisiert wurden ausschließlich Release-Kennung und Dokumentation.
+Änderungsübersicht: [CHANGELOG.md](CHANGELOG.md). Prüfungen und verbleibende
+Umgebungsgrenzen: [VALIDATION.md](VALIDATION.md).
+
+Seit Version 0.3.8 gibt es den gespeicherten Kontextmenü-Haken **Fensterdekoration
 ausblenden** und eine **Code-(Hex)-Spalte** in der Diagnose. Datenalter und Alarm
 erscheinen jetzt als zwei Kreise neben den Status-Emblemen; die untere Alarmleiste
 entfällt. Empfang, Schaltbefehle und Alarmgrenzen bleiben unverändert.
@@ -195,7 +201,7 @@ pkill -x airctrl-desklet
 pkill -x airctrl-backend
 
 cd /home/juergen/Projects/Qt &&
-unzip -o ~/Downloads/airctrl-desklet-0.3.8.zip &&
+unzip -o ~/Downloads/airctrl-desklet-1.00.zip &&
 cd airctrl-desklet &&
 bash install.sh &&
 env -u QT_QPA_PLATFORM ~/.local/bin/airctrl-desklet

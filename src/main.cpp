@@ -14,7 +14,7 @@ int main(int argc, char** argv) {
     QApplication app(argc, argv);
     QCoreApplication::setOrganizationName("AirControl");
     QCoreApplication::setApplicationName("airctrl-desklet");
-    QCoreApplication::setApplicationVersion("0.3.8");
+    QCoreApplication::setApplicationVersion("1.00");
     QApplication::setApplicationDisplayName("Philips AirControl");
     QApplication::setStyle("Fusion");
     QCommandLineParser parser;

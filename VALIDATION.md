@@ -1,6 +1,13 @@
-# Validierung – Version 0.3.8
+# Validierung – v1.00 Stable
 
 Datum: 2026-09-02.
+
+Stable-Freigabe des Funktionsstands 0.3.8 auf Benutzerwunsch. Nur die
+Release-Kennung und Dokumentation wurden geändert; es gibt keine neue Geräte-,
+Fenster- oder Alarmlogik. Die unten genannten Testgrenzen bleiben bestehen.
+Der Dateivergleich mit dem 0.3.8-ZIP bestätigt unveränderte Laufzeitquellen und
+Tests; in main.cpp und CMakeLists.txt unterscheidet sich nur die Versionsangabe.
+Die installierte Demo-Vorschau ist ebenfalls bytegleich mit 0.3.8.
 
 ## Build und Installation
 
@@ -9,7 +16,7 @@ Datum: 2026-09-02.
 - Oberfläche, Backend und Testprogramme erfolgreich kompiliert.
 - Keine Compilerwarnungen aus dem UI-Code mit -Wall -Wextra -Wpedantic.
 - install.sh in einen separaten absoluten Testpräfix ausgeführt.
-- Installierte GUI meldet „airctrl-desklet 0.3.8“.
+- Installierte GUI meldet „airctrl-desklet 1.00“.
 - Test-SDK, Buildverzeichnisse und Binärdateien sind nicht im Projekt-ZIP enthalten.
   Unter Fedora werden weiterhin die bereits genannten Systempakete verwendet.
 
@@ -180,10 +187,9 @@ Alarme und ihre Details im Widget erhalten; es gibt keinen automatischen
 Geräteeingriff als Reaktion auf einen Alarm.
 
 Die bei 0.3.7 bereitgestellten CMake-/JSON-Hilfsabhängigkeiten wurden wiederverwendet
-und sind nicht Bestandteil des ZIPs. Build, Installation und Tests erfolgten lokal.
-Ein zu früh gestarteter Teiltest traf noch auf das in Erstellung befindliche
-Testprogramm. Nach Abschluss des Linkers liefen die Teiltests und die vollständige
-Suite erfolgreich; Dateiberechtigungen wurden dafür nicht verändert.
+und sind nicht Bestandteil des ZIPs. Für v1.00 wurde in einem neuen Buildverzeichnis
+konfiguriert und gebaut; die vollständige Testsuite wurde erneut ausgeführt.
+Build, Installation und Tests erfolgten lokal, nicht auf dem Benutzerrechner.
 
 Keine laufende Cinnamon/Muffin- oder echte Wayland-Sitzung in dieser Umgebung.
 Native Titelleiste/Rahmen, Popup-Darstellung, Desktop-Ebene, Tray, interaktives Verschieben und Autostart müssen
