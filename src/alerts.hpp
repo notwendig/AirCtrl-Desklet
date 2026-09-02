@@ -35,13 +35,16 @@ public:
                   bool acknowledged, const QString& detail);
     QSize sizeHint() const override;
     QColor ageColor() const;
+    QColor alarmColor() const;
+    QRectF ageCircle() const;
+    QRectF alarmCircle() const;
     QString ageText() const { return seconds_<0 ? QString("— s") : QString::number(seconds_)+" s"; }
     DataFreshness freshness() const { return freshness_; }
     QString alarmText() const;
 protected:
     void paintEvent(QPaintEvent*) override;
 private:
-    int ageWidth() const;
+    int diameter() const;
     qint64 seconds_=-1;
     DataFreshness freshness_=DataFreshness::Waiting;
     QList<Alert> alerts_;

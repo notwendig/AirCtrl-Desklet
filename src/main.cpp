@@ -14,7 +14,7 @@ int main(int argc, char** argv) {
     QApplication app(argc, argv);
     QCoreApplication::setOrganizationName("AirControl");
     QCoreApplication::setApplicationName("airctrl-desklet");
-    QCoreApplication::setApplicationVersion("0.3.7");
+    QCoreApplication::setApplicationVersion("0.3.8");
     QApplication::setApplicationDisplayName("Philips AirControl");
     QApplication::setStyle("Fusion");
     QCommandLineParser parser;
@@ -37,7 +37,7 @@ int main(int argc, char** argv) {
         if (!ok || port < 1 || port > 65535) { std::cerr << "Ungültiger UDP-Port\n"; return 2; }
         preferences.port = port;
     }
-    if (parser.isSet("window")) preferences.desktop = false;
+    if (parser.isSet("window")) { preferences.desktop = false; preferences.hideDecoration = false; }
     if (parser.isSet("reset-position")) preferences.position = {-1,-1};
     const auto configDir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
     QDir().mkpath(configDir);

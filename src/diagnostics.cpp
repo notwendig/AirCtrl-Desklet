@@ -2,6 +2,9 @@
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QSet>
+#include <QRegularExpression>
+#include <cmath>
 
 namespace {
 // Protocol references and the limits of their interpretation are documented in
@@ -37,7 +40,7 @@ const QHash<QString,QString> descriptions{
     {"flttotal1", "Gesamtwert zum HEPA-Filterzähler; Bezugsgröße für eine mögliche Restlaufzeitberechnung."},
     {"flttotal2", "Gesamtwert zum Aktivkohlefilterzähler; Bezugsgröße für eine mögliche Restlaufzeitberechnung."},
     {"wicktotal", "Gesamtwert zum Befeuchterfilterzähler; Bezugsgröße für eine mögliche Restlaufzeitberechnung."},
-    {"err", "Geräteeigener Fehler-/Statuscode. Beim AC2729: 49408 = Wasser fehlt, 49153/49155 = Vorfilter reinigen (Referenzintegration). Aus anderen Codes, etwa 49236, wird kein gesicherter Wartungsalarm abgeleitet; keine pauschale Bitmasken-Deutung."},
+    {"err", "Geräteeigener Fehler-/Statuscode. Beim AC2729: 0xC100 (49408) = Wasser fehlt, 0xC001/0xC003 (49153/49155) = Vorfilter reinigen (Referenzintegration). Aus anderen Codes, etwa 0xC054 (49236), wird kein gesicherter Wartungsalarm abgeleitet; keine pauschale Bitmasken-Deutung."},
     {"name", "Vom Gerät gemeldeter frei vergebener Name, z.B. Wohnzimmer."},
     {"type", "Gerätebaureihe, z.B. AC2729."},
     {"modelid", "Vollständige Modellkennung einschließlich Variante, z.B. AC2729/10."},
@@ -55,6 +58,21 @@ const QHash<QString,QString> descriptions{
     {"otacheck", "Vermutlich internes Kennzeichen einer Firmware-Update-Prüfung (OTA). Genaue Bedeutung von true/false ist nicht gesichert."},
     {"wifilog", "Vermutlich internes Kennzeichen der WLAN-Protokollierung. Genaue Wirkung ist nicht gesichert dokumentiert."}
 };
+QString hexCode(const QString& tag,const QJsonValue& value) {
+    static const QSet<QString> codes{"err","dtrs","ddp","rddp","aqit","aqit_ext","wl"};
+    if(!codes.contains(tag)) return {};
+    qulonglong number=0;
+    if(value.isString()) {
+        static const QRegularExpression decimal("^[0-9]+$");
+        if(!decimal.match(value.toString()).hasMatch()) return {};
+        bool ok=false; number=value.toString().toULongLong(&ok,10); if(!ok) return {};
+    } else if(value.isDouble()) {
+        const auto n=value.toDouble();
+        if(!std::isfinite(n) || n<0 || std::floor(n)!=n || n>9007199254740991.0) return {};
+        number=static_cast<qulonglong>(n);
+    } else return {};
+    return "0x"+QString::number(number,16).toUpper().rightJustified(4,'0');
+}
 }
 
 QList<DiagnosticField> describeDeviceFields(const QJsonObject& status) {
@@ -63,7 +81,8 @@ QList<DiagnosticField> describeDeviceFields(const QJsonObject& status) {
         // Wrapping in an array lets Qt serialize any JSON value, even scalars.
         const auto json=QJsonDocument(QJsonArray{entry.value()}).toJson(QJsonDocument::Compact);
         fields.append({entry.key(),QString::fromUtf8(json.mid(1,json.size()-2)),
-            descriptions.value(entry.key(),"Nicht dokumentiertes Philips-Feld. Der Rohwert bleibt unverändert; keine gesicherte Bedeutung oder Einheit verfügbar.")});
+            descriptions.value(entry.key(),"Nicht dokumentiertes Philips-Feld. Der Rohwert bleibt unverändert; keine gesicherte Bedeutung oder Einheit verfügbar."),
+            hexCode(entry.key(),entry.value())});
     }
     return fields;
 }
@@ -71,6 +90,6 @@ QList<DiagnosticField> describeDeviceFields(const QJsonObject& status) {
 QString diagnosticFieldReport(const QList<DiagnosticField>& fields) {
     QString text;
     for(const auto& field:fields)
-        text+=field.tag+" = "+field.value+"\n  "+field.description+"\n";
+        text+=field.tag+" = "+field.value+(field.hex.isEmpty() ? QString() : " ["+field.hex+"]")+"\n  "+field.description+"\n";
     return text;
 }

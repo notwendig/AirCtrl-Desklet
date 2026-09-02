@@ -19,6 +19,7 @@ Preferences Preferences::load() {
     p.desktopAlarms=s.value("alarms/desktop",true).toBool();
     p.alarmSound=s.value("alarms/sound",false).toBool();
     p.desktop = s.value("window/desktop", true).toBool();
+    p.hideDecoration = s.value("window/hideDecoration", p.desktop).toBool();
     p.locked = s.value("window/locked", false).toBool();
     p.position = s.value("window/position", p.position).toPoint();
     const QColor background(s.value("appearance/background", p.background.name()).toString());
@@ -49,6 +50,7 @@ void Preferences::save() const {
     s.setValue("alarms/desktop",desktopAlarms);
     s.setValue("alarms/sound",alarmSound);
     s.setValue("window/desktop", desktop);
+    s.setValue("window/hideDecoration", hideDecoration);
     s.setValue("window/locked", locked);
     s.setValue("window/position", position);
     s.setValue("appearance/background", background.name());

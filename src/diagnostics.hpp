@@ -7,6 +7,7 @@ struct DiagnosticField {
     QString tag;
     QString value;
     QString description;
+    QString hex = {};
 };
 
 QList<DiagnosticField> describeDeviceFields(const QJsonObject& status);

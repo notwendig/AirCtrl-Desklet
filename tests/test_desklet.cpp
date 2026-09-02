@@ -1,4 +1,5 @@
 #include "desklet.hpp"
+#include "diagnostics.hpp"
 #include "udp_device.hpp"
 #include <QFile>
 #include <QJsonArray>
@@ -580,12 +581,133 @@ private slots:
                 {"rh",55},{"rhset",50},{"temp",24},{"pm25",1},{"wl",i==3 ? 0 : 100}};
             widget.applyStatus(status); widget.showAndPosition(); widget.advance(i==1 ? 45 : i==2 ? 90 : 3);
             QCoreApplication::processEvents(); QCOMPARE(widget.deliveries,0);
-            QCOMPARE(widget.size(),QSize(287,143));
+            QCOMPARE(widget.size(),QSize(287,142));
             painter.drawText(20,i*180+20,names[i]); painter.drawPixmap(20,i*180+28,widget.grab());
         }
         painter.end(); const auto path=qEnvironmentVariable("AIRCTRL_TEST_ALARMS_PNG");
         if(!path.isEmpty()) QVERIFY(preview.save(path));
         QVERIFY(!QFile::exists(log_));
+    }
+    void monitorCirclesScaleAndKeepTheirGeometry() {
+        for(int points:{6,10,24,48}) {
+            Preferences p; p.valueFont.setPointSize(points); p.transparency=100;
+            MonitoringProbe widget(p,FAKE_BACKEND,true); widget.showAndPosition();
+            widget.applyStatus({{"pwr","1"},{"mode","P"},{"func","PH"},{"rh",55}});
+            auto* bar=widget.findChild<MonitorBar*>(); auto* area=widget.findChild<QWidget*>("statusArea");
+            QCOMPARE(bar->parentWidget(),area);
+            const auto before=widget.size();
+            QCOMPARE(bar->ageCircle().width(),bar->ageCircle().height());
+            QCOMPARE(bar->alarmCircle().size(),bar->ageCircle().size());
+            QVERIFY(bar->ageCircle().right()<bar->alarmCircle().left());
+            QVERIFY(QRectF(bar->rect()).contains(bar->ageCircle()));
+            QVERIFY(QRectF(bar->rect()).contains(bar->alarmCircle()));
+            QCoreApplication::processEvents();
+            auto pixels=widget.grab().toImage();
+            QCOMPARE(pixels.pixelColor(bar->mapTo(&widget,QPoint(0,0))).alpha(),0);
+            auto sample=[&](const QRectF& circle) {
+                return bar->mapTo(&widget,QPoint(qRound(circle.left()+3),qRound(circle.center().y())));
+            };
+            QCOMPARE(pixels.pixelColor(sample(bar->ageCircle())),QColor("#2ecc71"));
+            QCOMPARE(pixels.pixelColor(sample(bar->alarmCircle())),QColor("#e4e4e4"));
+            widget.advance(45); pixels=widget.grab().toImage();
+            QCOMPARE(pixels.pixelColor(sample(bar->ageCircle())),QColor("#f1c40f"));
+            QCOMPARE(pixels.pixelColor(sample(bar->alarmCircle())),QColor("#f1c40f"));
+            widget.advance(45); pixels=widget.grab().toImage();
+            QCOMPARE(pixels.pixelColor(sample(bar->ageCircle())),QColor("#e74c3c"));
+            QCOMPARE(bar->alarmColor(),QColor("#e74c3c"));
+            widget.acknowledgeAlarms(); QVERIFY(bar->accessibleName().contains("(Q)"));
+            widget.advance(123366); QCOMPARE(bar->ageText(),QString("123456 s"));
+            QCOMPARE(widget.size(),before); QVERIFY(widget.rect().contains(QRect(bar->mapTo(&widget,QPoint()),bar->size())));
+        }
+        QVERIFY(!QFile::exists(log_));
+    }
+    void diagnosticHexCodes_data() {
+        QTest::addColumn<QJsonValue>("value"); QTest::addColumn<QString>("hex");
+        QTest::newRow("current-code")<<QJsonValue(49236)<<QString("0xC054");
+        QTest::newRow("water")<<QJsonValue(49408)<<QString("0xC100");
+        QTest::newRow("clean")<<QJsonValue(49153)<<QString("0xC001");
+        QTest::newRow("zero")<<QJsonValue(0)<<QString("0x0000");
+        QTest::newRow("decimal-string")<<QJsonValue("0003")<<QString("0x0003");
+        QTest::newRow("large")<<QJsonValue(4294967295.0)<<QString("0xFFFFFFFF");
+        QTest::newRow("full-uint64-string")<<QJsonValue("18446744073709551615")<<QString("0xFFFFFFFFFFFFFFFF");
+        QTest::newRow("overflow")<<QJsonValue("18446744073709551616")<<QString();
+        QTest::newRow("negative")<<QJsonValue(-1)<<QString();
+        QTest::newRow("fraction")<<QJsonValue(0.5)<<QString();
+        QTest::newRow("boolean")<<QJsonValue(false)<<QString();
+        QTest::newRow("null")<<QJsonValue(QJsonValue::Null)<<QString();
+        QTest::newRow("text")<<QJsonValue("A3")<<QString();
+        QTest::newRow("hex-string-not-decimal")<<QJsonValue("0xC054")<<QString();
+        QTest::newRow("unsafe-double")<<QJsonValue(9007199254740992.0)<<QString();
+    }
+    void diagnosticHexCodes() {
+        QFETCH(QJsonValue,value); QFETCH(QString,hex);
+        for(const auto& tag:{"err","dtrs","ddp","rddp","aqit","aqit_ext","wl"}) {
+            const QJsonObject status{{tag,value}};
+            const auto fields=describeDeviceFields(status); QCOMPARE(fields.size(),1);
+            QCOMPARE(fields.first().hex,hex);
+            const auto raw=QJsonDocument(QJsonArray{value}).toJson(QJsonDocument::Compact);
+            QCOMPARE(fields.first().value,QString::fromUtf8(raw.mid(1,raw.size()-2)));
+        }
+        for(const auto& tag:{"temp","rh","pm25","fltsts0","wicksts","fltt1","unknown"})
+            QVERIFY(describeDeviceFields({{tag,value}}).first().hex.isEmpty());
+    }
+    void decorationPreferenceMigration() {
+        QVERIFY(Preferences::load().hideDecoration);
+        QSettings settings; settings.setValue("window/desktop",false);
+        QVERIFY(!Preferences::load().hideDecoration);
+        auto p=Preferences::load(); p.hideDecoration=true; p.save();
+        QVERIFY(Preferences::load().hideDecoration); QVERIFY(!Preferences::load().desktop);
+        settings.setValue("window/desktop",true); settings.setValue("window/hideDecoration",false);
+        QVERIFY(!Preferences::load().hideDecoration); QVERIFY(Preferences::load().desktop);
+    }
+    void decorationToggleKeepsObservation_data() {
+        QTest::addColumn<QString>("session");
+        QTest::newRow("x11-routing")<<QString("x11");
+        QTest::newRow("wayland-routing")<<QString("wayland");
+    }
+    void decorationToggleKeepsObservation() {
+        QFETCH(QString,session); ScopedEnvironment type("XDG_SESSION_TYPE",session.toUtf8());
+        Preferences p; p.desktopAlarms=false; p.position={80,90};
+        Desklet widget(p,FAKE_BACKEND); widget.showAndPosition(); widget.start();
+        auto* c=widget.findChild<Controller*>(); QTRY_VERIFY(c->statusCount()>0);
+        const auto oldPosition=widget.pos(), oldPreference=Preferences::load().position;
+        const auto oldSize=widget.size();
+        for(bool hidden:{false,true}) {
+            bool triggered=false, checked=false;
+            QTimer::singleShot(30,[&] {
+                auto* menu=qobject_cast<QMenu*>(QApplication::activePopupWidget()); if(!menu) return;
+                auto* action=menu->findChild<QAction*>("hideWindowDecoration");
+                if(action) { checked=action->isChecked(); action->trigger(); triggered=true; }
+                menu->close();
+            });
+            QTest::mouseClick(widget.findChild<MonitorBar*>(),Qt::RightButton);
+            QTRY_VERIFY(triggered); QCOMPARE(checked,!hidden);
+            QTRY_COMPARE(widget.windowFlags().testFlag(Qt::FramelessWindowHint),hidden);
+            QVERIFY(widget.isVisible()); QCOMPARE(widget.size(),oldSize);
+            QCOMPARE(Preferences::load().hideDecoration,hidden);
+            QCOMPARE(c->observationStarts(),quint64(1)); QCOMPARE(calls().size(),1);
+            QVERIFY(c->observing()); QVERIFY(widget.findChild<QPushButton*>("power")->isEnabled());
+            if(session=="x11") QCOMPARE(widget.pos(),oldPosition);
+            else QCOMPARE(Preferences::load().position,p.position);
+            if(QGuiApplication::platformName()=="xcb" && session=="x11") {
+                QCOMPARE(widget.testAttribute(Qt::WA_X11NetWmWindowTypeDock),hidden);
+                QVERIFY(widget.windowFlags().testFlag(Qt::WindowStaysOnBottomHint));
+            }
+        }
+        Q_UNUSED(oldPreference);
+        c->stop();
+    }
+    void decorationDemoDoesNotPersist() {
+        Desklet widget(Preferences{},FAKE_BACKEND,true); widget.showAndPosition();
+        bool triggered=false;
+        QTimer::singleShot(30,[&] {
+            auto* menu=qobject_cast<QMenu*>(QApplication::activePopupWidget()); if(!menu) return;
+            if(auto* action=menu->findChild<QAction*>("hideWindowDecoration")) { action->trigger(); triggered=true; }
+            menu->close();
+        });
+        QTest::mouseClick(widget.findChild<MonitorBar*>(),Qt::RightButton);
+        QTRY_VERIFY(triggered); QTRY_VERIFY(!widget.windowFlags().testFlag(Qt::FramelessWindowHint));
+        QVERIFY(Preferences::load().hideDecoration); QVERIFY(!QFile::exists(log_));
     }
     void emblemModeMapping_data() {
         QTest::addColumn<QString>("mode"); QTest::addColumn<QString>("fan");
@@ -679,8 +801,9 @@ private slots:
         widget.applyStatus({{"pwr","1"},{"mode","P"},{"func","PH"},{"cl",true}});
         QCoreApplication::processEvents();
         QVERIFY(mode->isVisible()); QCOMPARE(mode->ink(),p.foreground); QVERIFY(!mode->stale());
-        QVERIFY(widget.findChild<QWidget*>("controlBar")->geometry().bottom()<bar->geometry().top());
-        QVERIFY(bar->geometry().bottom()<widget.findChild<QWidget*>("values")->geometry().top());
+        auto* statusArea=widget.findChild<QWidget*>("statusArea");
+        QVERIFY(widget.findChild<QWidget*>("controlBar")->geometry().bottom()<statusArea->geometry().top());
+        QVERIFY(statusArea->geometry().bottom()<widget.findChild<QWidget*>("values")->geometry().top());
         QCOMPARE(initial,widget.size());
         const auto onlineWifi=wifi->grab().toImage();
         // Inspect the composed top-level window; grabbing a plain child in
@@ -721,7 +844,7 @@ private slots:
                     QCOMPARE(emblem->width(),emblem->height());
                 }
                 if(points==10) {
-                    QCOMPARE(widget.width(),287); QCOMPARE(widget.height(),143);
+                    QCOMPARE(widget.width(),287); QCOMPARE(widget.height(),142);
                     painter.drawText(20,i*190+20,names[i]); painter.drawPixmap(20,i*190+28,widget.grab());
                 }
             }
@@ -735,7 +858,7 @@ private slots:
             {"DeviceId","test-device"},{"future_tag",QJsonObject{{"x",1}}}});
         bool inspected=false, screenshotSaved=false;
         int deviceRows=-1, connectionRows=-1;
-        QString powerDescription,errorDescription,unknownDescription,unknownValue,rawText,copied;
+        QString powerDescription,errorDescription,errorHex,unknownDescription,unknownValue,rawText,copied;
         QTimer::singleShot(80,[&] {
             auto* dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget());
             if(!dialog) return;
@@ -746,11 +869,11 @@ private slots:
                 deviceRows=device->rowCount(); connectionRows=connection->rowCount(); rawText=raw->toPlainText();
                 for(int row=0;row<device->rowCount();++row) {
                     const auto tag=device->item(row,0)->text();
-                    if(tag=="pwr") powerDescription=device->item(row,2)->text();
-                    if(tag=="err") errorDescription=device->item(row,2)->text();
+                    if(tag=="pwr") powerDescription=device->item(row,3)->text();
+                    if(tag=="err") { errorDescription=device->item(row,3)->text(); errorHex=device->item(row,2)->text(); }
                     if(tag=="future_tag") {
                         unknownValue=device->item(row,1)->text();
-                        unknownDescription=device->item(row,2)->text();
+                        unknownDescription=device->item(row,3)->text();
                     }
                 }
                 for(auto* button:dialog->findChildren<QPushButton*>())
@@ -765,6 +888,7 @@ private slots:
         QVERIFY(inspected); QCOMPARE(deviceRows,6); QVERIFY(connectionRows>=9);
         QVERIFY(powerDescription.contains("eingeschaltet"));
         QVERIFY(errorDescription.contains("kein gesicherter Wartungsalarm"));
+        QCOMPARE(errorHex,QString("0xC054")); QVERIFY(copied.contains("err = 49236 [0xC054]"));
         QCOMPARE(unknownValue,QString("{\"x\":1}"));
         QVERIFY(unknownDescription.contains("Nicht dokumentiertes"));
         QVERIFY(rawText.contains("\"future_tag\"")); QVERIFY(rawText.contains("49236"));
@@ -1032,11 +1156,12 @@ private slots:
     }
     void settingsRoundtripAndAutostart() {
         Preferences p; p.host = "host.example"; p.port = 5678; p.interval = 15;
-        p.desktop = false; p.locked = true; p.position = {42,60};
+        p.desktop = false; p.hideDecoration=false; p.locked = true; p.position = {42,60};
         p.background=QColor("#334455"); p.foreground=QColor("#ddccbb"); p.transparency=65;
         p.valueFont=QFont("DejaVu Serif",22,QFont::Bold,true); p.visibleValues={"rh","temp","iaql"}; p.save();
         auto q = Preferences::load(); QCOMPARE(q.host,p.host); QCOMPARE(q.port,p.port);
         QCOMPARE(q.interval,p.interval); QCOMPARE(q.position,p.position); QVERIFY(q.locked); QVERIFY(!q.desktop);
+        QVERIFY(!q.hideDecoration);
         QCOMPARE(q.background,p.background); QCOMPARE(q.foreground,p.foreground); QCOMPARE(q.transparency,p.transparency);
         QCOMPARE(q.valueFont,p.valueFont); QCOMPARE(q.visibleValues,p.visibleValues);
         QString error; QVERIFY2(setAutostart(true, &error), qPrintable(error));

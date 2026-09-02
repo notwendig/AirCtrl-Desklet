@@ -1,4 +1,4 @@
-# Validierung – Version 0.3.7
+# Validierung – Version 0.3.8
 
 Datum: 2026-09-02.
 
@@ -9,7 +9,7 @@ Datum: 2026-09-02.
 - Oberfläche, Backend und Testprogramme erfolgreich kompiliert.
 - Keine Compilerwarnungen aus dem UI-Code mit -Wall -Wextra -Wpedantic.
 - install.sh in einen separaten absoluten Testpräfix ausgeführt.
-- Installierte GUI meldet „airctrl-desklet 0.3.7“.
+- Installierte GUI meldet „airctrl-desklet 0.3.8“.
 - Test-SDK, Buildverzeichnisse und Binärdateien sind nicht im Projekt-ZIP enthalten.
   Unter Fedora werden weiterhin die bereits genannten Systempakete verwendet.
 
@@ -17,17 +17,24 @@ Datum: 2026-09-02.
 
 QtTest/CTest mit Qt-Offscreen:
 
-    Totals: 65 passed, 0 failed, 2 skipped, 0 blacklisted
+    Totals: 85 passed, 0 failed, 2 skipped, 0 blacklisted
     100% tests passed out of 1
 
 Die Zählung enthält Initialisierung/Aufräumen und parametrisierte Testfälle.
 Der native X11-Test wird ohne X11-Sitzung übersprungen. Die direkte Zustellung
-an einen D-Bus-Testdienst wird ebenfalls übersprungen: Die Testumgebung verweigert
-das Anlegen des lokalen D-Bus-Sockets (Operation not permitted). Es wurde kein
-alternativer Zugriff auf eine echte Benutzersitzung versucht.
+an einen D-Bus-Testdienst wird ebenfalls übersprungen: Bereits bei 0.3.7 verweigerte
+die Testumgebung das Anlegen des lokalen D-Bus-Sockets (Operation not permitted).
+Es wurde kein alternativer Zugriff auf eine echte Benutzersitzung versucht.
 
 | Bereich | Prüfung |
 |---|---|
+| Fensterdekoration | Kontextmenü-Haken in beide Richtungen; sichtbares Fenster, unveränderte Größe, gespeicherte Auswahl, nur ein weiterlaufender Empfänger |
+| Dekorations-Migration | Bestehendes window/desktop wird bei fehlendem neuen Schlüssel übernommen; danach separat gespeicherte Auswahl |
+| X11-/Wayland-Routing | Umschalten unter simuliertem Sitzungstyp, X11-Position erhalten, gespeicherte Wayland-Koordinaten nicht überschrieben; keine Prüfung echter Compositor-Dekoration |
+| Runde Anzeigen | Zwei echte Kreise im Statusfeld; transparente Ecken, unverzerrte Geometrie, Farbwechsel und Alarmanzahl; Schriftgrößen 6/10/24/48 |
+| Langer Datenstillstand | 123456 Sekunden weiterhin exakt als Sekunden; keine Änderung der Fenstergröße |
+| Diagnose Hex | 15 Datensätze für sieben Code-Tags; u.a. 49236 = 0xC054, Dezimalstrings, Null, große Zahlen, Überlauf und ungültige Typen |
+| Rohdatenschutz | Hexdarstellung in eigener Spalte und Kopierbericht, unveränderte empfangene Werte/JSON; keine Umdeutung von Messwerten oder Filterstunden |
 | Datenalter | Kein Empfang = — s; grün bei 0/44 s, gelb bei 45/89 s, rot bei 90 s; genaue Grenzübergänge |
 | Zeitbasis | Injizierbare monotone Testuhr; Produktionsuhr unter Linux CLOCK_BOOTTIME; realer Sekundentakt im 19-s-Pausentest |
 | Empfang während Schreiben | Jedes gültige Paket setzt den Zähler zurück, ohne den unbestätigten Schaltzustand zu übernehmen |
@@ -45,7 +52,7 @@ alternativer Zugriff auf eine echte Benutzersitzung versucht.
 | Ungültige Daten | Fehlende/null/bools/falsche Strings/negative/gebrochene Zähler lösen keine Warnsymbole aus |
 | Bestätigte Embleme | Power-Klick lässt die Anzeige bis zur tatsächlichen Rückmeldung unverändert; nur ein Beobachtungsprozess |
 | Offline-Embleme | Letzte Symbole abgeblendet, WLAN orange/durchgestrichen, Tooltips markieren veralteten Status |
-| Emblem-Layout | 287 × 143 Pixel einschließlich Ampel-/Alarmzeile, bis zu neun Symbolen; Schriftgrößen 10/24/48, Transparenz und Vordergrundfarbe |
+| Emblem-Layout | 287 × 142 Pixel mit zwei Statuskreisen, bis zu neun Symbolen in zwei Reihen; Schriftgrößen 10/24/48, Transparenz und Vordergrundfarbe |
 | Emblem-Bedienung | Linksklick/Rechtsklick öffnet genau ein Menü; Ziehen verschiebt ohne Menü oder Geräteschreibzugriff |
 | Dauerbeobachtung | Mehrere Meldungen aus genau einem Prozess; keine periodischen Einzelabfragen |
 | Reale Zeitspanne | 19 Sekunden zwischen Meldungen; nach 11 Sekunden weiterhin online; kein Neustart |
@@ -136,8 +143,9 @@ trat nur vor der Sitzung und nach ihrer Abmeldung auf.
 ## Oberfläche, Diagnose und Kompatibilität
 
 Die acht Buttons und ihre Power-Farben bleiben unverändert. Unter den Buttons
-stehen die Emblemzeile, die Messwerte und die neue Datenalter-/Alarmzeile. Standardgröße:
-287 × 143 Pixel, bei größerer Schrift mitwachsend. Das aktive Set folgt nur den
+steht das Statusfeld mit Emblemen und zwei Kreisen für Datenalter/Alarme; darunter
+folgen die Messwerte. Standardgröße ohne native Fensterdekoration:
+287 × 142 Pixel, bei größerer Schrift mitwachsend. Das aktive Set folgt nur den
 bestätigten Statuswerten; es verursacht keine Geräteabfragen oder Schaltbefehle.
 
 Die installierte echte Qt-Oberfläche wurde als vorschau.png gerendert. Weitere
@@ -154,10 +162,10 @@ offline zu setzen.
 Der alte gespeicherte Intervallwert bleibt erhalten und wird als Wiederverbindungspause
 nach einem Fehler genutzt. Darstellung und übrige Einstellungen bleiben erhalten.
 
-Der CoAP-Protokollcode bleibt unverändert. Im Controller wurde lediglich ein
-Signal für jedes vollständig gelesene gültige Statuspaket ergänzt, damit ein
-Schreibauftrag das Datenalter nicht verfälscht. Timeouts, Wiederverbindung und
-Schreibbefehle wurden nicht verändert. Die vollständige frühere separate
+Der CoAP-Protokollcode und der Controller bleiben gegenüber 0.3.7 unverändert.
+Das dort ergänzte Signal für jedes vollständig gelesene gültige Statuspaket
+verhindert, dass ein Schreibauftrag das Datenalter verfälscht. Timeouts,
+Wiederverbindung und Schreibbefehle wurden nicht verändert. Die vollständige frühere separate
 Python/UDP-Protokolltestsuite wurde nicht erneut ausgeführt; der oben beschriebene
 reale UDP-Integrationstest ist Bestandteil der erneut erfolgreichen Qt-Testsuite.
 
@@ -165,19 +173,20 @@ reale UDP-Integrationstest ist Bestandteil der erneut erfolgreichen Qt-Testsuite
 
 Der D-Bus-Integrationstest ist enthalten und kann über AIRCTRL_TEST_WITH_DBUS=ON
 in einer eigenen dbus-run-session laufen. Hier scheiterte das Starten dieser
-Testsitzung an der Socket-Berechtigung. Die tatsächliche Cinnamon-Zustellung,
+Testsitzung bei 0.3.7 an der Socket-Berechtigung. Die tatsächliche Cinnamon-Zustellung,
 deren Verhalten bei „Nicht stören“ und die Hörbarkeit des optionalen Systemtons
 sind daher nicht bestätigt. Ohne Benachrichtigungsdienst bleiben die sichtbaren
 Alarme und ihre Details im Widget erhalten; es gibt keinen automatischen
 Geräteeingriff als Reaktion auf einen Alarm.
 
-Die Buildumgebung musste nach dem Sitzungswechsel um CMake und die JSON-Header
-ergänzt werden. Ein erster Konfigurations-/Buildversuch traf noch auf die fehlenden
-Header. Nach ihrer Bereitstellung wurde das Projekt neu konfiguriert und vollständig
-erfolgreich gebaut. Diese Hilfsabhängigkeiten sind nicht Bestandteil des ZIPs.
+Die bei 0.3.7 bereitgestellten CMake-/JSON-Hilfsabhängigkeiten wurden wiederverwendet
+und sind nicht Bestandteil des ZIPs. Build, Installation und Tests erfolgten lokal.
+Ein zu früh gestarteter Teiltest traf noch auf das in Erstellung befindliche
+Testprogramm. Nach Abschluss des Linkers liefen die Teiltests und die vollständige
+Suite erfolgreich; Dateiberechtigungen wurden dafür nicht verändert.
 
 Keine laufende Cinnamon/Muffin- oder echte Wayland-Sitzung in dieser Umgebung.
-Popup-Darstellung, Desktop-Ebene, Tray, interaktives Verschieben und Autostart müssen
+Native Titelleiste/Rahmen, Popup-Darstellung, Desktop-Ebene, Tray, interaktives Verschieben und Autostart müssen
 weiterhin in der Benutzersitzung geprüft werden.
 
 Kein eigener Zugriff auf den physischen AC2729/10. Der Benutzer hat den Empfang

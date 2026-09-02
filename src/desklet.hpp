@@ -47,6 +47,7 @@ private:
     void saveAppearance();
     void resizeToContent();
     void applyWindowMode();
+    void setDecorationHidden(bool hidden);
     void requestMenu(const QPoint& point);
     void openMenu(const QPoint& point);
     void showPositionDialog();
@@ -80,6 +81,7 @@ private:
     QString error_, notice_, commandError_;
     std::array<PanelButton*,8> controls_{};
     QWidget* emblemBar_;
+    QGridLayout* emblemLayout_;
     std::array<Emblem*,9> emblems_{};
     QWidget* valueArea_;
     QGridLayout* valueLayout_;

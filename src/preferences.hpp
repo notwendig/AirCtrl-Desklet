@@ -13,6 +13,7 @@ struct Preferences {
     bool desktopAlarms = true;
     bool alarmSound = false;
     bool desktop = true;
+    bool hideDecoration = true;
     bool locked = false;
     QPoint position{-1, -1};
     QColor background{"#f1f1f1"};

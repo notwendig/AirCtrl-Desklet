@@ -102,17 +102,24 @@ Desklet::Desklet(Preferences preferences, QString backend, bool demo)
         connect(b,&QPushButton::clicked,this,[this,i] { openControl(i); });
     }
     root->addWidget(bar);
-    emblemBar_=new QWidget(this); emblemBar_->setObjectName("emblemBar");
+    auto* statusArea=new QWidget(this); statusArea->setObjectName("statusArea");
+    statusArea->installEventFilter(this);
+    auto* statusRow=new QHBoxLayout(statusArea);
+    statusRow->setContentsMargins(0,0,0,0); statusRow->setSpacing(6);
+    emblemBar_=new QWidget(statusArea); emblemBar_->setObjectName("emblemBar");
     emblemBar_->installEventFilter(this);
-    auto* emblems=new QHBoxLayout(emblemBar_);
-    emblems->setContentsMargins(0,0,0,0); emblems->setSpacing(4); emblems->addStretch();
+    emblemLayout_=new QGridLayout(emblemBar_);
+    emblemLayout_->setContentsMargins(0,0,0,0); emblemLayout_->setSpacing(4);
+    emblemLayout_->setAlignment(Qt::AlignCenter);
     const QStringList emblemIds{"lock","mode","function","filter","water","clean","display","timer","wifi"};
     for(int i=0;i<emblemIds.size();++i) {
         auto* emblem=new Emblem(emblemBar_); emblems_[i]=emblem;
         emblem->setObjectName("emblem_"+emblemIds[i]);
-        emblem->installEventFilter(this); emblems->addWidget(emblem);
+        emblem->installEventFilter(this);
     }
-    emblems->addStretch(); root->addWidget(emblemBar_);
+    statusRow->addWidget(emblemBar_,1);
+    monitorBar_=new MonitorBar(statusArea); monitorBar_->installEventFilter(this);
+    statusRow->addWidget(monitorBar_,0,Qt::AlignVCenter); root->addWidget(statusArea);
     valueArea_=new QWidget(this); valueArea_->setObjectName("values");
     valueArea_->installEventFilter(this);
     valueLayout_=new QGridLayout(valueArea_); valueLayout_->setContentsMargins(0,0,0,0);
@@ -123,7 +130,6 @@ Desklet::Desklet(Preferences preferences, QString backend, bool demo)
         value->setAlignment(Qt::AlignCenter); value->installEventFilter(this);
     }
     root->addWidget(valueArea_);
-    monitorBar_=new MonitorBar(this); monitorBar_->installEventFilter(this); root->addWidget(monitorBar_);
     auto* contextShortcut=new QShortcut(QKeySequence("Shift+F10"),this);
     connect(contextShortcut,&QShortcut::activated,this,[this] { openMenu(mapToGlobal(rect().center())); });
     auto* menuShortcut=new QShortcut(QKeySequence(Qt::Key_Menu),this);
@@ -183,8 +189,7 @@ void Desklet::applyAppearance() {
     valueArea_->setVisible(visible>0);
     for(auto* button:controls_) { button->setForeground(preferences_.foreground); button->setFont(preferences_.valueFont); }
     monitorBar_->setFont(preferences_.valueFont);
-    monitorBar_->setMinimumWidth(monitorBar_->sizeHint().width());
-    monitorBar_->setFixedHeight(monitorBar_->sizeHint().height());
+    monitorBar_->setFixedSize(monitorBar_->sizeHint());
     updateEmblems(); updateValues(); updateMonitoring(); update();
 }
 void Desklet::saveAppearance() {
@@ -203,8 +208,12 @@ void Desklet::updateValues() {
     resizeToContent();
 }
 void Desklet::updateEmblems() {
-    // Reserve one row even with no status, so readings do not jump on/offline.
-    emblemBar_->setFixedHeight(qMax(24,QFontMetrics(preferences_.valueFont).height()+4));
+    // Reserve two rows of six emblems; alarms must not resize the whole window.
+    const int side=qMax(24,QFontMetrics(preferences_.valueFont).height()+4);
+    emblemBar_->setFixedHeight(2*side+4);
+    emblemBar_->setMinimumWidth(6*side+5*4);
+    while(auto* item=emblemLayout_->takeAt(0)) delete item;
+    int index=0;
     const auto active=currentEmblems(status_,connected_);
     for(auto* emblem:emblems_) {
         const auto found=std::find_if(active.begin(),active.end(),[&](const EmblemState& state) {
@@ -213,6 +222,7 @@ void Desklet::updateEmblems() {
         if(found!=active.end()) emblem->configure(*found,preferences_.foreground,preferences_.valueFont,
                                                 connected_,updated_.isValid());
         emblem->setVisible(found!=active.end());
+        if(found!=active.end()) { emblemLayout_->addWidget(emblem,index/6,index%6); ++index; }
     }
 }
 void Desklet::sendValues(const QJsonObject& values) {
@@ -441,12 +451,21 @@ void Desklet::applyWindowMode() {
     // Do not use Qt::Tool here: utility windows can be promoted with their group.
     setAttribute(Qt::WA_X11NetWmWindowTypeDesktop, false);
     setAttribute(Qt::WA_X11NetWmWindowTypeDock, false);
-    if (desktop) setWindowFlags(Qt::Window | Qt::FramelessWindowHint | Qt::WindowStaysOnBottomHint);
-    else if (waylandSession_ && preferences_.desktop) setWindowFlags(Qt::Window | Qt::FramelessWindowHint);
-    else if (demo_) setWindowFlags(Qt::Tool | Qt::FramelessWindowHint);
-    else setWindowFlags(Qt::Window);
-    setAttribute(Qt::WA_X11NetWmWindowTypeDock, desktop);
+    Qt::WindowFlags flags=demo_ && !desktop && !waylandSession_ ? Qt::Tool : Qt::Window;
+    if(preferences_.hideDecoration) flags|=Qt::FramelessWindowHint;
+    if(desktop) flags|=Qt::WindowStaysOnBottomHint;
+    setWindowFlags(flags);
+    // Dock windows have no WM decoration. Use a normal BELOW window when a
+    // title bar is requested; restoring frameless mode restores the Dock layer.
+    setAttribute(Qt::WA_X11NetWmWindowTypeDock, desktop && preferences_.hideDecoration);
     // No strut is set: this is not a panel and reserves no screen area.
+}
+void Desklet::setDecorationHidden(bool hidden) {
+    if(preferences_.hideDecoration==hidden) return;
+    if(!waylandSession_) preferences_.position=pos();
+    preferences_.hideDecoration=hidden;
+    if(!demo_) preferences_.save();
+    applyWindowMode(); showAndPosition();
 }
 void Desklet::start() {
     if (demo_) return;
@@ -495,7 +514,7 @@ bool Desklet::eventFilter(QObject* watched, QEvent* event) {
     } else if (event->type()==QEvent::MouseMove && leftPressed_) {
         const auto global=static_cast<QMouseEvent*>(event)->globalPosition().toPoint();
         mouseMoved_=mouseMoved_ || (global-pressPosition_).manhattanLength()>=QApplication::startDragDistance();
-        if (mouseMoved_ && !preferences_.locked && preferences_.desktop) {
+        if (mouseMoved_ && !preferences_.locked && (preferences_.desktop || preferences_.hideDecoration)) {
             if (waylandSession_) {
                 // Called while the original left-button press is still active:
                 // Wayland requires its input serial for a compositor move.
@@ -512,7 +531,7 @@ bool Desklet::eventFilter(QObject* watched, QEvent* event) {
         if (mouse->button()==Qt::LeftButton && leftPressed_) {
             leftPressed_=false;
             if (mouseMoved_) {
-                if (!preferences_.locked && preferences_.desktop) rememberPosition();
+                if (!preferences_.locked && (preferences_.desktop || preferences_.hideDecoration)) rememberPosition();
             } else if(watched==monitorBar_) QTimer::singleShot(0,this,&Desklet::showAlarms);
             else requestMenu(mouse->globalPosition().toPoint());
             return true;
@@ -543,6 +562,13 @@ void Desklet::openMenu(const QPoint& point) {
     QMenu menu(this); menu.setObjectName("deskletContextMenu");
     const auto connection=demo_ ? QString("Vorschau") : connected_ ? QString("Verbunden") : QString("Keine Verbindung");
     menu.addSection(status_.value("name").toString("AirControl")+" · "+connection);
+    auto* decoration=menu.addAction("Fensterdekoration ausblenden");
+    decoration->setObjectName("hideWindowDecoration"); decoration->setCheckable(true);
+    decoration->setChecked(preferences_.hideDecoration);
+    connect(decoration,&QAction::triggered,this,[this](bool hidden) {
+        // Changing native flags hides/recreates the window. Do it after menu exec.
+        QTimer::singleShot(0,this,[this,hidden] { setDecorationHidden(hidden); });
+    });
     auto* appearance=menu.addMenu("Darstellung");
     appearance->addAction("Hintergrundfarbe …",this,[this] {
         const auto color=QColorDialog::getColor(preferences_.background,this,"Hintergrundfarbe");
@@ -629,7 +655,8 @@ void Desklet::showSettings() {
     QLineEdit host(preferences_.host); host.setMinimumWidth(240);
     QSpinBox port; port.setRange(1,65535); port.setValue(preferences_.port);
     QSpinBox interval; interval.setRange(5,300); interval.setSuffix(" Sekunden"); interval.setValue(preferences_.interval);
-    QCheckBox desktop("Rahmenloses Widget"); desktop.setChecked(preferences_.desktop);
+    QCheckBox desktop("Desktopmodus (unter X11 hinter normalen Fenstern)"); desktop.setChecked(preferences_.desktop);
+    desktop.setToolTip("Die Fensterdekoration wird separat im Kontextmenü ein- oder ausgeblendet.");
     QCheckBox autostart("Bei der Anmeldung starten"); autostart.setChecked(QFileInfo::exists(autostartPath()));
     interval.setToolTip("Pause vor einem neuen Verbindungsversuch nach einem Fehler. Statusmeldungen kommen automatisch vom Gerät.");
     form->addRow("Geräteadresse", &host); form->addRow("UDP-Port", &port); form->addRow("Wiederverbindung nach Fehler", &interval);
@@ -676,9 +703,11 @@ void Desklet::showDetails() {
         (commandError_.isEmpty() ? QString() : "Letzter Schaltfehler:\n"+commandError_+"\n\n");
     const auto rawJson=QString::fromUtf8(QJsonDocument(status_).toJson(QJsonDocument::Indented));
     const auto deviceFields=describeDeviceFields(status_);
-    const auto table=[&](const QList<DiagnosticField>& fields,const QString& name) {
-        auto* result=new QTableWidget(fields.size(),3,&dialog); result->setObjectName(name);
-        result->setHorizontalHeaderLabels({"Tag","Empfangener Wert","Bedeutung"});
+    const auto table=[&](const QList<DiagnosticField>& fields,const QString& name,bool hex=false) {
+        const int descriptionColumn=hex ? 3 : 2;
+        auto* result=new QTableWidget(fields.size(),descriptionColumn+1,&dialog); result->setObjectName(name);
+        result->setHorizontalHeaderLabels(hex ? QStringList{"Tag","Empfangener Wert","Code (Hex)","Bedeutung"}
+                                             : QStringList{"Tag","Empfangener Wert","Bedeutung"});
         result->setAlternatingRowColors(true); result->setWordWrap(true);
         result->setEditTriggers(QAbstractItemView::NoEditTriggers);
         result->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -686,7 +715,8 @@ void Desklet::showDetails() {
         result->verticalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
         result->horizontalHeader()->setSectionResizeMode(0,QHeaderView::ResizeToContents);
         result->horizontalHeader()->setSectionResizeMode(1,QHeaderView::ResizeToContents);
-        result->horizontalHeader()->setSectionResizeMode(2,QHeaderView::Stretch);
+        if(hex) result->horizontalHeader()->setSectionResizeMode(2,QHeaderView::ResizeToContents);
+        result->horizontalHeader()->setSectionResizeMode(descriptionColumn,QHeaderView::Stretch);
         const auto fixed=QFontDatabase::systemFont(QFontDatabase::FixedFont);
         for(int row=0;row<fields.size();++row) {
             auto* tag=new QTableWidgetItem(fields[row].tag); tag->setFont(fixed);
@@ -694,12 +724,17 @@ void Desklet::showDetails() {
             auto* description=new QTableWidgetItem(fields[row].description);
             tag->setToolTip(fields[row].tag); value->setToolTip(fields[row].value);
             description->setToolTip(fields[row].description);
-            result->setItem(row,0,tag); result->setItem(row,1,value); result->setItem(row,2,description);
+            result->setItem(row,0,tag); result->setItem(row,1,value); result->setItem(row,descriptionColumn,description);
+            if(hex) {
+                auto* code=new QTableWidgetItem(fields[row].hex); code->setFont(fixed);
+                code->setToolTip(fields[row].hex.isEmpty() ? "Kein numerischer Fehler-/Statuscode." : "Hexadezimale Darstellung: "+fields[row].hex);
+                result->setItem(row,2,code);
+            }
         }
         result->setAccessibleName("Diagnosefelder mit Tag, Rohwert und deutscher Bedeutung");
         return result;
     };
-    tabs->addTab(table(deviceFields,"deviceFields"),"Gerätewerte erklärt");
+    tabs->addTab(table(deviceFields,"deviceFields",true),"Gerätewerte erklärt");
     QList<DiagnosticField> connectionFields{
         {"AirControl",QCoreApplication::applicationVersion(),"Version des Qt-Widgets."},
         {"Gerät",preferences_.host+":"+QString::number(preferences_.port),"Konfigurierte Zieladresse und UDP-Port des Luftreinigers."},
@@ -730,7 +765,7 @@ void Desklet::showDetails() {
     raw->setAccessibleName("Unveränderte Verbindungsdiagnose und Geräte-Rohdaten");
     raw->setPlainText(heading+session+errorText+rawJson); tabs->addTab(raw,"Rohdaten");
     layout->addWidget(tabs);
-    auto* note=new QLabel("Unbekannte Codes werden unverändert angezeigt und nicht als gesicherter Wartungsalarm bewertet.",&dialog);
+    auto* note=new QLabel("Code (Hex): Fehler-/Statuscodes zusätzlich hexadezimal. Rohwerte bleiben unverändert; unbekannte Codes werden nicht als gesicherter Wartungsalarm bewertet.",&dialog);
     note->setWordWrap(true); layout->addWidget(note);
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close);
     auto* copy = buttons->addButton("Bericht kopieren", QDialogButtonBox::ActionRole);

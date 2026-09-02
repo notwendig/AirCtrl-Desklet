@@ -1,10 +1,15 @@
-# Philips AirControl – Qt6-Gerätepanel 0.3.7
+# Philips AirControl – Qt6-Gerätepanel 0.3.8
 
 Kompaktes C++/Qt6-Desktopwidget für den Philips AC2729/10 „Wohnzimmer“ unter
 Cinnamon. Geräteadresse voreingestellt: **192.168.77.5**, UDP-Port **5683**.
 Der bereits am Gerät funktionierende C++-CoAP-Code ist vollständig enthalten.
 
-Version 0.3.7 ergänzt einen Sekundenzähler mit Datenalter-Ampel sowie sichtbare
+Version 0.3.8 ergänzt den gespeicherten Kontextmenü-Haken **Fensterdekoration
+ausblenden** und eine **Code-(Hex)-Spalte** in der Diagnose. Datenalter und Alarm
+erscheinen jetzt als zwei Kreise neben den Status-Emblemen; die untere Alarmleiste
+entfällt. Empfang, Schaltbefehle und Alarmgrenzen bleiben unverändert.
+
+Version 0.3.7 ergänzte einen Sekundenzähler mit Datenalter-Ampel sowie sichtbare
 Warnungen und Fehler, Desktop-Benachrichtigungen und optionalen Signalton.
 Grenzwerte und Benachrichtigungen sind über das Kontextmenü einstellbar.
 
@@ -20,10 +25,15 @@ orange ohne Verbindung, weiß bei „aus“, grün bei „an“.
 
 ## Kompakte Oberfläche
 
-Im Widget stehen die acht Kontrolltasten, die aktiven Status-Embleme und darunter
-die Werte. Die unterste Zeile zeigt Datenalter und aktive Alarme.
+Im Widget stehen die acht Kontrolltasten, das Statusfeld mit aktiven Emblemen und
+zwei Kreisen für Datenalter/Alarme, darunter die Werte. Der linke Kreis zählt
+Sekunden, der rechte zeigt einen Haken ohne Alarm oder eine Glocke mit Alarmanzahl.
+Warnungen sind gelb, Fehler rot; quittierte aktive Alarme tragen ein kleines „Q“.
+Tooltips und ein Klick auf die Kreise zeigen die vollständigen Alarmtexte.
 Standardmäßig sind Feuchte, Zielfeuchte, Temperatur und PM2,5 sichtbar.
-Das Standardlayout misst **287 × 143 Pixel** bei 100 % Desktopskalierung.
+Das Standardlayout misst **287 × 142 Pixel** ohne Fensterdekoration bei 100 % Desktopskalierung.
+Das Statusfeld reserviert bis zu zwei Reihen mit sechs Emblemen, damit auch bei
+mehreren Wartungswarnungen keine Symbole überlappen und die Fenstergröße stabil bleibt.
 Bei größerer Schrift wächst das Fenster mit, damit nichts abgeschnitten wird.
 
 `vorschau.png` zeigt die echte Qt-Oberfläche, `embleme-vorschau.png` mehrere
@@ -31,7 +41,7 @@ Modi und einen ausdrücklich simulierten Wartungsfall, `power-vorschau.png` die 
 Power-Farben. In der Vorschau bleibt Power anklickbar, sendet aber keine Befehle;
 alle übrigen Gerätetasten sind deaktiviert. „Vorschau“ steht im Tooltip und Menü.
 
-## Datenalter und Alarme (neu in 0.3.7)
+## Datenalter und Alarme
 
 Der Zähler zeigt **Sekunden seit dem letzten gültigen Statuspaket**, nicht Minuten.
 Er wird jede Sekunde aktualisiert und bei jedem vollständig empfangenen, gültigen
@@ -66,13 +76,15 @@ pro Störung, erneut bei Verschärfung (Gelb → Rot) oder wenn eine zwischenzei
 behobene Störung wieder auftritt. Wiederholte Empfangsfehler erzeugen keinen
 Alarmsturm. Die Demo erzeugt weder Desktop-Meldungen noch Töne.
 
-**Linksklick auf die unterste Zeile → aktive Alarme.** Das Fenster wird laufend
+**Linksklick auf einen der beiden Kreise → aktive Alarme.** Das Fenster wird laufend
 aktualisiert. Alternativ: Rechtsklick → Aktive Alarme / Alarme quittieren.
 Quittierung markiert andauernde Ursachen mit „(Q)“; sie bleiben farbig sichtbar.
 Ein vergangener Schaltfehler verschwindet nach Quittierung oder erfolgreicher
 Bestätigung eines späteren Befehls aus den aktiven Alarmen, bleibt aber als letzter
 Schaltfehler in der Diagnose. Quittieren sendet keinen Befehl zum Gerät und setzt
-keinen Wartungszähler zurück. Ziehen an der Zeile verschiebt weiterhin das Widget.
+keinen Wartungszähler zurück. Ziehen an den Kreisen verschiebt weiterhin das Widget.
+Auch lange Zeiträume bleiben Sekundenwerte; die Zahl wird bei Bedarf im Kreis
+verkleinert, ohne den Kreis oder das Fenster im Sekundentakt zu vergrößern.
 
 Desktop-Meldungen verwenden den
 [Benachrichtigungsdienst der Sitzung](https://specifications.freedesktop.org/notification/latest/protocol.html)
@@ -125,7 +137,7 @@ Die Zuordnungen stützen sich auf die vorhandene
 Die Bedeutung der Filterwechsel- und Reinigungshinweise beschreibt auch
 [Philips](https://www.philips.co.uk/c-f/XC000005727/what-filters-should-i-use-with-my-philips-air-purifier/1000).
 
-Die Zeile behält beim Statuswechsel ihre Höhe. Embleme folgen Schriftgröße und
+Das Statusfeld behält beim Statuswechsel seine Höhe. Embleme folgen Schriftgröße und
 Vordergrundfarbe; Wartungshinweise bleiben orange. Ihre Tooltips erklären den
 Zustand und das auslösende Statusfeld. Linksklick oder Rechtsklick öffnet das
 Kontextmenü; Ziehen verschiebt das Widget wie bisher. Es gibt keine zusätzlichen
@@ -137,6 +149,21 @@ Geräteabfragen und keine neuen Schaltbefehle.
 das Kontextmenü. Seit Version 0.3.1 werden die Maustasten direkt verarbeitet, auch über
 Wertefeldern und Gerätetasten. Ziehen und kurzer Klick werden unterschieden.
 Im Tray-Menü gibt es zusätzlich „Menü / Darstellung …“.
+
+**Rechtsklick → Fensterdekoration ausblenden:**
+
+- Haken gesetzt: keine native Titelleiste und kein Fensterrahmen.
+- Haken entfernt: normale Fensterdekoration durch Qt/Fenstermanager.
+- Die Auswahl wird sofort gespeichert, ohne die Geräteverbindung neu zu starten.
+- Rechtsklick, Umschalt+F10 und Ziehen an den Werten/Kreisen bleiben verfügbar.
+
+Dies betrifft nur das Hauptwidget, nicht Diagnose-, Alarm- oder Einstellungsdialoge.
+Hintergrundfarbe und Transparenz werden weiterhin separat unter Darstellung geändert.
+Beim ersten Update wird die bisherige Rahmenlos-/Fenster-Einstellung übernommen.
+`--window` startet weiterhin ausdrücklich mit normaler Fensterdekoration.
+Qt muss das Fenster bei einem [Wechsel der Fensterflags](https://doc.qt.io/qt-6/qwidget.html#windowFlags-prop)
+kurz aus- und wieder einblenden. Unter X11 bleibt die gespeicherte Position erhalten;
+unter Wayland entscheidet der Compositor über die Platzierung und Dekoration.
 
 **Rechtsklick → Darstellung** bietet:
 
@@ -168,7 +195,7 @@ pkill -x airctrl-desklet
 pkill -x airctrl-backend
 
 cd /home/juergen/Projects/Qt &&
-unzip -o ~/Downloads/airctrl-desklet-0.3.7.zip &&
+unzip -o ~/Downloads/airctrl-desklet-0.3.8.zip &&
 cd airctrl-desklet &&
 bash install.sh &&
 env -u QT_QPA_PLATFORM ~/.local/bin/airctrl-desklet
@@ -231,6 +258,15 @@ unveränderten Wert und eine deutsche Bedeutung. Der zweite Reiter erklärt
 Verbindung, Qt-Plattform, Sitzung und Backend. Unter „Rohdaten“ bleibt der
 vollständige bisherige Bericht samt JSON erhalten. **Bericht kopieren** übernimmt
 Erklärungen und Rohdaten gemeinsam.
+
+Seit 0.3.8 zeigt die zusätzliche Spalte **Code (Hex)** `err`, `dtrs`, `ddp`, `rddp`,
+`aqit`, `aqit_ext` und `wl` hexadezimal, z.B. **49236 → 0xC054**.
+Der empfangene Dezimalwert bzw. String bleibt daneben erhalten; Hexwerte stehen
+auch im kopierten Erklärungsbericht. Der JSON-Reiter bleibt unverändert.
+Nur nichtnegative, ganzzahlige Zahlen/Dezimalstrings werden umgerechnet, keine
+Booleschen Werte, Bruchteile oder Typkennungen wie A3. Messwerte und
+Filter-Restlaufzeitzähler behalten ihre bisherige Dezimaldarstellung.
+Die Hexdarstellung interpretiert keine neuen Fehlerbits oder Wartungsalarme.
 
 Erklärt werden unter anderem Betriebsmodus, Kindersicherung, Licht, Luftwerte,
 Timer, Wasserstatus, Filterzähler, Firmware, WLAN und Gerätekennungen. Die
@@ -334,7 +370,7 @@ Desktop-Bedienungshilfen sind nicht Gegenstand dieses Updates.
 Dies ist ein eigenständiges Qt6-Desktopwidget. Cinnamons native Desklets verwenden
 JavaScript/CJS; dieses Programm startet über das Anwendungsmenü oder den Autostart.
 
-**Wayland:** Das Widget ist ein gewöhnliches rahmenloses Anwendungsfenster.
+**Wayland:** Das Widget ist ein gewöhnliches Anwendungsfenster, standardmäßig rahmenlos.
 Das Ziehen verwendet [Qt QWindow::startSystemMove](https://doc.qt.io/qt-6/qwindow.html#startSystemMove),
 weil feste globale Fensterpositionen unter Wayland nicht gesetzt werden können.
 Die Einordnung auf der Desktop-Ebene und das Wiederherstellen einer Startposition
@@ -346,6 +382,9 @@ automatisiert unter Qt-Offscreen geprüft; ein echter Cinnamon/Wayland-Test steh
 [Muffin ordnet diese Kombination oberhalb des Desktops und unterhalb normaler Fenster ein](https://github.com/linuxmint/muffin/blob/cde5c6210e7d8c4239a8d4ba410bfdaeb12e0caa/src/x11/window-x11.c).
 Es werden keine Bildschirmränder reserviert. Auch für diesen Fenstertyp ersetzt
 die Quellcodeprüfung keinen Test in einer echten Cinnamon-Sitzung.
+Wird die Dekoration eingeblendet, verwendet das Programm bei aktivem Desktopmodus
+ein normales BELOW-Fenster, weil der Fenstermanager Dock-Fenster üblicherweise nicht
+dekoriert. Beim erneuten Ausblenden wird die bisherige Dock-Einstellung wiederhergestellt.
 
 Unter **Rechtsklick → Verbindung und Autostart → Bei der Anmeldung starten** wird ein eigener Eintrag
 unter `${XDG_CONFIG_HOME:-~/.config}/autostart/airctrl-desklet.desktop` angelegt.

@@ -2,6 +2,8 @@
 #include "emblems.hpp"
 #include <QFontMetrics>
 #include <QPainter>
+#include <QPainterPath>
+#include <QtMath>
 #include <QSet>
 #include <QStringList>
 
@@ -58,16 +60,17 @@ bool AlertLatch::acknowledged(const Alert& alert) const {
 
 MonitorBar::MonitorBar(QWidget* parent) : QWidget(parent) {
     setObjectName("monitorBar"); setCursor(Qt::PointingHandCursor);
-    setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
+    setAttribute(Qt::WA_TranslucentBackground);
+    setSizePolicy(QSizePolicy::Fixed,QSizePolicy::Fixed);
 }
-int MonitorBar::ageWidth() const {
-    const QFontMetrics metrics(font());
-    return qMax(metrics.horizontalAdvance("999999 s"),metrics.horizontalAdvance(ageText()))+18;
+int MonitorBar::diameter() const {
+    return qMax(40,qCeil(QFontMetricsF(font()).height()*2.4));
 }
 QSize MonitorBar::sizeHint() const {
-    const QFontMetrics metrics(font());
-    return {ageWidth()+6+metrics.horizontalAdvance("2 Warnungen (Q)")+18,qMax(24,metrics.height()+8)};
+    return {2*diameter()+6,diameter()};
 }
+QRectF MonitorBar::ageCircle() const { return QRectF(0,0,diameter(),diameter()).adjusted(1,1,-1,-1); }
+QRectF MonitorBar::alarmCircle() const { return ageCircle().translated(diameter()+6,0); }
 QColor MonitorBar::ageColor() const {
     switch(freshness_) {
     case DataFreshness::Fresh: return QColor("#2ecc71");
@@ -76,6 +79,10 @@ QColor MonitorBar::ageColor() const {
     case DataFreshness::Waiting: return QColor("#d8d8d8");
     }
     return QColor("#d8d8d8");
+}
+QColor MonitorBar::alarmColor() const {
+    for(const auto& alert:alerts_) if(alert.level==AlertLevel::Error) return QColor("#e74c3c");
+    return alerts_.isEmpty() ? QColor("#e4e4e4") : QColor("#f1c40f");
 }
 QString MonitorBar::alarmText() const {
     if(alerts_.isEmpty()) return "Keine Alarme";
@@ -101,14 +108,34 @@ void MonitorBar::setState(qint64 seconds, DataFreshness freshness, const QList<A
 }
 void MonitorBar::paintEvent(QPaintEvent*) {
     QPainter p(this); p.setRenderHint(QPainter::Antialiasing);
-    p.setPen(Qt::NoPen); p.setBrush(ageColor());
-    const QRectF age(0,0,ageWidth(),height());
-    p.drawRoundedRect(age,4,4); p.setPen(QColor("#151515")); p.drawText(age,Qt::AlignCenter,ageText());
-    auto color=QColor("#e4e4e4");
-    if(!alerts_.isEmpty()) color=QColor("#f1c40f");
-    for(const auto& alert:alerts_) if(alert.level==AlertLevel::Error) color=QColor("#e74c3c");
-    const QRectF alarm(age.right()+6,0,qMax(0.0,width()-age.right()-6),height());
-    p.setPen(Qt::NoPen); p.setBrush(color); p.drawRoundedRect(alarm,4,4);
-    p.setPen(QColor("#151515"));
-    p.drawText(alarm,Qt::AlignCenter,fontMetrics().elidedText(alarmText(),Qt::ElideRight,qMax(0,int(alarm.width())-8)));
+    const auto age=ageCircle(), alarm=alarmCircle();
+    const QColor ink("#151515");
+    p.setPen(Qt::NoPen); p.setBrush(ageColor()); p.drawEllipse(age);
+    p.setBrush(alarmColor()); p.drawEllipse(alarm);
+    const auto text=[&](const QString& value,const QRectF& area,qreal scale=1.0) {
+        QFont f=font();
+        const qreal pixels=QFontMetricsF(f).height()*0.82*scale;
+        f.setPixelSize(qMax(1,qRound(pixels)));
+        const qreal ratio=qMin(1.0,area.width()/qMax(1.0,QFontMetricsF(f).horizontalAdvance(value)));
+        f.setPixelSize(qMax(1,qFloor(f.pixelSize()*ratio)));
+        p.setFont(f); p.setPen(ink); p.drawText(area,Qt::AlignCenter,value);
+    };
+    const auto zone=[](const QRectF& circle,qreal top,qreal h) {
+        return QRectF(circle.left()+circle.width()*0.12,circle.top()+circle.height()*top,
+                      circle.width()*0.76,circle.height()*h);
+    };
+    text(seconds_<0 ? QString("—") : QString::number(seconds_),zone(age,0.13,0.45));
+    text("s",zone(age,0.55,0.30),0.72);
+    // Native vectors keep the OK/bell symbols independent of installed fonts.
+    p.save(); p.translate(alarm.topLeft()); p.scale(alarm.width()/40,alarm.height()/40);
+    p.setPen(QPen(ink,1.8,Qt::SolidLine,Qt::RoundCap,Qt::RoundJoin)); p.setBrush(Qt::NoBrush);
+    if(alerts_.isEmpty()) {
+        p.drawLine(QPointF(11,20),QPointF(17,26)); p.drawLine(QPointF(17,26),QPointF(29,13));
+    } else {
+        QPainterPath bell; bell.moveTo(13,19); bell.lineTo(15,16); bell.lineTo(15,12);
+        bell.cubicTo(15,5,25,5,25,12); bell.lineTo(25,16); bell.lineTo(27,19); bell.closeSubpath();
+        p.drawPath(bell); p.drawLine(QPointF(19,22),QPointF(21,22));
+    }
+    p.restore();
+    if(!alerts_.isEmpty()) text(QString::number(alerts_.size())+(acknowledged_ ? "Q" : ""),zone(alarm,0.59,0.30),0.78);
 }
