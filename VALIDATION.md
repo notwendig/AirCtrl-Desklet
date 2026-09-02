@@ -1,211 +1,130 @@
-# Validierung – Version 0.3.4
+# Validierung – Version 0.3.5
 
 Datum: 2026-09-02.
 
-## Build
+## Build und Installation
 
-- Linux x86-64, Ubuntu 24.04.
-- GCC 13.3.0, C++17, Release-Build.
-- Qt 6.8.3: Core, Gui, Widgets und Test.
-- OpenSSL 3.0.13, nlohmann/json 3.12.0.
-- Oberfläche und Backend erfolgreich kompiliert.
-- Keine Compilerwarnungen aus dem UI-Code bei `-Wall -Wextra -Wpedantic`.
-- Qt-SDK und zusätzliche Entwicklungsdateien wurden lokal zum Testen verwendet;
-  sie sind nicht im ZIP enthalten. Die Fedora-Anleitung verwendet Systempakete.
+- Linux x86-64, Ubuntu 24.04; GCC 13.3.0, C++17, Release.
+- Qt 6.8.3 (Core, Gui, Widgets, Test), OpenSSL 3.0.13, nlohmann/json 3.12.0.
+- Oberfläche, Backend und Testprogramme erfolgreich kompiliert.
+- Keine Compilerwarnungen aus dem UI-Code mit -Wall -Wextra -Wpedantic.
+- install.sh in einen separaten absoluten Testpräfix ausgeführt.
+- Installierte GUI meldet „airctrl-desklet 0.3.5“.
+- Test-SDK, Buildverzeichnisse und Binärdateien sind nicht im Projekt-ZIP enthalten.
+  Unter Fedora werden weiterhin die bereits genannten Systempakete verwendet.
 
 ## Automatisierte Prüfungen
 
-QtTest/CTest, mit Qt-Offscreen-Plattform:
+QtTest/CTest mit Qt-Offscreen:
 
-```text
-Totals: 37 passed, 0 failed, 1 skipped, 0 blacklisted
-100% tests passed out of 1
-```
+    Totals: 42 passed, 0 failed, 1 skipped, 0 blacklisted
+    100% tests passed out of 1
 
-Die 37 erfolgreichen QtTest-Einträge umfassen 35 Testfälle plus Initialisierung
-und Aufräumen. Der zusätzliche native X11-Test wurde unter Offscreen übersprungen:
+Die Zählung enthält Initialisierung/Aufräumen und parametrisierte Testfälle.
+Der native X11-Test wird ohne X11-Sitzung übersprungen.
 
-| Prüffall | Ergebnis |
+| Bereich | Prüfung |
 |---|---|
-| Statusabfrage ohne unbeabsichtigtes Schreiben | OK |
-| `pwr` als String, `rhset` als Integer, anschließendes Lesen | OK |
-| Ungültige Zielfeuchte ohne Backend-Aufruf zurückweisen | OK |
-| Prozessfehler und anschließende Wiederherstellung | OK |
-| Ungültiges JSON zurückweisen | OK |
-| Fehlgeschlagene Statusabfrage einmal automatisch wiederholen | OK |
-| Fehlgeschlagene Schreibbefehle nicht automatisch wiederholen | OK |
-| Anhalten verhindert ausstehende Lesewiederholung | OK |
-| Timeout und Unterdrückung überlappender Abfragen | OK |
-| Fehlendes Backend anzeigen | OK |
-| Messwerte, fehlende Felder, Offline-Sperren mit Ausnahme von Power | OK |
-| Kompaktes Layout, nur acht Tasten und Werte, Schriftgrößen 10/24/48 ohne Abschneiden | OK |
-| Hintergrundalpha 0/50/100 %; Vordergrund bleibt deckend | OK |
-| Transparenz über echtes Kontextmenü ändern und speichern, ohne Gerätezugriff | OK |
-| Vorschau ohne Abfragen oder Schreibzugriffe | OK |
-| Einstellungen speichern/laden, Autostart anlegen/entfernen | OK |
-| Neue Panelbefehle: Datentypen, kombinierte Moduswerte und Rücklesen | OK |
-| Ungültige Timer-, Licht-, Sperr- und Moduswerte zurückweisen | OK |
-| Echte Zielfeuchte-Menüauswahl, Kindersicherung ein/aus, Power trotz Kindersicherung | OK |
-| Rechtsklick über Hintergrund, Leiste, Werten, aktiver und deaktivierter Taste; nur ein Menü bei zusätzlichem Kontext-Ereignis | OK |
-| Kurzer Linksklick auf Werte öffnet Menü auch bei Positionssperre | OK |
-| Ziehen unter Offscreen verändert und speichert Position, ohne Menü oder Backend-Aufruf | OK |
-| Positionsdialog setzt und speichert X/Y außerhalb von Wayland | OK |
-| Simulierte Wayland-Sitzung: rahmenloses normales Fenster, genau eine native Verschiebeanfrage, Sperre und Menü, keine X/Y-Aktion | OK |
-| Verzögerte Statusabfrage: alle acht Tasten bleiben durchgehend aktiv; Klick während Folgeread wird genau einmal geschrieben und frisch bestätigt | OK |
-| Vorgemerkten Befehl bei Prozessfehler, ungültigem JSON und Timeout verwerfen; keine verspätete Ausführung nach Wiederverbindung | OK (3 Fälle) |
-| Stoppen verwirft vorgemerkten Befehl auch bei anschließendem Neustart der Steuerung | OK |
-| Diagnose: Tag/Wert/Bedeutung, unbekannter Tag, ungesicherter Fehlercode, Rohdaten und kopierter Gesamtbericht | OK |
-| Power bleibt aktiv; Orange/Weiß/Grün entsprechen bestätigtem Zustand, fehlendem `pwr`, Kindersicherung und Verbindungsausfall | OK |
-| Tatsächlich gerenderte Power-Farben deckend auf normalem und vollständig transparentem Hintergrund | OK |
-| Offline-Power beendet laufende Abfrage; einmal Einschalten, erst neue Antwort ändert Orange auf Grün | OK |
-| Fehlgeschlagener Offline-Einschaltversuch bleibt orange und wird nicht automatisch wiederholt; neuer Benutzerklick erlaubt | OK |
-| Stoppen verwirft noch nicht gestarteten Power-Auftrag nach abgebrochener Statusabfrage | OK |
-| Power während QProcess-Startphase wird einmal ausgeführt, ohne falschen Verbindungsfehler | OK |
-| Native X11-Fensterattribute | Übersprungen: kein X11-Display |
+| Dauerbeobachtung | Mehrere Meldungen aus genau einem Prozess; keine periodischen Einzelabfragen |
+| Reale Zeitspanne | 19 Sekunden zwischen Meldungen; nach 11 Sekunden weiterhin online; kein Neustart |
+| Startparameter | status-observe -J --timeout 60 --idle-timeout 90 |
+| Streamingparser | Aufgeteilte JSON-Zeile und mehrere Zeilen in einem Ausgabeblock |
+| Eingabeschutz | Ungültiges JSON und übergroße unvollständige Statuszeile führen zum kontrollierten Fehler |
+| Wiederverbindung | Unerwartetes Prozessende, ausbleibende erste Meldung, späterer Datenstillstand |
+| Lebenszyklus | Stop/Start während Prozessanlauf; F5 startet nur einen Ersatzempfänger; Stop beendet Wiederverbindung |
+| Bedienbarkeit | Empfang sperrt die Tasten nicht; ein Schreibauftrag sperrt nur die übrigen Tasten |
+| Power | Immer aktiv, Orange/Weiß/Grün, Kindersicherung, fehlender Status, transparente Hintergründe |
+| Offline-Power | Ein Einschaltversuch ohne Abwarten der ersten Statusantwort, ohne Empfängerabbruch |
+| Schreibbestätigung | Vor Schreibannahme empfangene Meldungen bestätigen den Auftrag nicht |
+| Schreibfehler | Kein falscher Offline-Wechsel bei weiterhin gültiger Beobachtung |
+| Schreib-Watchdog | Genau ein Versuch; keine automatische Wiederholung |
+| Bestätigungsfrist | Ausbleibende Statusbestätigung gibt Bedienung wieder frei; keine Wiederholung |
+| Gleichzeitige Wiederverbindung | Laufender Schreibauftrag wird bei Beobachtungsneustart nicht erneut gesendet |
+| Echter CoAP-Transport | GUI-Controller und echtes CLI gegen lokalen UDP-Gerätesimulator |
+| Elternprozessschutz | Hart beendetes Hilfs-Widget führt nachweislich zu SIGTERM und Ende seines Empfängers |
+| Bestehende Funktionen | Panelbefehle/Datentypen, Menüs, Schriftgrößen, Transparenz, Werte, Position, Einstellungen und Autostart |
+| Diagnose | Erklärungen, Rohdaten, unbekannte Tags, Kopierbericht |
+| Vorschau | Keine Geräteschreibzugriffe |
+| Wayland-Routing | Simulierte Sitzung: Fensterflags, Verschiebeanfrage, Menü, keine X/Y-Aktion |
 
-Für Version 0.1.0 wurden zusätzlich die 14 vorhandenen UDP-Integrationstests aus
-`aioairctrl-cpp` gegen `airctrl-backend` ausgeführt: alle erfolgreich. Das Backend
-ist in Version 0.3.4 unverändert; diese Suite wurde nicht erneut ausgeführt. Darunter
-IPv4/IPv6, echte UDP-Loopback-Kommunikation, Python-Referenzverschlüsselung,
-Statusbeobachtung, CoAP-Fehler, Timeouts und typisierte Schreibwerte. Die
-Async-Untertests verwendeten den bereits gebauten C++-Testtreiber des ursprünglichen
-Bibliotheksprojekts. Diese zusätzliche Suite gehört weiterhin zum ursprünglichen
-`aioairctrl-cpp`-Paket.
+### Echter UDP-Integrationstest
 
-Die fünf eingebundenen C++-Protokolldateien wurden byteweise mit dem zuvor am
-Benutzergerät erfolgreichen C++-Port verglichen: unverändert.
+Der Test bindet ausschließlich an 127.0.0.1 mit dynamischem UDP-Port. Er startet
+das tatsächlich gebaute airctrl-backend über den GUI-Controller.
 
-## Oberfläche und Installation
+Der Simulator beantwortet Synchronisierung und Beobachtungsanmeldung, sendet
+verschlüsselte CoAP-Statusmeldungen mit wiederverwendeter Message-ID und
+verarbeitet einen Power-Schreibbefehl auf einem separaten Socket. Geprüft werden:
 
-- Die echte Qt-Oberfläche wurde im Vorschau-Modus als PNG gerendert und visuell
-  geprüft: `vorschau.png`. Keine überlappenden oder abgeschnittenen Bedienelemente
-  bei der geprüften Standardskalierung (287 × 85 Pixel).
-- Die Vorschau zeigt 55 % Luftfeuchte, Ziel 50 %, 24 °C und PM2,5 = 1.
-  Sie greift nicht auf das reale Gerät zu; der Vorschaustatus steht nur im Tooltip und Kontextmenü.
-- `install.sh` wurde erneut mit einem separaten absoluten Testpräfix ausgeführt:
-  Build und Ersetzen der vorherigen Installation erfolgreich; beide Programme vorhanden.
-- Der Versionsaufruf der installierten GUI meldet `airctrl-desklet 0.3.4`.
-- Shellsyntax von Installations- und Deinstallationsskript geprüft.
+- genau eine Beobachtungsanmeldung;
+- eine Synchronisierung für den Empfänger und eine für den Schreibprozess;
+- genau ein Schreibauftrag;
+- unverändert bestehende Beobachtung während des Schreibens;
+- neue Statusmeldung bestätigt pwr="0";
+- keine Abmeldung bis zum ausdrücklichen Stopp; danach genau eine Abmeldung.
 
-## Layout und Einstellungen
+Dieser Test prüft die Integration mit dem echten Transport, nicht jede Eigenheit
+der Philips-Firmware. Die Verschlüsselungsroutine ist in diesem Simulator dieselbe
+C++-Routine wie im Client; er ist kein unabhängiger Kryptografie-Test.
 
-Die vorherige Kreisanzeige ist entfernt. Der Benutzer wünscht nur Tastenleiste und
-Werte; alle weiteren Funktionen liegen im Kontextmenü. Das Standardlayout wurde
-als 287 × 85 Pixel gerendert und visuell geprüft. Große Schrift vergrößert die
-Inhaltsfläche automatisch. Verfügbare Werte lassen sich im Kontextmenü auswählen.
+### Beenden und Elternprozessschutz
 
-Hintergrundfarbe, Vordergrundfarbe, Transparenz, komplette QFont-Einstellung und
-Werteauswahl wurden gespeichert und erneut geladen. Der Darstellungstest sendet
-ein Kontextmenü-Ereignis an eine Wertezeile, setzt die Transparenz im Dialog und
-prüft den gespeicherten Wert sowie das Ausbleiben von Backend-Aufrufen. Neue
-Maustests ergänzen vollständige Press/Release-Folgen auf mehreren Oberflächen.
-Die Alpha-Prüfung verwendet echte Qt-Bilddaten: Hintergrund 0/50/100 % transparent,
-Text weiterhin deckend. Qt-Offscreen unterstützt das Rendern dieser Alpha-Werte;
-die Komposition mit einem echten Cinnamon-Desktophintergrund wurde nicht getestet.
+Ein separates Qt-Hilfsprogramm startet einen dauerhaften Empfänger. Der Test
+beendet das Hilfsprogramm hart, sodass dessen Destruktor nicht laufen kann.
+Der Empfänger dokumentiert anschließend seinen tatsächlichen SIGTERM-Ausstieg.
+Dies prüft Linux PR_SET_PDEATHSIG, ohne sich auf Prozessnummern im möglicherweise
+anders eingebundenen /proc der Testumgebung zu verlassen.
 
-Die Steuerbefehle sind gegenüber 0.2.0 unverändert. Quellen für deren Zuordnung
-stehen in `README.md`. Keine Wartungsalarme werden aus undokumentierten Statusbits
-abgeleitet.
+Die erste Variante dieser Testprüfung über /proc/<pid>/stat schlug bereits bei
+der Prüfung des laufenden Kindes fehl. Sie wurde durch die direkte Exit-Bestätigung
+des Testempfängers ersetzt. Das Produktionsverhalten wurde dabei nicht abgeschwächt.
 
-## Erklärte Diagnosefelder
+## Erkenntnisse aus dem Benutzer-Mitschnitt
 
-Das Diagnosefenster besitzt drei Reiter: erklärte Gerätewerte, erklärte
-Verbindungsfelder und unveränderte Rohdaten. Der Gerätetabelle werden ausschließlich
-Tags hinzugefügt, die tatsächlich in der letzten Statusantwort enthalten sind.
-Jede Zeile zeigt Tag, JSON-typgetreuen Rohwert und deutsche Beschreibung.
-Der kopierte Bericht enthält beide Erklärungstabellen und den vollständigen
-JSON-Block. Gerätedaten werden dabei nicht verändert.
+Vor dem Umbau wurden PCAPNG und Terminalausgabe rein lesend untersucht.
+Der Mitschnitt enthält die erfolgreiche Observe-Sitzung, nicht die
+fehlgeschlagenen Widget-Einzelabfragen.
 
-Der Integrationstest speist bekannte Felder sowie einen unbekannten künftigen Tag
-mit einem JSON-Objektwert ein. Er prüft die Beschreibung von `pwr`, die vorsichtige
-Behandlung eines unbekannten `err`-Codes, die verlustfreie Darstellung des
-unbekannten Objektwertes, die Rohdaten und den kopierten Gesamtbericht. Der Dialog
-wurde zusätzlich unter Qt-Offscreen als `diagnose-vorschau.png` gerendert und
-visuell geprüft.
+- Synchronisierung: 3,51 ms.
+- Erste Statusmeldung: 8,46 s nach Anmeldung.
+- Sieben Statusmeldungen während rund 78,5 s bis zum Abbruch.
+- Meldungspausen unter anderem 18,05 s, 18,04 s und 19,04 s.
+- Alle sieben entschlüsselten Statusobjekte stimmen vollständig mit der
+  Terminalausgabe überein; Token und Beobachtungssequenz passen.
+- Nach dem Abbruch noch Meldungen an geschlossene Ports, gefolgt von ICMP
+  „Port unreachable“.
 
-## Bedienbarkeit während Statusabfragen
+Die Mitschnittdaten selbst, Gerätekennungen und sonstiger mitgeschnittener
+Netzverkehr sind nicht Bestandteil dieses ZIPs.
 
-Bis 0.3.1 hing die Freigabe der Gerätetasten am allgemeinen `busy`-Zustand des
-Controllers. Jede Hintergrundabfrage sperrte deshalb die gesamte Tastenleiste
-bis zum Empfang der Antwort. Version 0.3.2 sperrt die Tasten stattdessen während
-einer vom Benutzer ausgelösten Änderung und bis zu deren Rückmeldung. Seit 0.3.4
-ist Power von allen UI-Sperren ausgenommen. Offline-, Vorschau-, Kindersicherungs-
-und geräteabhängige Sperren gelten weiterhin für die übrigen Tasten.
+## Oberfläche, Diagnose und Kompatibilität
 
-Der Controller merkt genau einen während einer laufenden Abfrage eingehenden
-Steuerbefehl vor und startet ihn nach einer gültigen Antwort. Diese ältere Antwort
-wird nicht als Bestätigung an die Oberfläche geliefert. Nach dem Schreiben folgt
-wie bisher eine neue Statusabfrage. Es laufen keine Backend-Prozesse parallel.
-Ein Fehler oder Stoppen verwirft den vorgemerkten Befehl.
+Das kompakte Panel und die Power-Farben bleiben unverändert. Die echte Qt-Oberfläche
+wurde als vorschau.png und mit drei Power-Zuständen als power-vorschau.png gerendert.
+Die Diagnoseansicht steht in diagnose-vorschau.png.
 
-Der neue Integrationstest hält die simulierte Leseantwort gezielt zurück und
-zeichnet alle `EnabledChange`-Ereignisse der acht Tasten auf. Während der normalen
-Abfrage tritt keine Deaktivierung auf. Ein anschließender echter Mausklick während
-einer weiteren Abfrage führt zur Folge Lesen → einmal Schreiben → neu Lesen.
-Außer Power bleiben die Tasten bis zu dieser neuen Antwort gesperrt. Weitere Prüfungen decken
-den Abbruch bei Prozessfehler, ungültiger Antwort, Timeout und Stoppen ab.
+Die Diagnose erklärt jetzt Empfangsmodus, Empfangsphase, Zahl der Statusmeldungen,
+Beobachtungsstarts, Anlauf-/Stillstandsfristen, Bestätigung und Wiederverbindung.
+Ein Schaltfehler bleibt separat sichtbar, ohne eine gesunde Beobachtung auf
+offline zu setzen.
 
-## Power-Zustand und Offline-Bedienung
+Der alte gespeicherte Intervallwert bleibt erhalten und wird als Wiederverbindungspause
+nach einem Fehler genutzt. Darstellung und übrige Einstellungen bleiben erhalten.
 
-Power wird nie deaktiviert. Der gefüllte Kreis zeigt Orange (`#ff9800`) ohne
-aktuellen gültigen Betriebszustand, Weiß (`#ffffff`) für bestätigt aus und Grün
-(`#2ecc71`) für bestätigt an. Sein dunkler Umriss und sein Symbol sorgen auch
-auf weißem Hintergrund für Sichtbarkeit. Benutzervordergrundfarbe und
-Hintergrundtransparenz überschreiben diese Anzeige nicht. Tooltips enthalten
-dieselben Informationen in Textform, einschließlich Vorschau und Kindersicherung.
+Der CoAP-Protokollcode ist gegenüber 0.3.4 unverändert; der Controller nutzt den
+bereits vorhandenen und vom Benutzer erfolgreich getesteten Observe-Modus.
+Die vollständige frühere Python/UDP-Protokolltestsuite wurde für 0.3.5 nicht erneut
+ausgeführt; stattdessen wurde der oben beschriebene reale UDP-Integrationstest
+für die veränderte GUI-Anbindung hinzugefügt.
 
-Im Offline-Zustand wird bei explizitem Klick einmal `pwr=1` gesendet, unabhängig
-vom alten letzten Wert. Eine noch laufende Statusabfrage darf dafür abgebrochen
-werden; der Schreibprozess beginnt erst nach deren Ende. Weder Prozessabbruch
-noch Schreibannahme täuschen eine erfolgreiche Verbindung vor. Erst der neue
-Status kann die Farbe auf Grün ändern. Zusätzliche Klicks während eines Befehls
-werden ignoriert, nicht gesammelt. In der Vorschau bewirkt Power keinen Zugriff.
+## Grenzen der Prüfung
 
-Die Tests prüfen laufende und gerade erst startende Abfragen, Abbruch beim
-Stoppen, fehlerhafte Schreibantworten, alte ON-Werte nach Verbindungsverlust,
-Doppelklicks und die Freigabe trotz Kindersicherung. Die drei tatsächlichen
-Qt-Renderings stehen in `power-vorschau.png` und wurden visuell geprüft.
+Keine laufende Cinnamon/Muffin- oder echte Wayland-Sitzung in dieser Umgebung.
+Popup-Darstellung, Desktop-Ebene, Tray, interaktives Verschieben und Autostart müssen
+weiterhin in der Benutzersitzung geprüft werden.
 
-## Menü und Wayland
-
-Der vorherige direkte Kontextmenü-Test deckte die tatsächliche Mausfolge nicht ab.
-Seit Version 0.3.1 werden Rechtsklicks in den Ereignisfiltern aller Widgetflächen behandelt.
-Ein kurzer Linksklick auf einen Wert öffnet dasselbe Menü; Mausbewegung über der
-Ziehschwelle löst stattdessen das Verschieben aus. Menüs werden nach Abschluss
-der Maustastenfreigabe geöffnet, zusätzliche native Kontext-Ereignisse dedupliziert.
-
-Eine Wayland-Sitzung wird über Qt-Plattformname, `XDG_SESSION_TYPE` und gegebenenfalls
-`WAYLAND_DISPLAY` erkannt. Auch bei XWayland werden die X11-DOCK/BELOW-Attribute
-in einer Wayland-Sitzung nicht gesetzt. Das Widget fordert das Verschieben über
-[QWindow::startSystemMove](https://doc.qt.io/qt-6/qwindow.html#startSystemMove) während
-der gehaltenen Maustaste an. Es setzt dort keine feste globale Fensterposition.
-Darstellungsänderungen überschreiben zuvor gespeicherte X11-Koordinaten nicht.
-
-Der automatisierte Wayland-Prüffall setzt den Sitzungstyp unter Offscreen und
-ersetzt ausschließlich den Aufruf an den Compositor durch einen Zähler. Er prüft
-die Ereignisführung, Fensterflags, Menüzugriff, Positionssperre und Speicherung.
-Er beweist keine tatsächliche Verschiebung oder Popup-Anzeige unter Cinnamon/Wayland.
-
-## Noch nicht hier geprüft
-
-Die nur für X11 verwendete Kombination DOCK + BELOW wurde anhand des
-[Muffin-Quellcodes](https://github.com/linuxmint/muffin/blob/cde5c6210e7d8c4239a8d4ba410bfdaeb12e0caa/src/x11/window-x11.c)
-geprüft: `get_standalone_layer` ordnet sie `META_LAYER_BOTTOM` zu. Die Reihenfolge
-in `src/meta/common.h` ist DESKTOP < BOTTOM < NORMAL. Das erklärt die Änderung
-gegenüber dem früheren DESKTOP-Fenstertyp, ersetzt aber keinen Sitzungstest.
-
-Keine laufende Cinnamon/Muffin- oder Wayland-Sitzung in der Testumgebung. Menü-Popups,
-interaktives Verschieben unter Wayland, Desktop-Ebene,
-„Desktop anzeigen“, virtuelle Arbeitsflächen, Tray und Autostart müssen in der
-Benutzersitzung erprobt werden. Bei Bedarf `--window` benutzen.
-
-Kein Zugang zum physischen Philips-Gerät: Die Statusabfrage des zugrunde liegenden
-C++-Ports hat der Benutzer bereits bestätigt. Neue GUI-Bedienung und
-Schreibbefehle wurden hier gegen simulierte Antworten geprüft.
-
-Der Screenshot des Benutzers zeigt auch bereits empfangene GUI-Messwerte und einen
-anschließenden Verbindungsfehler. Dessen genaue Ursache ist noch unbekannt.
-Version 0.3.4 verwendet weiterhin zehn Sekunden je CoAP-Anfrage, einen Prozess-Watchdog von
-25 Sekunden und eine einmalige Wiederholung fehlgeschlagener Statusabfragen.
-Die neue Diagnose zeigt den tatsächlichen Backend-Fehler. Eine Behebung der
-AT-SPI-Startmeldungen ist nicht Teil dieses Updates.
+Kein Zugriff auf den physischen AC2729/10. Der Benutzer hat den CLI-Observe-Modus
+am Gerät bestätigt; die neue GUI-Anbindung einschließlich gleichzeitiger
+Schreibbefehle wurde hier mit simuliertem Gerät getestet. Das Update ist somit
+noch kein Nachweis, dass jede mögliche Ursache eines Netzwerkausfalls behoben ist.
+AT-SPI-Startmeldungen werden durch dieses Update nicht verändert.

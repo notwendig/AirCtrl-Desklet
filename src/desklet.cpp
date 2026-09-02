@@ -108,6 +108,11 @@ Desklet::Desklet(Preferences preferences, QString backend, bool demo)
     connect(menuShortcut,&QShortcut::activated,this,[this] { openMenu(mapToGlobal(rect().center())); });
     connect(&controller_,&Controller::statusReceived,this,&Desklet::applyStatus);
     connect(&controller_,&Controller::failed,this,&Desklet::setConnectionError);
+    connect(&controller_,&Controller::commandFailed,this,[this](const QString& error) {
+        awaitingConfirmation_=false; pending_={}; notice_=error; commandError_=error;
+        qWarning().noquote()<<"AirControl – Schaltbefehl:"<<error;
+        updateControls(); updateFooter();
+    });
     connect(&controller_,&Controller::busyChanged,this,[this] { updateControls(); });
     connect(&controller_,&Controller::controlAccepted,this,[this] {
         notice_="Befehl angenommen · Rückmeldung wird gelesen …"; updateFooter();
@@ -171,7 +176,7 @@ void Desklet::updateValues() {
     resizeToContent();
 }
 void Desklet::sendValues(const QJsonObject& values) {
-    if(!connected_ || demo_ || awaitingConfirmation_) return;
+    if(!connected_ || demo_ || awaitingConfirmation_ || controller_.busy()) return;
     pending_=values; awaitingConfirmation_=true; notice_="Änderung wird ausgeführt …";
     updateControls(); updateFooter(); controller_.setPanelValues(values);
 }
@@ -179,7 +184,7 @@ void Desklet::openControl(int index) {
     if(!controls_[index]->isEnabled()) return;
     if(index==0) {
         if(demo_) { notice_="Vorschau – keine Gerätesteuerung"; updateFooter(); return; }
-        if(awaitingConfirmation_) {
+        if(awaitingConfirmation_ || controller_.busy()) {
             notice_="Ein Befehl läuft bereits · Geräterückmeldung abwarten …";
             updateFooter(); return;
         }
@@ -189,7 +194,7 @@ void Desklet::openControl(int index) {
         awaitingConfirmation_=true;
         notice_=known ? "Änderung wird ausgeführt …" : "Keine aktuelle Rückmeldung · Einschalten wird versucht …";
         updateControls(); updateFooter();
-        controller_.setPower(turnOn,!known);
+        controller_.setPower(turnOn);
         return;
     }
     if(index==1) { sendValues({{"cl",!status_["cl"].toBool()}}); return; }
@@ -230,12 +235,13 @@ void Desklet::applyStatus(const QJsonObject& status) {
     awaitingConfirmation_=false; updateValues(); updateControls(); updateFooter();
 }
 void Desklet::setConnectionError(const QString& error) {
-    connected_=false; awaitingConfirmation_=false; error_=error; notice_=error;
+    connected_=false; error_=error; notice_=error;
+    if(!controller_.busy()) awaitingConfirmation_=false;
     updateValues();
     qWarning().noquote()<<"AirControl:"<<error; updateControls(); updateFooter();
 }
 void Desklet::updateControls() {
-    const bool ready=connected_ && !awaitingConfirmation_ && !demo_;
+    const bool ready=connected_ && !awaitingConfirmation_ && !controller_.busy() && !demo_;
     const bool unlocked=!status_["cl"].toBool();
     const bool on=status_["pwr"]=="1";
     const bool available[]={powerKnown(status_),status_["cl"].isBool(),status_.contains("mode"),
@@ -424,7 +430,7 @@ void Desklet::openMenu(const QPoint& point) {
         });
     }
     menu.addSeparator();
-    auto* refresh=menu.addAction("Aktualisieren (F5)",this,[this] { controller_.refresh(); });
+    auto* refresh=menu.addAction("Statusverbindung neu starten (F5)",this,[this] { controller_.refresh(); });
     refresh->setEnabled(!controller_.busy() && !awaitingConfirmation_ && !demo_);
     auto* settings=menu.addAction("Verbindung und Autostart …",this,&Desklet::showSettings);
     settings->setEnabled(!controller_.busy() && !awaitingConfirmation_ && !demo_);
@@ -462,7 +468,8 @@ void Desklet::showSettings() {
     QSpinBox interval; interval.setRange(5,300); interval.setSuffix(" Sekunden"); interval.setValue(preferences_.interval);
     QCheckBox desktop("Rahmenloses Widget"); desktop.setChecked(preferences_.desktop);
     QCheckBox autostart("Bei der Anmeldung starten"); autostart.setChecked(QFileInfo::exists(autostartPath()));
-    form->addRow("Geräteadresse", &host); form->addRow("UDP-Port", &port); form->addRow("Aktualisierung", &interval);
+    interval.setToolTip("Pause vor einem neuen Verbindungsversuch nach einem Fehler. Statusmeldungen kommen automatisch vom Gerät.");
+    form->addRow("Geräteadresse", &host); form->addRow("UDP-Port", &port); form->addRow("Wiederverbindung nach Fehler", &interval);
     layout->addLayout(form); layout->addWidget(&desktop); layout->addWidget(&autostart);
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel);
     buttons->button(QDialogButtonBox::Save)->setText("Speichern"); buttons->button(QDialogButtonBox::Cancel)->setText("Abbrechen");
@@ -490,13 +497,15 @@ void Desklet::showDetails() {
     auto* layout = new QVBoxLayout(&dialog);
     auto* tabs = new QTabWidget(&dialog); tabs->setObjectName("diagnosticTabs");
     const auto heading = QString("AirControl %1\nGerät: %2:%3\nPlattform: %4\nBackend: %5\n"
-                                 "Timeout je CoAP-Anfrage: 10 Sekunden\nLetzter Empfang: %6\n\n")
+                                 "Empfang: dauerhafte CoAP-Beobachtung (status-observe)\n"
+                                 "Anlauf: 60 s je Anfrage · Datenpause: 90 s · Schaltanfrage: 10 s\nLetzter Empfang: %6\n\n")
         .arg(QCoreApplication::applicationVersion(), preferences_.host)
         .arg(preferences_.port).arg(QGuiApplication::platformName(), controller_.backendPath(),
             updated_.isValid() ? updated_.toString(Qt::ISODate) : "noch keiner");
     const auto session=QString("Desktopsitzung: %1\nWayland-Behandlung: %2\n\n")
         .arg(qEnvironmentVariable("XDG_SESSION_TYPE","unbekannt"),waylandSession_ ? "ja" : "nein");
-    const auto errorText=error_.isEmpty() ? QString() : "Letzter Verbindungsfehler:\n"+error_+"\n\n";
+    const auto errorText=(error_.isEmpty() ? QString() : "Letzter Verbindungsfehler:\n"+error_+"\n\n")+
+        (commandError_.isEmpty() ? QString() : "Letzter Schaltfehler:\n"+commandError_+"\n\n");
     const auto rawJson=QString::fromUtf8(QJsonDocument(status_).toJson(QJsonDocument::Indented));
     const auto deviceFields=describeDeviceFields(status_);
     const auto table=[&](const QList<DiagnosticField>& fields,const QString& name) {
@@ -531,10 +540,19 @@ void Desklet::showDetails() {
         {"Desktopsitzung",qEnvironmentVariable("XDG_SESSION_TYPE","unbekannt"),"Vom Desktop gemeldeter Sitzungstyp. Er kann vom Qt-Fenster-Backend abweichen."},
         {"Wayland-Behandlung",waylandSession_ ? "ja" : "nein","Ob das Widget seine Wayland-spezifische Fensterbehandlung verwendet."},
         {"Backend",controller_.backendPath(),"Pfad des separaten C++-Programms für die verschlüsselte CoAP-Kommunikation."},
-        {"CoAP-Timeout","10 Sekunden","Maximale Wartezeit je Anfrage; der Prozess-Watchdog hat zusätzlich Startreserve."},
+        {"Empfangsmodus","Dauerhafte Beobachtung","Ein langlebiger status-observe-Prozess empfängt neue Meldungen ohne regelmäßige Einzelabfragen."},
+        {"Empfangsphase",controller_.observationProgress(),"Fortschritt des Empfängers; der Hintergrundempfang sperrt keine Bedienelemente."},
+        {"Statusmeldungen",QString::number(controller_.statusCount()),"Anzahl gültiger Statuszeilen seit Programmstart."},
+        {"Beobachtungsstarts",QString::number(controller_.observationStarts()),"Ein Start im Normalbetrieb; weitere Starts nur nach Fehler, F5 oder geänderten Einstellungen."},
+        {"CoAP-Anlauf","60 Sekunden je Anfrage","Synchronisierung und erste Statusantwort erhalten jeweils bis zu 60 Sekunden. Der Prozess-Watchdog erlaubt insgesamt 125 Sekunden."},
+        {"Maximale Datenpause","90 Sekunden","Erst nach längerem Ausbleiben von Statusmeldungen wird neu verbunden. Die beobachteten 18–19 Sekunden sind normale Pausen."},
+        {"Schaltbefehl","10 Sekunden je Anfrage","Separater Schreibprozess; maximal 25 Sekunden einschließlich Synchronisierung. Keine automatische Wiederholung."},
+        {"Statusbestätigung","90 Sekunden","Nach der Schreibannahme wird auf eine neue Meldung der laufenden Beobachtung gewartet."},
+        {"Wiederverbindung",QString::number(preferences_.interval)+" Sekunden","Pause vor einem neuen Empfangsversuch nach einem Fehler; kein Abfrageintervall."},
         {"Letzter Empfang",updated_.isValid() ? updated_.toString(Qt::ISODate) : "noch keiner","Zeitpunkt der letzten gültigen JSON-Statusantwort."}
     };
     if(!error_.isEmpty()) connectionFields.append({"Letzter Fehler",error_,"Unveränderte letzte Fehlermeldung des Backends bzw. der Verbindungssteuerung."});
+    if(!commandError_.isEmpty()) connectionFields.append({"Letzter Schaltfehler",commandError_,"Ein Schaltfehler bedeutet nicht automatisch, dass die weiterhin aktive Beobachtung offline ist."});
     tabs->addTab(table(connectionFields,"connectionFields"),"Verbindung erklärt");
     auto* raw = new QPlainTextEdit(&dialog); raw->setObjectName("rawDiagnostics"); raw->setReadOnly(true);
     raw->setAccessibleName("Unveränderte Verbindungsdiagnose und Geräte-Rohdaten");

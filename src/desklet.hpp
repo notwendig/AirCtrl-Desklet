@@ -54,7 +54,7 @@ private:
     QPoint dragOffset_;
     QDateTime updated_;
     QJsonObject status_, pending_;
-    QString error_, notice_;
+    QString error_, notice_, commandError_;
     std::array<PanelButton*,8> controls_{};
     QWidget* valueArea_;
     QGridLayout* valueLayout_;

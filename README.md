@@ -1,13 +1,14 @@
-# Philips AirControl – Qt6-Gerätepanel 0.3.4
+# Philips AirControl – Qt6-Gerätepanel 0.3.5
 
 Kompaktes C++/Qt6-Desktopwidget für den Philips AC2729/10 „Wohnzimmer“ unter
 Cinnamon. Geräteadresse voreingestellt: **192.168.77.5**, UDP-Port **5683**.
 Der bereits am Gerät funktionierende C++-CoAP-Code ist vollständig enthalten.
 
-Version 0.3.4 hält Power immer anklickbar: orange ohne bestätigten aktuellen
-Betriebszustand, weiß bei „aus“, grün bei „an“. Auch offline und bei aktivierter
-Kindersicherung wird Power nicht ausgegraut. Die übrigen Tastensperren bleiben
-erhalten. Hintergrundabfragen lassen die Tasten wie seit 0.3.2 bedienbar.
+Version 0.3.5 ersetzt wiederholte Einzelabfragen durch eine dauerhafte
+CoAP-Beobachtung (`status-observe`). Schaltbefehle beenden diese Beobachtung nicht.
+Die im Mitschnitt beobachteten 18–19 Sekunden zwischen Meldungen lösen keinen
+Offline-Wechsel mehr aus. Power bleibt wie in 0.3.4 immer anklickbar:
+orange ohne Verbindung, weiß bei „aus“, grün bei „an“.
 
 ## Kompakte Oberfläche
 
@@ -55,7 +56,7 @@ Das neue ZIP im Ordner Downloads speichern. Die vorhandenen Abhängigkeiten reic
 ```bash
 pkill -x airctrl-desklet
 cd /home/juergen/Projects/Qt
-unzip -o ~/Downloads/airctrl-desklet-0.3.4.zip
+unzip -o ~/Downloads/airctrl-desklet-0.3.5.zip
 cd /home/juergen/Projects/Qt/airctrl-desklet
 bash install.sh
 env -u QT_QPA_PLATFORM ~/.local/bin/airctrl-desklet
@@ -111,7 +112,7 @@ dort gibt es zusätzlich „Position festlegen …“ für X/Y-Koordinaten.
 Diagnose, Position sperren und Beenden. Im Menü steht auch der Verbindungsstatus.
 Ein kurzer Linksklick auf einen Wert öffnet dasselbe Menü.
 Bei aktivem Widget funktioniert auch die Menütaste oder **Umschalt+F10**.
-**F5:** Status aktualisieren. **F1:** Diagnose öffnen.
+**F5:** Statusverbindung ausdrücklich neu starten. **F1:** Diagnose öffnen.
 **Diagnose:** Der erste Reiter zeigt für jeden empfangenen Geräte-Tag den
 unveränderten Wert und eine deutsche Bedeutung. Der zweite Reiter erklärt
 Verbindung, Qt-Plattform, Sitzung und Backend. Unter „Rohdaten“ bleibt der
@@ -129,7 +130,7 @@ Rohwert bleibt erhalten; insbesondere aus einem unbekannten `err`-Code wird kein
 gesicherter Wartungsalarm abgeleitet. Die bekannten Grundzuordnungen folgen der
 [Philips-CoAP-Integration](https://github.com/kongo09/philips-airpurifier-coap/blob/master/custom_components/philips_airpurifier_coap/const.py).
 
-Regelmäßige Statusabfragen lassen die Gerätetasten bedienbar. **Power bleibt immer
+Die laufende Statusbeobachtung lässt die Gerätetasten bedienbar. **Power bleibt immer
 aktiv.** Die übrigen Tasten sind beim Ausführen eines Steuerbefehls bis zur
 Rückmeldung, offline und in der Vorschau gesperrt.
 Bei aktivierter Kindersicherung bleiben Power und die Taste zum Entsperren
@@ -153,34 +154,64 @@ werden bis zu dessen Rückmeldung ignoriert. Es werden keine Doppelbefehle vorge
 
 ## Verbindung und Rückmeldungen
 
-Nach einer Änderung liest die Anwendung den Status neu. Nur die Rückmeldung
-ändert die angezeigten Werte. Schreibbefehle werden nie automatisch wiederholt.
-Empfangene Messwerte lösen ihrerseits keine Schreibbefehle aus.
+Ein langlebiger Empfänger ruft einmal `status-observe -J` auf. Jede vollständige
+JSON-Zeile wird sofort verarbeitet, auch wenn Zeilen über mehrere Prozessausgaben
+verteilt sind oder mehrere Meldungen zusammen eintreffen. Es gibt keinen
+periodischen Neustart des Empfängers und keine zyklische Neusynchronisierung.
 
-Ein während einer Statusabfrage geklickter normaler Befehl wartet auf deren erfolgreichen
-Abschluss. Die ältere Antwort gilt nicht als Bestätigung dieses Befehls; erst
-der neue Status nach dem Schreiben aktualisiert die Anzeige. Schlägt die laufende
-Abfrage fehl oder wird das Widget beendet, wird der vorgemerkte Befehl verworfen.
-Er wird bei einer späteren Wiederverbindung nicht nachträglich ausgeführt.
+| Grenze | Einstellung in 0.3.5 |
+|---|---|
+| Synchronisierung / erste Statusantwort | Jeweils bis zu 60 s |
+| Gesamter Anlauf-Watchdog | 125 s einschließlich Startreserve |
+| Keine weiteren Statusmeldungen | Backend beendet nach 90 s; zusätzlicher GUI-Watchdog nach 95 s |
+| Wiederverbindung nach Fehler | Standard 10 s; unter Einstellungen 5–300 s |
+| Schaltanfrage | 10 s je Anfrage, Prozess-Watchdog 25 s |
+| Statusbestätigung nach angenommener Änderung | Bis zu 90 s |
 
-**Ausnahme: Power ohne aktuellen Betriebszustand.** Ein expliziter Klick versucht
-einmal einzuschalten, auch wenn Statusabfragen scheitern. Eine laufende Leseabfrage
-wird dafür beendet; erst nach deren Prozessende beginnt der Schreibbefehl. Es
-laufen niemals Lesen und Schreiben parallel. Stoppen verwirft auch diesen Auftrag.
-Fehlgeschlagene Power-Schreibbefehle werden nicht automatisch wiederholt.
+Der bisher gespeicherte Intervallwert wird jetzt als **Wiederverbindungspause**
+verwendet; er bestimmt nicht mehr, wie oft neue Messwerte empfangen werden.
+Die Meldungsrate bestimmt das Gerät. F5 startet die Beobachtung nur auf ausdrücklichen
+Benutzerwunsch neu. Ein gesunder Empfänger bleibt ansonsten bestehen.
 
-Die Abfrage läuft standardmäßig zehn Sekunden nach Abschluss der vorherigen
-Anfrage; das Intervall ist unter Einstellungen von 5 bis 300 Sekunden wählbar.
-Jede CoAP-Anfrage hat zehn Sekunden Zeit, der gesamte Backend-Prozess höchstens
-25 Sekunden. Eine fehlgeschlagene Statusabfrage wird einmal nach einer Sekunde
-wiederholt. Pro Widget läuft höchstens ein Backend-Prozess gleichzeitig.
+Zum Schalten läuft höchstens ein zusätzlicher Backend-Prozess auf einem eigenen
+UDP-Socket. Die Beobachtung bleibt dabei erhalten. Während der Schreibanfrage
+empfangene Meldungen können die Änderung noch nicht bestätigen. Erst eine neue
+Statusmeldung nach der Schreibannahme wird zur Rückmeldung verwendet.
+Der angezeigte Gerätezustand wird nie optimistisch umgeschaltet.
 
-Bei Verbindungsverlust bleiben letzte Messwerte abgeblendet sichtbar.
-„Keine Verbindung“, Zeitpunkt des letzten Empfangs und Fehlerdetails stehen
-im Tooltip der Werte und unter Diagnose; das Kontextmenü zeigt den Verbindungsstatus.
-Die Ursache des zuvor am Benutzergerät aufgetretenen Verbindungsabbruchs ist
-weiterhin nicht geklärt. Dieses Update ändert die Tastensperre und die Reihenfolge
-von Abfragen und Bedienbefehlen in der GUI. Das CoAP-Backend ist unverändert.
+Weitere Klicks während eines laufenden Befehls werden nicht gesammelt.
+Schreibbefehle werden **nie automatisch wiederholt**, auch nicht nach einem
+Timeout oder einer Wiederverbindung. Das gilt ebenfalls für den expliziten
+Offline-Power-Klick, der einmal `pwr=1` versucht, ohne die erste Statusmeldung
+abwarten oder die Beobachtung abbrechen zu müssen.
+
+Ein abgelehnter oder nicht bestätigter Schaltbefehl ist getrennt vom Zustand der
+Beobachtung: Ein weiterhin gültiger Empfang bleibt online. Verbindungsfehler
+setzen das Widget offline; letzte Werte bleiben abgeblendet sichtbar. Die Diagnose
+zeigt Empfangsphase, Zahl der Statusmeldungen, Beobachtungsstarts, Wartefristen
+und den letzten Schaltfehler. So lässt sich prüfen, ob der Empfänger wirklich
+dauerhaft läuft (normalerweise ein Beobachtungsstart).
+
+Unter Linux bekommen die Backend-Kinder ein Beendigungssignal, wenn das Widget
+beendet oder hart abgebrochen wird. Somit bleibt auch nach `pkill` kein dauerhafter
+Empfänger zurück. Ein normaler Stopp beendet die Beobachtung zunächst über SIGTERM;
+antwortet der Prozess nicht, wird er nach einer Sekunde beendet.
+
+### Grundlage aus dem Gerätemitschnitt
+
+Der vom Benutzer bereitgestellte Test lieferte sieben gültige Statusmeldungen
+über dieselbe Beobachtung. Alle sieben entschlüsselten JSON-Objekte stimmen mit
+der Terminalausgabe überein. Die Synchronisierung dauerte 3,51 ms, die erste
+Statusantwort 8,46 s. Weitere Meldungen hatten teilweise 18–19 s Abstand.
+Nach dem Beenden sendete das Gerät noch an geschlossene UDP-Ports.
+
+Diese Messungen begründen den Wechsel von kurzlebigen Einzelabfragen mit
+10-s-Frist zur Dauerbeobachtung. Die fehlgeschlagenen Widget-Abfragen selbst
+waren nicht im Mitschnitt enthalten; eine Behebung sämtlicher möglicher
+Netzwerkprobleme wird daher nicht behauptet. Die neue GUI-Anbindung ist hier
+automatisiert und per UDP-Loopback getestet, aber noch nicht am physischen Gerät.
+Der CoAP-Protokollcode selbst ist unverändert. AT-SPI-Meldungen der
+Desktop-Bedienungshilfen sind nicht Gegenstand dieses Updates.
 
 ## Desktop und Autostart
 

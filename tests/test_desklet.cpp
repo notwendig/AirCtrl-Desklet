@@ -1,4 +1,5 @@
 #include "desklet.hpp"
+#include "udp_device.hpp"
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -55,7 +56,7 @@ private:
         return gate.open(QIODevice::WriteOnly);
     }
     QList<QJsonArray> calls() {
-        QFile file(log_); file.open(QIODevice::ReadOnly);
+        QFile file(log_); if(!file.open(QIODevice::ReadOnly)) return {};
         QList<QJsonArray> out;
         for (const auto& line : file.readAll().split('\n'))
             if (!line.isEmpty()) out.append(QJsonDocument::fromJson(line).array());
@@ -90,171 +91,194 @@ private slots:
     void init() {
         qputenv("AIRCTRL_TEST_MODE", ""); QFile::remove(log_); QFile::remove(state_);
         qunsetenv("AIRCTRL_TEST_READ_GATE"); QFile::remove(temp_.filePath("read.ready"));
+        qunsetenv("AIRCTRL_TEST_WRITE_GATE"); QFile::remove(temp_.filePath("write.ready"));
+        qunsetenv("AIRCTRL_TEST_NOTIFY_GATE"); qunsetenv("AIRCTRL_TEST_TICK_MS");
+        qunsetenv("AIRCTRL_TEST_EXIT_FILE");
         QSettings().clear();
     }
-    void statusNoWrite() {
-        Controller c(FAKE_BACKEND); QSignalSpy status(&c, &Controller::statusReceived);
-        c.configure("127.0.0.1", 12345, 5); c.start();
-        QTRY_COMPARE(status.count(), 1);
-        QCOMPARE(status.at(0).at(0).toJsonObject().value("rh").toInt(), 55);
-        QCOMPARE(calls().size(), 1);
-        QVERIFY(calls()[0].contains("status")); QVERIFY(!calls()[0].contains("set"));
-        const auto args = calls()[0];
-        const auto timeoutIndex = args.toVariantList().indexOf("--timeout");
-        QVERIFY(timeoutIndex >= 0);
-        QCOMPARE(args[timeoutIndex + 1].toString(), QString("10"));
+    void observationStreamsWithoutPolling() {
+        Controller c(FAKE_BACKEND); QSignalSpy status(&c,&Controller::statusReceived), errors(&c,&Controller::failed);
+        c.configure("127.0.0.1",12345,5); c.start(); c.start();
+        QTRY_VERIFY(status.count()>=3);
+        QVERIFY(!c.busy()); QVERIFY(c.observing()); QCOMPARE(c.observationStarts(),quint64(1));
+        QCOMPARE(calls().size(),1); QCOMPARE(errors.count(),0);
+        const auto args=calls().first();
+        QVERIFY(args.contains("status-observe")); QVERIFY(!args.contains("status")); QVERIFY(!args.contains("set"));
+        QCOMPARE(args[args.toVariantList().indexOf("--timeout")+1].toString(),QString("60"));
+        QCOMPARE(args[args.toVariantList().indexOf("--idle-timeout")+1].toString(),QString("90"));
         c.stop();
+    }
+    void realisticNineteenSecondPauseStaysOnline() {
+        qputenv("AIRCTRL_TEST_TICK_MS","19000");
+        Desklet widget(Preferences{},FAKE_BACKEND); widget.showAndPosition(); widget.start();
+        auto* c=widget.findChild<Controller*>();
+        auto* power=static_cast<PanelButton*>(widget.findChild<QPushButton*>("power"));
+        QSignalSpy status(c,&Controller::statusReceived), errors(c,&Controller::failed);
+        QTRY_VERIFY(status.count()>=1);
+        QTest::qWait(11000); // deliberately exceed the old 10 s limit
+        QCOMPARE(status.count(),1); QCOMPARE(errors.count(),0); QCOMPARE(calls().size(),1);
+        QCOMPARE(power->statusColor(),QColor("#2ecc71")); QVERIFY(power->isEnabled());
+        QTRY_VERIFY_WITH_TIMEOUT(status.count()>=2,10000);
+        QCOMPARE(calls().size(),1); QCOMPARE(errors.count(),0); c->stop();
     }
     void typedWritesAndReadback() {
-        Controller c(FAKE_BACKEND); QSignalSpy status(&c, &Controller::statusReceived);
-        QSignalSpy accepted(&c, &Controller::controlAccepted);
-        c.start(); QTRY_COMPARE(status.count(), 1);
-        c.setPower(false); QTRY_COMPARE(accepted.count(), 1); QTRY_COMPARE(status.count(), 2);
-        QCOMPARE(status.last()[0].toJsonObject()["pwr"].toString(), QString("0"));
-        c.setHumidity(60); QTRY_COMPARE(accepted.count(), 2); QTRY_COMPARE(status.count(), 3);
-        QCOMPARE(status.last()[0].toJsonObject()["rhset"].toInt(), 60);
-        const auto requests = calls();
-        QCOMPARE(requests.size(), 5);
-        QVERIFY(requests[1].contains("pwr=0")); QVERIFY(!requests[1].contains("-I"));
-        QVERIFY(requests[3].contains("rhset=60")); QVERIFY(requests[3].contains("-I"));
-        QVERIFY(!requests[3].contains("rh=60"));
-        c.stop();
-    }
-    void pollingKeepsButtonsEnabledAndClickIsExecutedOnce() {
-        Desklet widget(Preferences{},FAKE_BACKEND); widget.showAndPosition();
-        auto* controller=widget.findChild<Controller*>(); QVERIFY(controller);
-        QSignalSpy status(controller,&Controller::statusReceived), accepted(controller,&Controller::controlAccepted);
-        widget.start(); QTRY_COMPARE(status.count(),1);
-        const auto buttons=widget.findChildren<QPushButton*>(); QCOMPARE(buttons.size(),8);
-        EnablementRecorder recorder;
-        for(auto* button:buttons) { QVERIFY(button->isEnabled()); button->installEventFilter(&recorder); }
-
-        qputenv("AIRCTRL_TEST_READ_GATE",temp_.filePath("read.ready").toUtf8());
-        controller->refresh(); QTRY_COMPARE(calls().size(),2); QVERIFY(controller->busy());
-        for(auto* button:buttons) QVERIFY(button->isEnabled());
-        QCOMPARE(recorder.disabled,0);
-        QVERIFY(releaseRead()); QTRY_COMPARE(status.count(),2);
-        QCOMPARE(recorder.disabled,0); // includes all transitions throughout the poll
-
-        QVERIFY(QFile::remove(temp_.filePath("read.ready")));
-        controller->refresh(); QTRY_COMPARE(calls().size(),3); QVERIFY(controller->busy());
-        auto* power=widget.findChild<QPushButton*>("power"); QVERIFY(power->isEnabled());
-        QCOMPARE(recorder.disabled,0);
-        QTest::mouseClick(power,Qt::LeftButton);
-        for(auto* button:buttons) QCOMPARE(button->isEnabled(),button==power);
-        QTest::mouseClick(power,Qt::LeftButton); // a second click cannot queue another write
-        QTest::qWait(60);
-        QCOMPARE(calls().size(),3); QCOMPARE(accepted.count(),0); QCOMPARE(status.count(),2);
-        QVERIFY(releaseRead()); QTRY_COMPARE(accepted.count(),1);
-        QCOMPARE(status.count(),2); // the older polling reply must not confirm the write
-        QVERIFY(power->isEnabled());
-        QVERIFY(power->toolTip().contains("Befehl läuft"));
-        QTRY_COMPARE(status.count(),3);
-        QVERIFY(power->isEnabled()); QCOMPARE(power->toolTip(),QString("Gerät aus · Einschalten"));
-        QCOMPARE(status.last()[0].toJsonObject()["pwr"].toString(),QString("0"));
-        const auto requests=calls(); QCOMPARE(requests.size(),5);
-        for(int i=0;i<3;++i) QVERIFY(requests[i].contains("status"));
-        QVERIFY(requests[3].contains("set")); QVERIFY(requests[3].contains("pwr=0"));
-        QVERIFY(requests[4].contains("status"));
-        controller->stop();
-    }
-    void readErrorCancelsQueuedWrite_data() {
-        QTest::addColumn<QString>("mode");
-        QTest::newRow("process-error") << QString("failure");
-        QTest::newRow("bad-json") << QString("bad-json");
-        QTest::newRow("timeout") << QString("timeout");
-    }
-    void readErrorCancelsQueuedWrite() {
-        QFETCH(QString,mode);
-        qputenv("AIRCTRL_TEST_MODE",mode.toUtf8());
-        qputenv("AIRCTRL_TEST_READ_GATE",temp_.filePath("read.ready").toUtf8());
-        Controller c(FAKE_BACKEND); if(mode=="timeout") c.setWatchdogInterval(300);
-        QSignalSpy errors(&c,&Controller::failed), status(&c,&Controller::statusReceived), accepted(&c,&Controller::controlAccepted);
-        c.start(); QTRY_COMPARE(calls().size(),1); QVERIFY(c.busy());
-        c.setPower(false);
-        if(mode!="timeout") QVERIFY(releaseRead());
-        QTRY_COMPARE(errors.count(),1); QCOMPARE(accepted.count(),0); QCOMPARE(status.count(),0);
-        QCOMPARE(calls().size(),1);
-        qputenv("AIRCTRL_TEST_MODE",""); qunsetenv("AIRCTRL_TEST_READ_GATE");
-        c.refresh(); QTRY_COMPARE(status.count(),1);
-        QCOMPARE(calls().size(),2); QCOMPARE(accepted.count(),0);
-        QVERIFY(calls()[1].contains("status"));
-        QCOMPARE(status.last()[0].toJsonObject()["pwr"].toString(),QString("1"));
-        c.stop();
-    }
-    void stopCancelsQueuedWrite() {
-        qputenv("AIRCTRL_TEST_READ_GATE",temp_.filePath("read.ready").toUtf8());
         Controller c(FAKE_BACKEND); QSignalSpy status(&c,&Controller::statusReceived), accepted(&c,&Controller::controlAccepted);
-        c.start(); QTRY_COMPARE(calls().size(),1); c.setPower(false); c.stop();
-        QTRY_VERIFY(!c.busy());
-        qunsetenv("AIRCTRL_TEST_READ_GATE"); c.start(); QTRY_COMPARE(status.count(),1);
-        QCOMPARE(calls().size(),2); QCOMPARE(accepted.count(),0);
-        QVERIFY(calls()[1].contains("status"));
-        QCOMPARE(status.last()[0].toJsonObject()["pwr"].toString(),QString("1"));
-        c.stop();
-    }
-    void offlinePowerInterruptsReadAndWaitsForConfirmation() {
-        qputenv("AIRCTRL_TEST_READ_GATE",temp_.filePath("read.ready").toUtf8());
-        Desklet widget(Preferences{},FAKE_BACKEND); widget.showAndPosition();
-        auto* controller=widget.findChild<Controller*>();
-        auto* power=static_cast<PanelButton*>(widget.findChild<QPushButton*>("power"));
-        QSignalSpy status(controller,&Controller::statusReceived), accepted(controller,&Controller::controlAccepted);
-        QSignalSpy errors(controller,&Controller::failed);
-        EnablementRecorder recorder; power->installEventFilter(&recorder);
-        widget.start(); QTRY_COMPARE(calls().size(),1); QVERIFY(controller->busy());
-        QCOMPARE(power->statusColor(),QColor("#ff9800")); QVERIFY(power->isEnabled());
-        power->click(); power->click();
-        QTRY_COMPARE(accepted.count(),1); QCOMPARE(status.count(),0); QCOMPARE(calls().size(),2);
-        QCOMPARE(errors.count(),0); // intentional read cancellation is not a timeout
-        QVERIFY(power->isEnabled()); QCOMPARE(power->statusColor(),QColor("#ff9800"));
-        power->click(); // still waiting for readback: no second write
-        QVERIFY(releaseRead()); QTRY_COMPARE(status.count(),1);
-        QCOMPARE(power->statusColor(),QColor("#2ecc71")); QCOMPARE(recorder.disabled,0);
+        c.start(); QTRY_VERIFY(!status.isEmpty());
+        c.setPower(false); QTRY_COMPARE(accepted.count(),1); QTRY_VERIFY(!c.busy());
+        QCOMPARE(status.last()[0].toJsonObject()["pwr"].toString(),QString("0"));
+        c.setHumidity(60); QTRY_COMPARE(accepted.count(),2); QTRY_VERIFY(!c.busy());
+        QCOMPARE(status.last()[0].toJsonObject()["rhset"].toInt(),60);
         const auto requests=calls(); QCOMPARE(requests.size(),3);
-        QVERIFY(requests[0].contains("status"));
-        QVERIFY(requests[1].contains("set")); QVERIFY(requests[1].contains("pwr=1"));
-        QVERIFY(!requests[1].contains("-I")); QVERIFY(requests[2].contains("status"));
-        controller->stop();
+        QVERIFY(requests[1].contains("pwr=0")); QVERIFY(!requests[1].contains("-I"));
+        QVERIFY(requests[2].contains("rhset=60")); QVERIFY(requests[2].contains("-I"));
+        QCOMPARE(c.observationStarts(),quint64(1)); c.stop();
     }
-    void offlinePowerFailureStaysOrangeAndIsNotRetried() {
-        qputenv("AIRCTRL_TEST_MODE","failure");
-        Desklet widget(Preferences{},FAKE_BACKEND); widget.showAndPosition();
-        auto* controller=widget.findChild<Controller*>();
+    void streamKeepsButtonsEnabledAndWriteRunsOnce() {
+        qputenv("AIRCTRL_TEST_WRITE_GATE",temp_.filePath("write.ready").toUtf8());
+        Desklet widget(Preferences{},FAKE_BACKEND); widget.showAndPosition(); widget.start();
+        auto* c=widget.findChild<Controller*>();
+        QSignalSpy status(c,&Controller::statusReceived), accepted(c,&Controller::controlAccepted);
+        QTRY_VERIFY(status.count()>=3);
+        const auto buttons=widget.findChildren<QPushButton*>(); QCOMPARE(buttons.size(),8);
+        EnablementRecorder allRecorder, powerRecorder;
+        for(auto* button:buttons) { QVERIFY(button->isEnabled()); button->installEventFilter(&allRecorder); }
+        auto* power=widget.findChild<QPushButton*>("power"); power->installEventFilter(&powerRecorder);
+        QTest::qWait(250); QCOMPARE(allRecorder.disabled,0);
+        const auto previous=status.count();
+        power->click(); power->click();
+        for(auto* button:buttons) QCOMPARE(button->isEnabled(),button==power);
+        QTRY_COMPARE(calls().size(),2); QTest::qWait(250);
+        QCOMPARE(status.count(),previous); QCOMPARE(accepted.count(),0); QVERIFY(c->busy());
+        QVERIFY(c->statusCount()>quint64(previous)); // old notifications arrived but cannot confirm
+        QFile gate(temp_.filePath("write.ready")); QVERIFY(gate.open(QIODevice::WriteOnly)); gate.close();
+        QTRY_COMPARE(accepted.count(),1); QTRY_VERIFY(!c->busy());
+        QCOMPARE(power->toolTip(),QString("Gerät aus · Einschalten"));
+        QCOMPARE(powerRecorder.disabled,0); QCOMPARE(calls().size(),2);
+        QCOMPARE(c->observationStarts(),quint64(1)); c->stop();
+    }
+    void offlinePowerDoesNotWaitForFirstStatus() {
+        qputenv("AIRCTRL_TEST_READ_GATE",temp_.filePath("read.ready").toUtf8());
+        Desklet widget(Preferences{},FAKE_BACKEND); widget.showAndPosition(); widget.start();
+        auto* c=widget.findChild<Controller*>();
         auto* power=static_cast<PanelButton*>(widget.findChild<QPushButton*>("power"));
-        QSignalSpy errors(controller,&Controller::failed);
-        widget.applyStatus({{"pwr","1"}}); // stale ON must not trigger OFF after connection loss
-        widget.start(); QTRY_COMPARE(errors.count(),1);
-        qputenv("AIRCTRL_TEST_MODE","write-failure");
-        power->click(); QTRY_COMPARE(errors.count(),2);
-        QVERIFY(power->isEnabled()); QCOMPARE(power->statusColor(),QColor("#ff9800"));
-        QVERIFY(power->toolTip().contains("Keine Verbindung"));
-        QTest::qWait(1300); QCOMPARE(calls().size(),2);
-        QVERIFY(calls()[1].contains("pwr=1"));
-        power->click(); QTRY_COMPARE(errors.count(),3); // a new explicit click is allowed
-        QCOMPARE(calls().size(),3); QVERIFY(calls()[2].contains("pwr=1"));
-        controller->stop();
+        QSignalSpy status(c,&Controller::statusReceived), accepted(c,&Controller::controlAccepted), errors(c,&Controller::failed);
+        QTRY_COMPARE(calls().size(),1); QVERIFY(!c->busy());
+        power->click(); power->click(); QTRY_COMPARE(accepted.count(),1);
+        QCOMPARE(status.count(),0); QCOMPARE(calls().size(),2);
+        QVERIFY(calls()[1].contains("pwr=1")); QCOMPARE(power->statusColor(),QColor("#ff9800"));
+        QVERIFY(releaseRead()); QTRY_VERIFY(!status.isEmpty()); QTRY_VERIFY(!c->busy());
+        QCOMPARE(power->statusColor(),QColor("#2ecc71")); QCOMPARE(errors.count(),0);
+        QCOMPARE(c->observationStarts(),quint64(1)); c->stop();
     }
-    void stopCancelsInterruptedPower() {
+    void stopCancelsWriteAndObservation() {
         qputenv("AIRCTRL_TEST_READ_GATE",temp_.filePath("read.ready").toUtf8());
-        Controller c(FAKE_BACKEND); QSignalSpy status(&c,&Controller::statusReceived);
-        QSignalSpy accepted(&c,&Controller::controlAccepted);
-        c.start(); QTRY_COMPARE(calls().size(),1);
-        c.setPower(true,true); c.stop(); QTRY_VERIFY(!c.busy());
-        qunsetenv("AIRCTRL_TEST_READ_GATE"); c.start(); QTRY_COMPARE(status.count(),1);
-        QCOMPARE(accepted.count(),0); QCOMPARE(calls().size(),2);
-        QVERIFY(calls()[1].contains("status")); c.stop();
+        qputenv("AIRCTRL_TEST_WRITE_GATE",temp_.filePath("write.ready").toUtf8());
+        Controller c(FAKE_BACKEND); QSignalSpy status(&c,&Controller::statusReceived), accepted(&c,&Controller::controlAccepted);
+        c.start(); QTRY_COMPARE(calls().size(),1); c.setPower(false); QTRY_COMPARE(calls().size(),2);
+        c.stop(); QTest::qWait(150); QCOMPARE(status.count(),0); QCOMPARE(accepted.count(),0); QVERIFY(!c.busy());
+        qunsetenv("AIRCTRL_TEST_READ_GATE"); qunsetenv("AIRCTRL_TEST_WRITE_GATE");
+        c.start(); QTRY_VERIFY(!status.isEmpty());
+        QCOMPARE(calls().size(),3); QVERIFY(calls()[2].contains("status-observe"));
+        QCOMPARE(status.last()[0].toJsonObject()["pwr"].toString(),QString("1")); c.stop();
     }
-    void powerCanCancelStartingRead() {
-        qputenv("AIRCTRL_TEST_READ_GATE",temp_.filePath("read.ready").toUtf8());
-        Controller c(FAKE_BACKEND);
-        QSignalSpy status(&c,&Controller::statusReceived), accepted(&c,&Controller::controlAccepted);
+    void stopThenStartDuringStartup() {
+        Controller c(FAKE_BACKEND); QSignalSpy status(&c,&Controller::statusReceived), errors(&c,&Controller::failed);
+        c.start(); c.stop(); c.start();
+        QTRY_VERIFY(!status.isEmpty()); QCOMPARE(errors.count(),0); QVERIFY(c.observing());
+        QCOMPARE(c.observationStarts(),quint64(2)); c.stop();
+    }
+    void manualRefreshRestartsOnlyOneObserver() {
+        Controller c(FAKE_BACKEND); QSignalSpy status(&c,&Controller::statusReceived), errors(&c,&Controller::failed);
+        c.start(); QTRY_VERIFY(!status.isEmpty());
+        c.refresh(); c.refresh(); QTRY_COMPARE(c.observationStarts(),quint64(2));
+        QTRY_VERIFY(c.observing()); QTest::qWait(200);
+        QCOMPARE(calls().size(),2); QCOMPARE(errors.count(),0); c.stop();
+    }
+    void observerExitReconnects() {
+        qputenv("AIRCTRL_TEST_MODE","exit-stream");
+        Controller c(FAKE_BACKEND); c.setReconnectDelay(200);
+        QSignalSpy status(&c,&Controller::statusReceived), errors(&c,&Controller::failed);
+        c.start(); QTRY_COMPARE(errors.count(),1);
+        qputenv("AIRCTRL_TEST_MODE",""); QTRY_COMPARE(c.observationStarts(),quint64(2));
+        QTRY_VERIFY(c.observing()); QTest::qWait(200);
+        QCOMPARE(errors.count(),1); QCOMPARE(calls().size(),2); c.stop();
+    }
+    void idleWatchdogReconnects() {
+        qputenv("AIRCTRL_TEST_MODE","idle");
+        Controller c(FAKE_BACKEND); c.setObservationWatchdogs(1000,200); c.setReconnectDelay(200);
         QSignalSpy errors(&c,&Controller::failed);
-        c.start(); c.setPower(true,true); // no event-loop turn: QProcess is still Starting
-        QTRY_COMPARE(accepted.count(),1); QCOMPARE(errors.count(),0);
-        QVERIFY(releaseRead()); QTRY_COMPARE(status.count(),1);
-        int writes=0;
-        for(const auto& request:calls()) if(request.contains("set")) ++writes;
+        c.start(); QTRY_VERIFY(c.observing()); QTRY_COMPARE(errors.count(),1);
+        QVERIFY(!c.observing()); qputenv("AIRCTRL_TEST_MODE","");
+        QTRY_COMPARE(c.observationStarts(),quint64(2)); QTRY_VERIFY(c.observing());
+        QCOMPARE(calls().size(),2); c.stop();
+    }
+    void writeFailureDoesNotDropHealthyConnection() {
+        Desklet widget(Preferences{},FAKE_BACKEND); widget.showAndPosition(); widget.start();
+        auto* c=widget.findChild<Controller*>();
+        auto* power=static_cast<PanelButton*>(widget.findChild<QPushButton*>("power"));
+        QSignalSpy errors(c,&Controller::failed), commandErrors(c,&Controller::commandFailed);
+        QTRY_VERIFY(c->observing()); qputenv("AIRCTRL_TEST_MODE","write-failure");
+        power->click(); QTRY_COMPARE(commandErrors.count(),1);
+        QVERIFY(!c->busy()); QVERIFY(power->isEnabled()); QCOMPARE(power->statusColor(),QColor("#2ecc71"));
+        QTest::qWait(350); QCOMPARE(calls().size(),2); QCOMPARE(errors.count(),0);
+        power->click(); QTRY_COMPARE(commandErrors.count(),2); QCOMPARE(calls().size(),3); c->stop();
+    }
+    void writeWatchdogNoRetry() {
+        Controller c(FAKE_BACKEND); c.setWatchdogInterval(200);
+        QSignalSpy errors(&c,&Controller::failed), commandErrors(&c,&Controller::commandFailed);
+        c.start(); QTRY_VERIFY(c.observing()); qputenv("AIRCTRL_TEST_MODE","write-timeout");
+        c.setPower(false); QTRY_COMPARE(commandErrors.count(),1);
+        QVERIFY(!c.busy()); QVERIFY(c.observing()); QTest::qWait(300);
+        QCOMPARE(calls().size(),2); QCOMPARE(errors.count(),0); c.stop();
+    }
+    void confirmationTimeoutUnlocksWithoutRetry() {
+        qputenv("AIRCTRL_TEST_MODE","idle");
+        Controller c(FAKE_BACKEND); c.setConfirmationTimeout(200);
+        QSignalSpy errors(&c,&Controller::failed), commandErrors(&c,&Controller::commandFailed), accepted(&c,&Controller::controlAccepted);
+        c.start(); QTRY_VERIFY(c.observing()); c.setPower(false); QTRY_COMPARE(accepted.count(),1);
+        QTRY_COMPARE(commandErrors.count(),1); QVERIFY(!c.busy()); QVERIFY(c.observing());
+        QTest::qWait(250); QCOMPARE(calls().size(),2); QCOMPARE(errors.count(),0); c.stop();
+    }
+    void pendingWriteSurvivesObserverReconnectWithoutReplay() {
+        qputenv("AIRCTRL_TEST_MODE","exit-stream");
+        qputenv("AIRCTRL_TEST_WRITE_GATE",temp_.filePath("write.ready").toUtf8());
+        Controller c(FAKE_BACKEND); c.setReconnectDelay(200);
+        QSignalSpy errors(&c,&Controller::failed), accepted(&c,&Controller::controlAccepted), status(&c,&Controller::statusReceived);
+        c.start(); QTRY_VERIFY(c.observing()); c.setPower(false);
+        QTRY_COMPARE(errors.count(),1); QVERIFY(c.busy());
+        qputenv("AIRCTRL_TEST_MODE",""); QTRY_COMPARE(c.observationStarts(),quint64(2));
+        QTRY_VERIFY(c.observing()); QVERIFY(c.busy());
+        QFile gate(temp_.filePath("write.ready")); QVERIFY(gate.open(QIODevice::WriteOnly)); gate.close();
+        QTRY_COMPARE(accepted.count(),1); QTRY_VERIFY(!c.busy());
+        QCOMPARE(status.last()[0].toJsonObject()["pwr"].toString(),QString("0"));
+        int writes=0; for(const auto& request:calls()) if(request.contains("set")) ++writes;
         QCOMPARE(writes,1); c.stop();
+    }
+    void realUdpObservationAndControlUseSeparateSockets() {
+        UdpDevice device;
+        Controller c(REAL_BACKEND); c.configure("127.0.0.1",device.port,5);
+        QSignalSpy status(&c,&Controller::statusReceived), errors(&c,&Controller::failed);
+        QSignalSpy commandErrors(&c,&Controller::commandFailed), accepted(&c,&Controller::controlAccepted);
+        c.start(); QTRY_VERIFY(status.count()>=2);
+        QCOMPARE(device.subscriptions.load(),1); QCOMPARE(device.syncs.load(),1); QCOMPARE(device.controls.load(),0);
+        c.setPower(false); QTRY_COMPARE(accepted.count(),1); QTRY_VERIFY(!c.busy());
+        QCOMPARE(status.last()[0].toJsonObject()["pwr"].toString(),QString("0"));
+        QCOMPARE(device.subscriptions.load(),1); QCOMPARE(device.syncs.load(),2); QCOMPARE(device.controls.load(),1);
+        QCOMPARE(device.cancellations.load(),0); QCOMPARE(errors.count(),0); QCOMPARE(commandErrors.count(),0);
+        c.stop(); QTRY_COMPARE(device.cancellations.load(),1); QVERIFY(!device.failed.load());
+    }
+    void backendExitsWhenWidgetParentIsKilled() {
+#ifdef Q_OS_LINUX
+        const auto exitPath=temp_.filePath("observer.exited"); qputenv("AIRCTRL_TEST_EXIT_FILE",exitPath.toUtf8());
+        QProcess parent; parent.start(PARENT_PROBE,{FAKE_BACKEND});
+        QTRY_VERIFY(parent.bytesAvailable()>0); QVERIFY(parent.readAllStandardOutput().contains("ready"));
+        // Check an actual clean child exit, independent of /proc PID namespaces.
+        QVERIFY(!QFile::exists(exitPath)); parent.kill(); QVERIFY(parent.waitForFinished(1000));
+        QTRY_VERIFY_WITH_TIMEOUT(QFile::exists(exitPath),2000);
+        QFile file(exitPath); QVERIFY(file.open(QIODevice::ReadOnly)); QCOMPARE(file.readAll().trimmed(),QByteArray("15"));
+#else
+        QSKIP("Linux parent-death protection");
+#endif
     }
     void powerAlwaysEnabledAndStateColours() {
         Preferences p; p.foreground=Qt::white; p.background=Qt::white;
@@ -306,58 +330,51 @@ private slots:
         if(!png.isEmpty()) QVERIFY(preview.save(png));
     }
     void rejectUnsupportedHumidity() {
-        Controller c(FAKE_BACKEND); QSignalSpy errors(&c, &Controller::failed);
-        c.setHumidity(55); QCOMPARE(errors.count(), 1); QVERIFY(!QFile::exists(log_));
+        Controller c(FAKE_BACKEND); QSignalSpy errors(&c,&Controller::commandFailed);
+        c.setHumidity(55); QCOMPARE(errors.count(),1); QVERIFY(!QFile::exists(log_));
     }
-    void processFailureAndRecovery() {
-        qputenv("AIRCTRL_TEST_MODE", "failure");
-        Controller c(FAKE_BACKEND); QSignalSpy errors(&c, &Controller::failed);
-        QSignalSpy status(&c, &Controller::statusReceived);
-        c.start(); QTRY_COMPARE(errors.count(), 1); QVERIFY(!c.busy());
-        qputenv("AIRCTRL_TEST_MODE", ""); c.refresh(); QTRY_COMPARE(status.count(), 1); c.stop();
+    void badStream_data() {
+        QTest::addColumn<QString>("mode");
+        QTest::newRow("bad-json")<<QString("bad-json");
+        QTest::newRow("oversized")<<QString("oversized");
     }
-    void badJson() {
-        qputenv("AIRCTRL_TEST_MODE", "bad-json");
-        Controller c(FAKE_BACKEND); QSignalSpy errors(&c, &Controller::failed);
-        QSignalSpy status(&c, &Controller::statusReceived);
-        c.start(); QTRY_COMPARE(errors.count(), 1); QCOMPARE(status.count(), 0); c.stop();
+    void badStream() {
+        QFETCH(QString,mode); qputenv("AIRCTRL_TEST_MODE",mode.toUtf8());
+        Controller c(FAKE_BACKEND); QSignalSpy errors(&c,&Controller::failed), status(&c,&Controller::statusReceived);
+        c.start(); QTRY_COMPARE(errors.count(),1); QCOMPARE(status.count(),0); QVERIFY(!c.observing());
+        QCOMPARE(calls().size(),1); c.stop();
     }
-    void automaticallyRetryRead() {
-        qputenv("AIRCTRL_TEST_MODE", "failure-once");
-        Controller c(FAKE_BACKEND);
-        QSignalSpy errors(&c, &Controller::failed), status(&c, &Controller::statusReceived);
-        c.start(); QTRY_COMPARE(errors.count(), 1);
-        QTRY_COMPARE_WITH_TIMEOUT(status.count(), 1, 2500);
-        QCOMPARE(calls().size(), 2);
-        c.stop();
+    void initialTimeoutAndRecovery() {
+        qputenv("AIRCTRL_TEST_MODE","timeout");
+        Controller c(FAKE_BACKEND); c.setObservationWatchdogs(200,1000); c.setReconnectDelay(200);
+        QSignalSpy errors(&c,&Controller::failed);
+        c.start(); QTRY_COMPARE(errors.count(),1); QVERIFY(!c.observing()); QVERIFY(!c.busy());
+        qputenv("AIRCTRL_TEST_MODE",""); QTRY_VERIFY(c.observing());
+        QCOMPARE(calls().size(),2); c.stop();
     }
-    void neverRetryWrite() {
-        qputenv("AIRCTRL_TEST_MODE", "write-failure");
-        Controller c(FAKE_BACKEND);
-        QSignalSpy errors(&c, &Controller::failed), status(&c, &Controller::statusReceived);
-        c.start(); QTRY_COMPARE(status.count(), 1);
-        c.setPower(false); QTRY_COMPARE(errors.count(), 1);
-        QTest::qWait(1300);
-        QCOMPARE(calls().size(), 2); // one read and exactly one write
-        c.stop();
+    void stopCancelsReconnect() {
+        qputenv("AIRCTRL_TEST_MODE","failure");
+        Controller c(FAKE_BACKEND); c.setReconnectDelay(200);
+        QSignalSpy errors(&c,&Controller::failed);
+        c.start(); QTRY_COMPARE(errors.count(),1); c.stop();
+        QTest::qWait(400); QCOMPARE(calls().size(),1);
     }
-    void stopCancelsReadRetry() {
-        qputenv("AIRCTRL_TEST_MODE", "failure");
-        Controller c(FAKE_BACKEND);
-        QSignalSpy errors(&c, &Controller::failed);
-        c.start(); QTRY_COMPARE(errors.count(), 1); c.stop();
-        QTest::qWait(1300); QCOMPARE(calls().size(), 1);
+    void streamFragmentsAndBatches_data() {
+        QTest::addColumn<QString>("mode"); QTest::addColumn<int>("count");
+        QTest::newRow("split-line")<<QString("partial")<<1;
+        QTest::newRow("three-lines")<<QString("batch")<<3;
     }
-    void timeoutNoOverlap() {
-        qputenv("AIRCTRL_TEST_MODE", "timeout");
-        Controller c(FAKE_BACKEND); c.setWatchdogInterval(200);
-        QSignalSpy errors(&c, &Controller::failed);
-        c.start(); c.refresh(); c.refresh(); QTRY_COMPARE(errors.count(), 1);
-        QCOMPARE(calls().size(), 1); QVERIFY(!c.busy()); c.stop();
+    void streamFragmentsAndBatches() {
+        QFETCH(QString,mode); QFETCH(int,count); qputenv("AIRCTRL_TEST_MODE",mode.toUtf8());
+        Controller c(FAKE_BACKEND); QSignalSpy status(&c,&Controller::statusReceived), errors(&c,&Controller::failed);
+        c.start(); QTRY_COMPARE(status.count(),count); QCOMPARE(errors.count(),0); QVERIFY(c.observing());
+        if(mode=="batch") QCOMPARE(status.last()[0].toJsonObject()["rh"].toInt(),43);
+        else QCOMPARE(status.last()[0].toJsonObject()["rh"].toInt(),55);
+        QCOMPARE(calls().size(),1); c.stop();
     }
     void missingBackend() {
-        Controller c(temp_.filePath("missing")); QSignalSpy errors(&c, &Controller::failed);
-        c.start(); QCOMPARE(errors.count(), 1); QVERIFY(!c.busy()); c.stop();
+        Controller c(temp_.filePath("missing")); QSignalSpy errors(&c,&Controller::failed);
+        c.start(); QCOMPARE(errors.count(),1); QVERIFY(!c.busy()); QVERIFY(!c.observing()); c.stop();
     }
     void widgetMappingAndOffline() {
         Preferences p; p.desktop = false;
@@ -429,28 +446,26 @@ private slots:
     }
     void panelCommandsAndReadback() {
         Controller c(FAKE_BACKEND); QSignalSpy status(&c,&Controller::statusReceived);
-        c.start(); QTRY_COMPARE(status.count(),1);
+        c.start(); QTRY_VERIFY(!status.isEmpty());
         const QList<QJsonObject> commands{
             {{"cl",true}}, {{"mode","S"},{"om","s"}}, {{"mode","M"},{"om","3"}},
             {{"func","P"}}, {{"aqil",50}}, {{"uil","0"}}, {{"dt",12}}
         };
-        int count=1;
-        for(const auto& command : commands) {
-            c.setPanelValues(command); ++count; QTRY_COMPARE(status.count(),count);
+        for(const auto& command:commands) {
+            c.setPanelValues(command); QTRY_VERIFY(!c.busy());
             const auto received=status.last()[0].toJsonObject();
             for(auto i=command.begin();i!=command.end();++i) QCOMPARE(received[i.key()],i.value());
         }
-        const auto requests=calls(); QCOMPARE(requests.size(),15);
+        const auto requests=calls(); QCOMPARE(requests.size(),8);
         QVERIFY(requests[1].contains("cl=true")); QVERIFY(!requests[1].contains("-I"));
-        QVERIFY(requests[3].contains("mode=S")); QVERIFY(requests[3].contains("om=s"));
-        QVERIFY(requests[5].contains("mode=M")); QVERIFY(requests[5].contains("om=3"));
-        QVERIFY(!requests[5].contains("-I"));
-        QVERIFY(requests[9].contains("aqil=50")); QVERIFY(requests[9].contains("-I"));
-        QVERIFY(!requests[11].contains("-I")); QVERIFY(requests[13].contains("dt=12"));
-        QVERIFY(requests[13].contains("-I")); c.stop();
+        QVERIFY(requests[2].contains("mode=S")); QVERIFY(requests[2].contains("om=s"));
+        QVERIFY(requests[3].contains("mode=M")); QVERIFY(requests[3].contains("om=3"));
+        QVERIFY(requests[5].contains("aqil=50")); QVERIFY(requests[5].contains("-I"));
+        QVERIFY(!requests[6].contains("-I")); QVERIFY(requests[7].contains("dt=12")); QVERIFY(requests[7].contains("-I"));
+        QCOMPARE(c.observationStarts(),quint64(1)); c.stop();
     }
     void rejectInvalidPanelCommands() {
-        Controller c(FAKE_BACKEND); QSignalSpy errors(&c,&Controller::failed);
+        Controller c(FAKE_BACKEND); QSignalSpy errors(&c,&Controller::commandFailed);
         for(const auto& value : QList<QJsonObject>{ {{"dt",13}}, {{"aqil",51}}, {{"cl","false"}}, {{"mode","B"}}, {{"aqil",50},{"uil","1"}} })
             c.setPanelValues(value);
         QCOMPARE(errors.count(),5); QVERIFY(!QFile::exists(log_));
@@ -469,7 +484,7 @@ private slots:
         });
         target->click(); QVERIFY(selected);
         QTRY_VERIFY(target->toolTip().contains("60 %"));
-        QCOMPARE(calls().size(),3); QVERIFY(calls()[1].contains("rhset=60")); QVERIFY(calls()[1].contains("-I"));
+        QCOMPARE(calls().size(),2); QVERIFY(calls()[1].contains("rhset=60")); QVERIFY(calls()[1].contains("-I"));
         auto* lock=widget.findChild<QPushButton*>("childLock"); lock->click();
         QTRY_VERIFY(lock->toolTip().contains("ausschalten"));
         QVERIFY(lock->isEnabled()); QVERIFY(!target->isEnabled());
