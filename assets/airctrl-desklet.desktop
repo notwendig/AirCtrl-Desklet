@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Philips AirControl
+Comment=Philips-Luftreiniger auf dem Cinnamon-Desktop
+Exec=airctrl-desklet
+Icon=airctrl-desklet
+Terminal=false
+Categories=Utility;Qt;
+StartupNotify=false
