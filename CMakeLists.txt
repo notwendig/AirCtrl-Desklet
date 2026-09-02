@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(airctrl_desklet VERSION 0.3.2 LANGUAGES CXX)
+project(airctrl_desklet VERSION 0.3.3 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -24,6 +24,7 @@ set_target_properties(airctrl-backend PROPERTIES AUTOMOC OFF)
 target_link_libraries(airctrl-backend PRIVATE aioairctrl)
 
 add_library(desklet_ui STATIC src/controller.cpp src/controller.hpp
+    src/diagnostics.cpp src/diagnostics.hpp
     src/panel.cpp src/panel.hpp src/desklet.cpp src/desklet.hpp src/preferences.cpp src/preferences.hpp)
 target_link_libraries(desklet_ui PUBLIC Qt6::Widgets)
 target_include_directories(desklet_ui PUBLIC src)

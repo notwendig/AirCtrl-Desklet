@@ -11,6 +11,9 @@
 #include <QSettings>
 #include <QMouseEvent>
 #include <QSpinBox>
+#include <QTableWidget>
+#include <QPlainTextEdit>
+#include <QClipboard>
 
 class ScopedEnvironment {
 public:
@@ -266,6 +269,49 @@ private slots:
         QCOMPARE(value->text(),QString("Feuchte —"));
         QVERIFY(!widget.findChild<QPushButton*>("power")->isEnabled());
         QVERIFY(!target->isEnabled());
+    }
+    void diagnosticWindowExplainsFieldsAndPreservesRawData() {
+        Desklet widget(Preferences{},FAKE_BACKEND,true);
+        widget.applyStatus({{"pwr","1"},{"cl",false},{"pm25",5},{"err",49236},
+            {"DeviceId","test-device"},{"future_tag",QJsonObject{{"x",1}}}});
+        bool inspected=false, screenshotSaved=false;
+        int deviceRows=-1, connectionRows=-1;
+        QString powerDescription,errorDescription,unknownDescription,unknownValue,rawText,copied;
+        QTimer::singleShot(80,[&] {
+            auto* dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget());
+            if(!dialog) return;
+            auto* device=dialog->findChild<QTableWidget*>("deviceFields");
+            auto* connection=dialog->findChild<QTableWidget*>("connectionFields");
+            auto* raw=dialog->findChild<QPlainTextEdit*>("rawDiagnostics");
+            if(device && connection && raw) {
+                deviceRows=device->rowCount(); connectionRows=connection->rowCount(); rawText=raw->toPlainText();
+                for(int row=0;row<device->rowCount();++row) {
+                    const auto tag=device->item(row,0)->text();
+                    if(tag=="pwr") powerDescription=device->item(row,2)->text();
+                    if(tag=="err") errorDescription=device->item(row,2)->text();
+                    if(tag=="future_tag") {
+                        unknownValue=device->item(row,1)->text();
+                        unknownDescription=device->item(row,2)->text();
+                    }
+                }
+                for(auto* button:dialog->findChildren<QPushButton*>())
+                    if(button->text()=="Bericht kopieren") { button->click(); copied=QApplication::clipboard()->text(); break; }
+                const auto png=qEnvironmentVariable("AIRCTRL_TEST_DIAGNOSTICS_PNG");
+                if(!png.isEmpty()) screenshotSaved=dialog->grab().save(png);
+                inspected=true;
+            }
+            dialog->accept();
+        });
+        widget.showDetails();
+        QVERIFY(inspected); QCOMPARE(deviceRows,6); QVERIFY(connectionRows>=9);
+        QVERIFY(powerDescription.contains("eingeschaltet"));
+        QVERIFY(errorDescription.contains("kein gesicherter Wartungsalarm"));
+        QCOMPARE(unknownValue,QString("{\"x\":1}"));
+        QVERIFY(unknownDescription.contains("Nicht dokumentiertes"));
+        QVERIFY(rawText.contains("\"future_tag\"")); QVERIFY(rawText.contains("49236"));
+        QVERIFY(copied.contains("ERKLÄRTE GERÄTEWERTE")); QVERIFY(copied.contains("UNVERÄNDERTE ROHDATEN"));
+        if(qEnvironmentVariableIsSet("AIRCTRL_TEST_DIAGNOSTICS_PNG")) QVERIFY(screenshotSaved);
+        QVERIFY(!QFile::exists(log_));
     }
     void panelCommandsAndReadback() {
         Controller c(FAKE_BACKEND); QSignalSpy status(&c,&Controller::statusReceived);

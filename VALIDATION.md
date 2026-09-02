@@ -1,4 +1,4 @@
-# Validierung – Version 0.3.2
+# Validierung – Version 0.3.3
 
 Datum: 2026-09-01.
 
@@ -18,11 +18,11 @@ Datum: 2026-09-01.
 QtTest/CTest, mit Qt-Offscreen-Plattform:
 
 ```text
-Totals: 31 passed, 0 failed, 1 skipped, 0 blacklisted
+Totals: 32 passed, 0 failed, 1 skipped, 0 blacklisted
 100% tests passed out of 1
 ```
 
-Die 31 erfolgreichen QtTest-Einträge umfassen 29 Testfälle plus Initialisierung
+Die 32 erfolgreichen QtTest-Einträge umfassen 30 Testfälle plus Initialisierung
 und Aufräumen. Der zusätzliche native X11-Test wurde unter Offscreen übersprungen:
 
 | Prüffall | Ergebnis |
@@ -54,11 +54,12 @@ und Aufräumen. Der zusätzliche native X11-Test wurde unter Offscreen überspru
 | Verzögerte Statusabfrage: alle acht Tasten bleiben durchgehend aktiv; Klick während Folgeread wird genau einmal geschrieben und frisch bestätigt | OK |
 | Vorgemerkten Befehl bei Prozessfehler, ungültigem JSON und Timeout verwerfen; keine verspätete Ausführung nach Wiederverbindung | OK (3 Fälle) |
 | Stoppen verwirft vorgemerkten Befehl auch bei anschließendem Neustart der Steuerung | OK |
+| Diagnose: Tag/Wert/Bedeutung, unbekannter Tag, ungesicherter Fehlercode, Rohdaten und kopierter Gesamtbericht | OK |
 | Native X11-Fensterattribute | Übersprungen: kein X11-Display |
 
 Für Version 0.1.0 wurden zusätzlich die 14 vorhandenen UDP-Integrationstests aus
 `aioairctrl-cpp` gegen `airctrl-backend` ausgeführt: alle erfolgreich. Das Backend
-ist in Version 0.3.2 unverändert; diese Suite wurde nicht erneut ausgeführt. Darunter
+ist in Version 0.3.3 unverändert; diese Suite wurde nicht erneut ausgeführt. Darunter
 IPv4/IPv6, echte UDP-Loopback-Kommunikation, Python-Referenzverschlüsselung,
 Statusbeobachtung, CoAP-Fehler, Timeouts und typisierte Schreibwerte. Die
 Async-Untertests verwendeten den bereits gebauten C++-Testtreiber des ursprünglichen
@@ -77,7 +78,7 @@ Benutzergerät erfolgreichen C++-Port verglichen: unverändert.
   Sie greift nicht auf das reale Gerät zu; der Vorschaustatus steht nur im Tooltip und Kontextmenü.
 - `install.sh` wurde erneut mit einem separaten absoluten Testpräfix ausgeführt:
   Build und Ersetzen der vorherigen Installation erfolgreich; beide Programme vorhanden.
-- Der Versionsaufruf der installierten GUI meldet `airctrl-desklet 0.3.2`.
+- Der Versionsaufruf der installierten GUI meldet `airctrl-desklet 0.3.3`.
 - Shellsyntax von Installations- und Deinstallationsskript geprüft.
 
 ## Layout und Einstellungen
@@ -99,6 +100,22 @@ die Komposition mit einem echten Cinnamon-Desktophintergrund wurde nicht geteste
 Die Steuerbefehle sind gegenüber 0.2.0 unverändert. Quellen für deren Zuordnung
 stehen in `README.md`. Keine Wartungsalarme werden aus undokumentierten Statusbits
 abgeleitet.
+
+## Erklärte Diagnosefelder
+
+Das Diagnosefenster besitzt drei Reiter: erklärte Gerätewerte, erklärte
+Verbindungsfelder und unveränderte Rohdaten. Der Gerätetabelle werden ausschließlich
+Tags hinzugefügt, die tatsächlich in der letzten Statusantwort enthalten sind.
+Jede Zeile zeigt Tag, JSON-typgetreuen Rohwert und deutsche Beschreibung.
+Der kopierte Bericht enthält beide Erklärungstabellen und den vollständigen
+JSON-Block. Gerätedaten werden dabei nicht verändert.
+
+Der Integrationstest speist bekannte Felder sowie einen unbekannten künftigen Tag
+mit einem JSON-Objektwert ein. Er prüft die Beschreibung von `pwr`, die vorsichtige
+Behandlung eines unbekannten `err`-Codes, die verlustfreie Darstellung des
+unbekannten Objektwertes, die Rohdaten und den kopierten Gesamtbericht. Der Dialog
+wurde zusätzlich unter Qt-Offscreen als `diagnose-vorschau.png` gerendert und
+visuell geprüft.
 
 ## Bedienbarkeit während Statusabfragen
 
@@ -160,7 +177,7 @@ Schreibbefehle wurden hier gegen simulierte Antworten geprüft.
 
 Der Screenshot des Benutzers zeigt auch bereits empfangene GUI-Messwerte und einen
 anschließenden Verbindungsfehler. Dessen genaue Ursache ist noch unbekannt.
-Version 0.3.2 verwendet weiterhin zehn Sekunden je CoAP-Anfrage, einen Prozess-Watchdog von
+Version 0.3.3 verwendet weiterhin zehn Sekunden je CoAP-Anfrage, einen Prozess-Watchdog von
 25 Sekunden und eine einmalige Wiederholung fehlgeschlagener Statusabfragen.
 Die neue Diagnose zeigt den tatsächlichen Backend-Fehler. Eine Behebung der
 AT-SPI-Startmeldungen ist nicht Teil dieses Updates.

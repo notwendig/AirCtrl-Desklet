@@ -1,4 +1,5 @@
 #include "desklet.hpp"
+#include "diagnostics.hpp"
 #include <QApplication>
 #include <QCheckBox>
 #include <QColorDialog>
@@ -18,7 +19,9 @@
 #include <QDebug>
 #include <QFileInfo>
 #include <QFormLayout>
+#include <QFontDatabase>
 #include <QGuiApplication>
+#include <QHeaderView>
 #include <QJsonDocument>
 #include <QLineEdit>
 #include <QMenu>
@@ -29,6 +32,8 @@
 #include <QScreen>
 #include <QShortcut>
 #include <QSpinBox>
+#include <QTabWidget>
+#include <QTableWidget>
 #include <QVBoxLayout>
 
 namespace {
@@ -455,10 +460,10 @@ void Desklet::showSettings() {
     controller_.start();
 }
 void Desklet::showDetails() {
-    QDialog dialog(this); dialog.setWindowTitle("AirControl – Gerätedaten"); dialog.resize(600,600);
+    QDialog dialog(this); dialog.setWindowTitle("AirControl – Diagnose"); dialog.resize(860,620);
+    dialog.setMinimumSize(640,420);
     auto* layout = new QVBoxLayout(&dialog);
-    auto* info = new QPlainTextEdit(&dialog); info->setReadOnly(true);
-    info->setAccessibleName("Verbindungsdiagnose und Gerätedaten");
+    auto* tabs = new QTabWidget(&dialog); tabs->setObjectName("diagnosticTabs");
     const auto heading = QString("AirControl %1\nGerät: %2:%3\nPlattform: %4\nBackend: %5\n"
                                  "Timeout je CoAP-Anfrage: 10 Sekunden\nLetzter Empfang: %6\n\n")
         .arg(QCoreApplication::applicationVersion(), preferences_.host)
@@ -466,12 +471,59 @@ void Desklet::showDetails() {
             updated_.isValid() ? updated_.toString(Qt::ISODate) : "noch keiner");
     const auto session=QString("Desktopsitzung: %1\nWayland-Behandlung: %2\n\n")
         .arg(qEnvironmentVariable("XDG_SESSION_TYPE","unbekannt"),waylandSession_ ? "ja" : "nein");
-    info->setPlainText(heading + session + (error_.isEmpty() ? QString() : "Letzter Verbindungsfehler:\n" + error_ + "\n\n") +
-                      QString::fromUtf8(QJsonDocument(status_).toJson(QJsonDocument::Indented)));
-    layout->addWidget(info);
+    const auto errorText=error_.isEmpty() ? QString() : "Letzter Verbindungsfehler:\n"+error_+"\n\n";
+    const auto rawJson=QString::fromUtf8(QJsonDocument(status_).toJson(QJsonDocument::Indented));
+    const auto deviceFields=describeDeviceFields(status_);
+    const auto table=[&](const QList<DiagnosticField>& fields,const QString& name) {
+        auto* result=new QTableWidget(fields.size(),3,&dialog); result->setObjectName(name);
+        result->setHorizontalHeaderLabels({"Tag","Empfangener Wert","Bedeutung"});
+        result->setAlternatingRowColors(true); result->setWordWrap(true);
+        result->setEditTriggers(QAbstractItemView::NoEditTriggers);
+        result->setSelectionBehavior(QAbstractItemView::SelectRows);
+        result->setSelectionMode(QAbstractItemView::SingleSelection);
+        result->verticalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+        result->horizontalHeader()->setSectionResizeMode(0,QHeaderView::ResizeToContents);
+        result->horizontalHeader()->setSectionResizeMode(1,QHeaderView::ResizeToContents);
+        result->horizontalHeader()->setSectionResizeMode(2,QHeaderView::Stretch);
+        const auto fixed=QFontDatabase::systemFont(QFontDatabase::FixedFont);
+        for(int row=0;row<fields.size();++row) {
+            auto* tag=new QTableWidgetItem(fields[row].tag); tag->setFont(fixed);
+            auto* value=new QTableWidgetItem(fields[row].value); value->setFont(fixed);
+            auto* description=new QTableWidgetItem(fields[row].description);
+            tag->setToolTip(fields[row].tag); value->setToolTip(fields[row].value);
+            description->setToolTip(fields[row].description);
+            result->setItem(row,0,tag); result->setItem(row,1,value); result->setItem(row,2,description);
+        }
+        result->setAccessibleName("Diagnosefelder mit Tag, Rohwert und deutscher Bedeutung");
+        return result;
+    };
+    tabs->addTab(table(deviceFields,"deviceFields"),"Gerätewerte erklärt");
+    QList<DiagnosticField> connectionFields{
+        {"AirControl",QCoreApplication::applicationVersion(),"Version des Qt-Widgets."},
+        {"Gerät",preferences_.host+":"+QString::number(preferences_.port),"Konfigurierte Zieladresse und UDP-Port des Luftreinigers."},
+        {"Verbindung",demo_ ? "Vorschau" : connected_ ? "Verbunden" : "Keine Verbindung","Zustand der Verbindung aus Sicht des Widgets."},
+        {"Plattform",QGuiApplication::platformName(),"Tatsächlich von Qt verwendetes Fenster-Backend, z.B. xcb oder wayland."},
+        {"Desktopsitzung",qEnvironmentVariable("XDG_SESSION_TYPE","unbekannt"),"Vom Desktop gemeldeter Sitzungstyp. Er kann vom Qt-Fenster-Backend abweichen."},
+        {"Wayland-Behandlung",waylandSession_ ? "ja" : "nein","Ob das Widget seine Wayland-spezifische Fensterbehandlung verwendet."},
+        {"Backend",controller_.backendPath(),"Pfad des separaten C++-Programms für die verschlüsselte CoAP-Kommunikation."},
+        {"CoAP-Timeout","10 Sekunden","Maximale Wartezeit je Anfrage; der Prozess-Watchdog hat zusätzlich Startreserve."},
+        {"Letzter Empfang",updated_.isValid() ? updated_.toString(Qt::ISODate) : "noch keiner","Zeitpunkt der letzten gültigen JSON-Statusantwort."}
+    };
+    if(!error_.isEmpty()) connectionFields.append({"Letzter Fehler",error_,"Unveränderte letzte Fehlermeldung des Backends bzw. der Verbindungssteuerung."});
+    tabs->addTab(table(connectionFields,"connectionFields"),"Verbindung erklärt");
+    auto* raw = new QPlainTextEdit(&dialog); raw->setObjectName("rawDiagnostics"); raw->setReadOnly(true);
+    raw->setAccessibleName("Unveränderte Verbindungsdiagnose und Geräte-Rohdaten");
+    raw->setPlainText(heading+session+errorText+rawJson); tabs->addTab(raw,"Rohdaten");
+    layout->addWidget(tabs);
+    auto* note=new QLabel("Unbekannte Codes werden unverändert angezeigt und nicht als gesicherter Wartungsalarm bewertet.",&dialog);
+    note->setWordWrap(true); layout->addWidget(note);
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close);
-    auto* copy = buttons->addButton("Kopieren", QDialogButtonBox::ActionRole);
-    connect(copy, &QPushButton::clicked, info, [info] { QApplication::clipboard()->setText(info->toPlainText()); });
+    auto* copy = buttons->addButton("Bericht kopieren", QDialogButtonBox::ActionRole);
+    connect(copy,&QPushButton::clicked,this,[heading,session,errorText,deviceFields,connectionFields,rawJson] {
+        QApplication::clipboard()->setText(heading+session+errorText+"ERKLÄRTE VERBINDUNGSFELDER\n"+
+            diagnosticFieldReport(connectionFields)+"\nERKLÄRTE GERÄTEWERTE\n"+diagnosticFieldReport(deviceFields)+
+            "\nUNVERÄNDERTE ROHDATEN\n"+rawJson);
+    });
     buttons->button(QDialogButtonBox::Close)->setText("Schließen");
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject); layout->addWidget(buttons); dialog.exec();
 }

@@ -1,4 +1,4 @@
-# Philips AirControl – Qt6-Gerätepanel 0.3.2
+# Philips AirControl – Qt6-Gerätepanel 0.3.3
 
 Kompaktes C++/Qt6-Desktopwidget für den Philips AC2729/10 „Wohnzimmer“ unter
 Cinnamon. Geräteadresse voreingestellt: **192.168.77.5**, UDP-Port **5683**.
@@ -54,7 +54,7 @@ Das neue ZIP im Ordner Downloads speichern. Die vorhandenen Abhängigkeiten reic
 ```bash
 pkill -x airctrl-desklet
 cd ~/Downloads
-unzip -o airctrl-desklet-0.3.2.zip
+unzip -o airctrl-desklet-0.3.3.zip
 cd airctrl-desklet
 bash install.sh
 env -u QT_QPA_PLATFORM ~/.local/bin/airctrl-desklet
@@ -111,10 +111,22 @@ Diagnose, Position sperren und Beenden. Im Menü steht auch der Verbindungsstatu
 Ein kurzer Linksklick auf einen Wert öffnet dasselbe Menü.
 Bei aktivem Widget funktioniert auch die Menütaste oder **Umschalt+F10**.
 **F5:** Status aktualisieren. **F1:** Diagnose öffnen.
-**Diagnose → Kopieren:** vollständigen Bericht samt Backend-Fehler übernehmen.
+**Diagnose:** Der erste Reiter zeigt für jeden empfangenen Geräte-Tag den
+unveränderten Wert und eine deutsche Bedeutung. Der zweite Reiter erklärt
+Verbindung, Qt-Plattform, Sitzung und Backend. Unter „Rohdaten“ bleibt der
+vollständige bisherige Bericht samt JSON erhalten. **Bericht kopieren** übernimmt
+Erklärungen und Rohdaten gemeinsam.
 
-Unbekannte Felder wie `err`, Filterzähler und `wl` werden in den Gerätedaten
-unverändert ausgegeben, ohne daraus Wartungsalarme abzuleiten.
+Erklärt werden unter anderem Betriebsmodus, Kindersicherung, Licht, Luftwerte,
+Timer, Wasserstatus, Filterzähler, Firmware, WLAN und Gerätekennungen. Die
+Filterzähler werden als Restbetriebsstunden beschrieben, wie sie auch von
+[py-air-control](https://github.com/rgerganov/py-air-control#usage-in-the-local-network)
+interpretiert werden. Das Programm rundet sie nicht in Kalenderfristen um.
+Unbekannte oder nicht zuverlässig dokumentierte Felder wie `dtrs`, `rddp`,
+`aqit_ext` und fremde künftige Tags werden entsprechend gekennzeichnet. Der
+Rohwert bleibt erhalten; insbesondere aus einem unbekannten `err`-Code wird kein
+gesicherter Wartungsalarm abgeleitet. Die bekannten Grundzuordnungen folgen der
+[Philips-CoAP-Integration](https://github.com/kongo09/philips-airpurifier-coap/blob/master/custom_components/philips_airpurifier_coap/const.py).
 
 Regelmäßige Statusabfragen lassen die Gerätetasten bedienbar. Gesperrt sind sie
 beim Ausführen eines Steuerbefehls bis zur Rückmeldung, offline und in der Vorschau.
