@@ -14,6 +14,7 @@
 #include <QTableWidget>
 #include <QPlainTextEdit>
 #include <QClipboard>
+#include <QPainter>
 
 class ScopedEnvironment {
 public:
@@ -140,15 +141,16 @@ private slots:
         auto* power=widget.findChild<QPushButton*>("power"); QVERIFY(power->isEnabled());
         QCOMPARE(recorder.disabled,0);
         QTest::mouseClick(power,Qt::LeftButton);
-        for(auto* button:buttons) QVERIFY(!button->isEnabled());
+        for(auto* button:buttons) QCOMPARE(button->isEnabled(),button==power);
         QTest::mouseClick(power,Qt::LeftButton); // a second click cannot queue another write
         QTest::qWait(60);
         QCOMPARE(calls().size(),3); QCOMPARE(accepted.count(),0); QCOMPARE(status.count(),2);
         QVERIFY(releaseRead()); QTRY_COMPARE(accepted.count(),1);
         QCOMPARE(status.count(),2); // the older polling reply must not confirm the write
-        QVERIFY(!power->isEnabled());
+        QVERIFY(power->isEnabled());
+        QVERIFY(power->toolTip().contains("Befehl läuft"));
         QTRY_COMPARE(status.count(),3);
-        QVERIFY(power->isEnabled()); QCOMPARE(power->toolTip(),QString("Einschalten"));
+        QVERIFY(power->isEnabled()); QCOMPARE(power->toolTip(),QString("Gerät aus · Einschalten"));
         QCOMPARE(status.last()[0].toJsonObject()["pwr"].toString(),QString("0"));
         const auto requests=calls(); QCOMPARE(requests.size(),5);
         for(int i=0;i<3;++i) QVERIFY(requests[i].contains("status"));
@@ -190,6 +192,118 @@ private slots:
         QVERIFY(calls()[1].contains("status"));
         QCOMPARE(status.last()[0].toJsonObject()["pwr"].toString(),QString("1"));
         c.stop();
+    }
+    void offlinePowerInterruptsReadAndWaitsForConfirmation() {
+        qputenv("AIRCTRL_TEST_READ_GATE",temp_.filePath("read.ready").toUtf8());
+        Desklet widget(Preferences{},FAKE_BACKEND); widget.showAndPosition();
+        auto* controller=widget.findChild<Controller*>();
+        auto* power=static_cast<PanelButton*>(widget.findChild<QPushButton*>("power"));
+        QSignalSpy status(controller,&Controller::statusReceived), accepted(controller,&Controller::controlAccepted);
+        QSignalSpy errors(controller,&Controller::failed);
+        EnablementRecorder recorder; power->installEventFilter(&recorder);
+        widget.start(); QTRY_COMPARE(calls().size(),1); QVERIFY(controller->busy());
+        QCOMPARE(power->statusColor(),QColor("#ff9800")); QVERIFY(power->isEnabled());
+        power->click(); power->click();
+        QTRY_COMPARE(accepted.count(),1); QCOMPARE(status.count(),0); QCOMPARE(calls().size(),2);
+        QCOMPARE(errors.count(),0); // intentional read cancellation is not a timeout
+        QVERIFY(power->isEnabled()); QCOMPARE(power->statusColor(),QColor("#ff9800"));
+        power->click(); // still waiting for readback: no second write
+        QVERIFY(releaseRead()); QTRY_COMPARE(status.count(),1);
+        QCOMPARE(power->statusColor(),QColor("#2ecc71")); QCOMPARE(recorder.disabled,0);
+        const auto requests=calls(); QCOMPARE(requests.size(),3);
+        QVERIFY(requests[0].contains("status"));
+        QVERIFY(requests[1].contains("set")); QVERIFY(requests[1].contains("pwr=1"));
+        QVERIFY(!requests[1].contains("-I")); QVERIFY(requests[2].contains("status"));
+        controller->stop();
+    }
+    void offlinePowerFailureStaysOrangeAndIsNotRetried() {
+        qputenv("AIRCTRL_TEST_MODE","failure");
+        Desklet widget(Preferences{},FAKE_BACKEND); widget.showAndPosition();
+        auto* controller=widget.findChild<Controller*>();
+        auto* power=static_cast<PanelButton*>(widget.findChild<QPushButton*>("power"));
+        QSignalSpy errors(controller,&Controller::failed);
+        widget.applyStatus({{"pwr","1"}}); // stale ON must not trigger OFF after connection loss
+        widget.start(); QTRY_COMPARE(errors.count(),1);
+        qputenv("AIRCTRL_TEST_MODE","write-failure");
+        power->click(); QTRY_COMPARE(errors.count(),2);
+        QVERIFY(power->isEnabled()); QCOMPARE(power->statusColor(),QColor("#ff9800"));
+        QVERIFY(power->toolTip().contains("Keine Verbindung"));
+        QTest::qWait(1300); QCOMPARE(calls().size(),2);
+        QVERIFY(calls()[1].contains("pwr=1"));
+        power->click(); QTRY_COMPARE(errors.count(),3); // a new explicit click is allowed
+        QCOMPARE(calls().size(),3); QVERIFY(calls()[2].contains("pwr=1"));
+        controller->stop();
+    }
+    void stopCancelsInterruptedPower() {
+        qputenv("AIRCTRL_TEST_READ_GATE",temp_.filePath("read.ready").toUtf8());
+        Controller c(FAKE_BACKEND); QSignalSpy status(&c,&Controller::statusReceived);
+        QSignalSpy accepted(&c,&Controller::controlAccepted);
+        c.start(); QTRY_COMPARE(calls().size(),1);
+        c.setPower(true,true); c.stop(); QTRY_VERIFY(!c.busy());
+        qunsetenv("AIRCTRL_TEST_READ_GATE"); c.start(); QTRY_COMPARE(status.count(),1);
+        QCOMPARE(accepted.count(),0); QCOMPARE(calls().size(),2);
+        QVERIFY(calls()[1].contains("status")); c.stop();
+    }
+    void powerCanCancelStartingRead() {
+        qputenv("AIRCTRL_TEST_READ_GATE",temp_.filePath("read.ready").toUtf8());
+        Controller c(FAKE_BACKEND);
+        QSignalSpy status(&c,&Controller::statusReceived), accepted(&c,&Controller::controlAccepted);
+        QSignalSpy errors(&c,&Controller::failed);
+        c.start(); c.setPower(true,true); // no event-loop turn: QProcess is still Starting
+        QTRY_COMPARE(accepted.count(),1); QCOMPARE(errors.count(),0);
+        QVERIFY(releaseRead()); QTRY_COMPARE(status.count(),1);
+        int writes=0;
+        for(const auto& request:calls()) if(request.contains("set")) ++writes;
+        QCOMPARE(writes,1); c.stop();
+    }
+    void powerAlwaysEnabledAndStateColours() {
+        Preferences p; p.foreground=Qt::white; p.background=Qt::white;
+        Desklet widget(p,FAKE_BACKEND); widget.showAndPosition();
+        auto* power=static_cast<PanelButton*>(widget.findChild<QPushButton*>("power"));
+        EnablementRecorder recorder; power->installEventFilter(&recorder);
+        QVERIFY(power->isEnabled()); QCOMPARE(power->statusColor(),QColor("#ff9800"));
+        const QJsonObject base{{"rh",55},{"rhset",50},{"temp",24},{"pm25",1},{"cl",true}};
+        widget.applyStatus(base); // connected, but no valid pwr: never claim OFF
+        QCOMPARE(power->statusColor(),QColor("#ff9800"));
+        QVERIFY(power->toolTip().contains("unbekannt"));
+        auto state=base; state["pwr"]="0"; widget.applyStatus(state);
+        QVERIFY(power->isEnabled()); QCOMPARE(power->statusColor(),QColor("#ffffff"));
+        QVERIFY(power->accessibleDescription().contains("Gerät aus"));
+        state["pwr"]="1"; widget.applyStatus(state);
+        QVERIFY(power->isEnabled()); QCOMPARE(power->statusColor(),QColor("#2ecc71"));
+        QVERIFY(power->accessibleDescription().contains("Kindersicherung aktiv"));
+        widget.setConnectionError("offline");
+        QVERIFY(power->isEnabled()); QCOMPARE(power->statusColor(),QColor("#ff9800"));
+        QCOMPARE(recorder.disabled,0); QVERIFY(!QFile::exists(log_));
+
+        // Verify actual filled pixels, not just stored colours, also on a fully
+        // transparent panel. Optional contact sheet contains real Qt renders.
+        QImage preview(327,360,QImage::Format_ARGB32_Premultiplied); preview.fill(QColor("#dddddd"));
+        QPainter painter(&preview); painter.setPen(Qt::black);
+        QFont caption=painter.font(); caption.setPixelSize(13); painter.setFont(caption);
+        const QStringList names{"Orange · keine Verbindung","Weiß · Gerät aus","Grün · Gerät an"};
+        const QList<QColor> colours{QColor("#ff9800"),QColor("#ffffff"),QColor("#2ecc71")};
+        for(int transparency : {0,100}) {
+            Preferences appearance; appearance.transparency=transparency;
+            Desklet rendered(appearance,FAKE_BACKEND,true); rendered.showAndPosition();
+            auto* button=static_cast<PanelButton*>(rendered.findChild<QPushButton*>("power"));
+            for(int i=0;i<3;++i) {
+                auto snapshot=base; snapshot["pwr"]=i==1 ? "0" : "1";
+                rendered.applyStatus(snapshot);
+                if(i==0) rendered.setConnectionError("offline");
+                const auto image=button->grab().toImage(); int matching=0;
+                for(int y=0;y<image.height();++y) for(int x=0;x<image.width();++x)
+                    if(image.pixelColor(x,y)==colours[i]) ++matching;
+                QVERIFY2(matching>30,"Power status disc must be opaque and visible");
+                if(transparency==0) {
+                    painter.drawText(20,i*120+20,names[i]);
+                    painter.drawPixmap(20,i*120+28,rendered.grab());
+                }
+            }
+        }
+        painter.end();
+        const auto png=qEnvironmentVariable("AIRCTRL_TEST_POWER_PNG");
+        if(!png.isEmpty()) QVERIFY(preview.save(png));
     }
     void rejectUnsupportedHumidity() {
         Controller c(FAKE_BACKEND); QSignalSpy errors(&c, &Controller::failed);
@@ -257,7 +371,7 @@ private slots:
         QVERIFY(widget.findChild<QPushButton*>("power")->isEnabled());
         QVERIFY(!QFile::exists(log_));
         widget.setConnectionError("offline");
-        QVERIFY(!widget.findChild<QPushButton*>("power")->isEnabled());
+        QVERIFY(widget.findChild<QPushButton*>("power")->isEnabled());
         QVERIFY(!target->isEnabled());
         QVERIFY(widget.toolTip().contains("Keine Verbindung"));
         QVERIFY(widget.toolTip().contains("offline"));
@@ -267,7 +381,7 @@ private slots:
         QVERIFY(value->palette().color(QPalette::WindowText).alpha()<255);
         widget.applyStatus({{"name","other"}});
         QCOMPARE(value->text(),QString("Feuchte —"));
-        QVERIFY(!widget.findChild<QPushButton*>("power")->isEnabled());
+        QVERIFY(widget.findChild<QPushButton*>("power")->isEnabled());
         QVERIFY(!target->isEnabled());
     }
     void diagnosticWindowExplainsFieldsAndPreservesRawData() {
@@ -359,6 +473,11 @@ private slots:
         auto* lock=widget.findChild<QPushButton*>("childLock"); lock->click();
         QTRY_VERIFY(lock->toolTip().contains("ausschalten"));
         QVERIFY(lock->isEnabled()); QVERIFY(!target->isEnabled());
+        auto* power=widget.findChild<QPushButton*>("power"); QVERIFY(power->isEnabled());
+        power->click(); QTRY_VERIFY(power->toolTip().contains("Gerät aus"));
+        QVERIFY(lock->isEnabled()); QVERIFY(lock->toolTip().contains("ausschalten"));
+        QVERIFY(!target->isEnabled());
+        power->click(); QTRY_VERIFY(power->toolTip().contains("Gerät an"));
         lock->click(); QTRY_VERIFY(target->isEnabled());
     }
     void desktopLayerOnX11() {
@@ -449,6 +568,7 @@ private slots:
         }
         widget.setConnectionError("offline");
         QCOMPARE(clickMenus(widget.findChild<QPushButton*>("power"),Qt::RightButton),1);
+        QCOMPARE(clickMenus(widget.findChild<QPushButton*>("humidityTarget"),Qt::RightButton),1);
         QVERIFY(!QFile::exists(log_));
     }
     void leftClickWorksEvenWhenPositionLocked() {
@@ -552,7 +672,9 @@ private slots:
     void previewNeverWrites() {
         Desklet widget(Preferences{}, FAKE_BACKEND, true);
         widget.applyStatus({{"pwr","1"},{"rhset",50}}); widget.start();
-        QVERIFY(!widget.findChild<QPushButton*>("power")->isEnabled());
+        auto* power=widget.findChild<QPushButton*>("power");
+        QVERIFY(power->isEnabled()); power->click();
+        QVERIFY(power->toolTip().contains("Vorschau"));
         QVERIFY(!widget.findChild<QPushButton*>("humidityTarget")->isEnabled());
         QVERIFY(!QFile::exists(log_));
     }

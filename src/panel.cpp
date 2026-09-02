@@ -51,8 +51,15 @@ void PanelButton::paintEvent(QPaintEvent*) {
         auto highlight=foreground_; highlight.setAlpha(28); p.setPen(Qt::NoPen); p.setBrush(highlight);
         p.drawRoundedRect(rect().adjusted(1,1,-1,-1),3,3);
     }
-    QColor c=foreground_; c.setAlpha(isEnabled() ? 255 : 115);
-    p.setPen(QPen(c,0.9)); p.setBrush(Qt::NoBrush); p.drawEllipse(QRectF(width()/2.0-9,height()/2.0-9,18,18));
+    // A filled status disc keeps white (off) visible even on a white background.
+    // Power's status colours remain independent of user-selected foreground/alpha.
+    const bool indicator=icon_==PanelIcon::Power && statusColor_.isValid();
+    QColor c=indicator ? QColor("#222222") : foreground_;
+    c.setAlpha(isEnabled() ? 255 : 115);
+    p.setPen(QPen(c,0.9));
+    p.setBrush(indicator ? QBrush(statusColor_) : QBrush(Qt::NoBrush));
+    p.drawEllipse(QRectF(width()/2.0-9,height()/2.0-9,18,18));
+    p.setBrush(Qt::NoBrush);
     glyph(p,icon_,QRectF(width()/2.0-7,height()/2.0-7,14,14),c);
     if(hasFocus()) { p.setPen(QPen(foreground_,1,Qt::DotLine)); p.drawRect(rect().adjusted(1,1,-2,-2)); }
 }

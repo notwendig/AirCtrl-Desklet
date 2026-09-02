@@ -1,13 +1,13 @@
-# Philips AirControl – Qt6-Gerätepanel 0.3.3
+# Philips AirControl – Qt6-Gerätepanel 0.3.4
 
 Kompaktes C++/Qt6-Desktopwidget für den Philips AC2729/10 „Wohnzimmer“ unter
 Cinnamon. Geräteadresse voreingestellt: **192.168.77.5**, UDP-Port **5683**.
 Der bereits am Gerät funktionierende C++-CoAP-Code ist vollständig enthalten.
 
-Version 0.3.2 behebt das regelmäßige Ausgrauen der Tasten während der
-Statusabfragen. Ein Klick während einer Abfrage wird vorgemerkt und nach deren
-erfolgreichem Abschluss einmal ausgeführt. Bis zur anschließenden Geräterückmeldung
-sind weitere Steuerbefehle gesperrt.
+Version 0.3.4 hält Power immer anklickbar: orange ohne bestätigten aktuellen
+Betriebszustand, weiß bei „aus“, grün bei „an“. Auch offline und bei aktivierter
+Kindersicherung wird Power nicht ausgegraut. Die übrigen Tastensperren bleiben
+erhalten. Hintergrundabfragen lassen die Tasten wie seit 0.3.2 bedienbar.
 
 ## Kompakte Oberfläche
 
@@ -16,8 +16,9 @@ Standardmäßig sind Feuchte, Zielfeuchte, Temperatur und PM2,5 sichtbar.
 Das Standardlayout misst **287 × 85 Pixel** bei 100 % Desktopskalierung.
 Bei größerer Schrift wächst das Fenster mit, damit nichts abgeschnitten wird.
 
-`vorschau.png` zeigt die echte Qt-Oberfläche. Im Vorschaumodus sind die
-Gerätetasten deaktiviert; „Vorschau“ steht im Tooltip und im Kontextmenü.
+`vorschau.png` zeigt die echte Qt-Oberfläche, `power-vorschau.png` die drei
+Power-Farben. In der Vorschau bleibt Power anklickbar, sendet aber keine Befehle;
+alle übrigen Gerätetasten sind deaktiviert. „Vorschau“ steht im Tooltip und Menü.
 
 ## Kontextmenü und Darstellung
 
@@ -32,7 +33,7 @@ Im Tray-Menü gibt es zusätzlich „Menü / Darstellung …“.
 |---|---|
 | Hintergrundfarbe | Farbe hinter Tasten und Werten |
 | Hintergrundtransparenz | 0 % deckend bis 100 % durchsichtig |
-| Vordergrundfarbe | Farbe der Zahlen, Beschriftungen und Tastensymbole |
+| Vordergrundfarbe | Farbe der Zahlen, Beschriftungen und übrigen Tastensymbole; Power behält seine Zustandsfarben |
 | Schriftart und Schriftschnitt | Schriftfamilie, normal/fett/kursiv |
 | Schriftgröße | 6–48 Punkt; Fenster passt sich dem Inhalt an |
 | Darstellung zurücksetzen | Standardfarben, Hintergrunddeckkraft und Schrift wiederherstellen |
@@ -53,9 +54,9 @@ Das neue ZIP im Ordner Downloads speichern. Die vorhandenen Abhängigkeiten reic
 
 ```bash
 pkill -x airctrl-desklet
-cd ~/Downloads
-unzip -o airctrl-desklet-0.3.3.zip
-cd airctrl-desklet
+cd /home/juergen/Projects/Qt
+unzip -o ~/Downloads/airctrl-desklet-0.3.4.zip
+cd /home/juergen/Projects/Qt/airctrl-desklet
 bash install.sh
 env -u QT_QPA_PLATFORM ~/.local/bin/airctrl-desklet
 ```
@@ -72,7 +73,7 @@ sudo dnf install -y gcc-c++ cmake make qt6-qtbase-devel qt6-qtsvg openssl-devel 
 ```
 
 Installation für deinen Benutzer unter `~/.local`. Menüeintrag: **Philips AirControl**.
-Das Quellverzeichnis in Downloads wird nach der Installation nicht mehr benötigt.
+Dein Quellverzeichnis bleibt `/home/juergen/Projects/Qt/airctrl-desklet`.
 Python dient ausschließlich zum Schreiben des Menüeintrags; beide laufenden
 Programme sind C++.
 
@@ -83,7 +84,7 @@ mehreren Optionen öffnet ein Auswahlmenü; erst eine Auswahl schreibt zum Gerä
 
 | Taste von links | Funktion | Übertragene Werte |
 |---|---|---|
-| 1 · Ein/Aus | Gerät ein- oder ausschalten | `pwr` als String `"1"` / `"0"` |
+| 1 · Ein/Aus | Verbunden: umschalten; offline/unbekannt: Einschaltversuch | `pwr` als String `"1"` / `"0"` |
 | 2 · Kindersicherung | Sperren / entsperren | `cl` als Boolean |
 | 3 · Automatik | Automatik, Allergen oder Nacht | `mode`: `P`, `A`, `S`; Nacht zusätzlich `om=s` |
 | 4 · Lüfter | Stufe 1, 2, 3 oder Turbo | `mode=M`, `om`: `1`, `2`, `3`, `t` |
@@ -128,11 +129,27 @@ Rohwert bleibt erhalten; insbesondere aus einem unbekannten `err`-Code wird kein
 gesicherter Wartungsalarm abgeleitet. Die bekannten Grundzuordnungen folgen der
 [Philips-CoAP-Integration](https://github.com/kongo09/philips-airpurifier-coap/blob/master/custom_components/philips_airpurifier_coap/const.py).
 
-Regelmäßige Statusabfragen lassen die Gerätetasten bedienbar. Gesperrt sind sie
-beim Ausführen eines Steuerbefehls bis zur Rückmeldung, offline und in der Vorschau.
-Bei aktivierter Kindersicherung bleibt nur die Taste zum Entsperren verfügbar.
+Regelmäßige Statusabfragen lassen die Gerätetasten bedienbar. **Power bleibt immer
+aktiv.** Die übrigen Tasten sind beim Ausführen eines Steuerbefehls bis zur
+Rückmeldung, offline und in der Vorschau gesperrt.
+Bei aktivierter Kindersicherung bleiben Power und die Taste zum Entsperren
+verfügbar; das reale Gerät kann einen Power-Befehl bei aktiver Sperre ablehnen.
 Bei ausgeschaltetem Gerät bleiben Ein/Aus und Kindersicherung verfügbar.
-Für im empfangenen Status fehlende Fähigkeiten werden keine Befehle angeboten.
+Für im empfangenen Status fehlende Fähigkeiten werden außer Power keine Befehle angeboten.
+
+| Power-Farbe | Bedeutung | Klick |
+|---|---|---|
+| Orange | Keine Verbindung oder kein gültiger aktueller `pwr`-Wert | Einmaliger Einschaltversuch (`pwr=1`) |
+| Weiß | Verbunden, Gerät bestätigt `pwr="0"` | Einschalten |
+| Grün | Verbunden, Gerät bestätigt `pwr="1"` | Ausschalten |
+
+Die Farbe wird nicht optimistisch nach dem Klick geändert. Erst eine neue
+Statusantwort bestätigt den Zustand. Ein Timeout setzt Power wieder auf Orange;
+ein alter letzter „an“-Wert wird dann nicht weiter grün dargestellt.
+Der gefüllte Kreis und das dunkle Symbol bleiben bei allen Hintergrundfarben und
+auch mit transparentem Hintergrund erkennbar. Tooltips erklären den Zustand
+zusätzlich als Text. Power bleibt auch während eines Befehls aktiv; weitere Klicks
+werden bis zu dessen Rückmeldung ignoriert. Es werden keine Doppelbefehle vorgemerkt.
 
 ## Verbindung und Rückmeldungen
 
@@ -140,11 +157,17 @@ Nach einer Änderung liest die Anwendung den Status neu. Nur die Rückmeldung
 ändert die angezeigten Werte. Schreibbefehle werden nie automatisch wiederholt.
 Empfangene Messwerte lösen ihrerseits keine Schreibbefehle aus.
 
-Ein während einer Statusabfrage geklickter Befehl wartet auf deren erfolgreichen
+Ein während einer Statusabfrage geklickter normaler Befehl wartet auf deren erfolgreichen
 Abschluss. Die ältere Antwort gilt nicht als Bestätigung dieses Befehls; erst
 der neue Status nach dem Schreiben aktualisiert die Anzeige. Schlägt die laufende
 Abfrage fehl oder wird das Widget beendet, wird der vorgemerkte Befehl verworfen.
 Er wird bei einer späteren Wiederverbindung nicht nachträglich ausgeführt.
+
+**Ausnahme: Power ohne aktuellen Betriebszustand.** Ein expliziter Klick versucht
+einmal einzuschalten, auch wenn Statusabfragen scheitern. Eine laufende Leseabfrage
+wird dafür beendet; erst nach deren Prozessende beginnt der Schreibbefehl. Es
+laufen niemals Lesen und Schreiben parallel. Stoppen verwirft auch diesen Auftrag.
+Fehlgeschlagene Power-Schreibbefehle werden nicht automatisch wiederholt.
 
 Die Abfrage läuft standardmäßig zehn Sekunden nach Abschluss der vorherigen
 Anfrage; das Intervall ist unter Einstellungen von 5 bis 300 Sekunden wählbar.

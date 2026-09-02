@@ -1,6 +1,6 @@
-# Validierung – Version 0.3.3
+# Validierung – Version 0.3.4
 
-Datum: 2026-09-01.
+Datum: 2026-09-02.
 
 ## Build
 
@@ -18,11 +18,11 @@ Datum: 2026-09-01.
 QtTest/CTest, mit Qt-Offscreen-Plattform:
 
 ```text
-Totals: 32 passed, 0 failed, 1 skipped, 0 blacklisted
+Totals: 37 passed, 0 failed, 1 skipped, 0 blacklisted
 100% tests passed out of 1
 ```
 
-Die 32 erfolgreichen QtTest-Einträge umfassen 30 Testfälle plus Initialisierung
+Die 37 erfolgreichen QtTest-Einträge umfassen 35 Testfälle plus Initialisierung
 und Aufräumen. Der zusätzliche native X11-Test wurde unter Offscreen übersprungen:
 
 | Prüffall | Ergebnis |
@@ -37,7 +37,7 @@ und Aufräumen. Der zusätzliche native X11-Test wurde unter Offscreen überspru
 | Anhalten verhindert ausstehende Lesewiederholung | OK |
 | Timeout und Unterdrückung überlappender Abfragen | OK |
 | Fehlendes Backend anzeigen | OK |
-| Messwerte, fehlende Felder, Sperren der Steuerung bei Offline-Zustand | OK |
+| Messwerte, fehlende Felder, Offline-Sperren mit Ausnahme von Power | OK |
 | Kompaktes Layout, nur acht Tasten und Werte, Schriftgrößen 10/24/48 ohne Abschneiden | OK |
 | Hintergrundalpha 0/50/100 %; Vordergrund bleibt deckend | OK |
 | Transparenz über echtes Kontextmenü ändern und speichern, ohne Gerätezugriff | OK |
@@ -45,7 +45,7 @@ und Aufräumen. Der zusätzliche native X11-Test wurde unter Offscreen überspru
 | Einstellungen speichern/laden, Autostart anlegen/entfernen | OK |
 | Neue Panelbefehle: Datentypen, kombinierte Moduswerte und Rücklesen | OK |
 | Ungültige Timer-, Licht-, Sperr- und Moduswerte zurückweisen | OK |
-| Echte Zielfeuchte-Menüauswahl und Kindersicherung ein/aus | OK |
+| Echte Zielfeuchte-Menüauswahl, Kindersicherung ein/aus, Power trotz Kindersicherung | OK |
 | Rechtsklick über Hintergrund, Leiste, Werten, aktiver und deaktivierter Taste; nur ein Menü bei zusätzlichem Kontext-Ereignis | OK |
 | Kurzer Linksklick auf Werte öffnet Menü auch bei Positionssperre | OK |
 | Ziehen unter Offscreen verändert und speichert Position, ohne Menü oder Backend-Aufruf | OK |
@@ -55,11 +55,17 @@ und Aufräumen. Der zusätzliche native X11-Test wurde unter Offscreen überspru
 | Vorgemerkten Befehl bei Prozessfehler, ungültigem JSON und Timeout verwerfen; keine verspätete Ausführung nach Wiederverbindung | OK (3 Fälle) |
 | Stoppen verwirft vorgemerkten Befehl auch bei anschließendem Neustart der Steuerung | OK |
 | Diagnose: Tag/Wert/Bedeutung, unbekannter Tag, ungesicherter Fehlercode, Rohdaten und kopierter Gesamtbericht | OK |
+| Power bleibt aktiv; Orange/Weiß/Grün entsprechen bestätigtem Zustand, fehlendem `pwr`, Kindersicherung und Verbindungsausfall | OK |
+| Tatsächlich gerenderte Power-Farben deckend auf normalem und vollständig transparentem Hintergrund | OK |
+| Offline-Power beendet laufende Abfrage; einmal Einschalten, erst neue Antwort ändert Orange auf Grün | OK |
+| Fehlgeschlagener Offline-Einschaltversuch bleibt orange und wird nicht automatisch wiederholt; neuer Benutzerklick erlaubt | OK |
+| Stoppen verwirft noch nicht gestarteten Power-Auftrag nach abgebrochener Statusabfrage | OK |
+| Power während QProcess-Startphase wird einmal ausgeführt, ohne falschen Verbindungsfehler | OK |
 | Native X11-Fensterattribute | Übersprungen: kein X11-Display |
 
 Für Version 0.1.0 wurden zusätzlich die 14 vorhandenen UDP-Integrationstests aus
 `aioairctrl-cpp` gegen `airctrl-backend` ausgeführt: alle erfolgreich. Das Backend
-ist in Version 0.3.3 unverändert; diese Suite wurde nicht erneut ausgeführt. Darunter
+ist in Version 0.3.4 unverändert; diese Suite wurde nicht erneut ausgeführt. Darunter
 IPv4/IPv6, echte UDP-Loopback-Kommunikation, Python-Referenzverschlüsselung,
 Statusbeobachtung, CoAP-Fehler, Timeouts und typisierte Schreibwerte. Die
 Async-Untertests verwendeten den bereits gebauten C++-Testtreiber des ursprünglichen
@@ -78,7 +84,7 @@ Benutzergerät erfolgreichen C++-Port verglichen: unverändert.
   Sie greift nicht auf das reale Gerät zu; der Vorschaustatus steht nur im Tooltip und Kontextmenü.
 - `install.sh` wurde erneut mit einem separaten absoluten Testpräfix ausgeführt:
   Build und Ersetzen der vorherigen Installation erfolgreich; beide Programme vorhanden.
-- Der Versionsaufruf der installierten GUI meldet `airctrl-desklet 0.3.3`.
+- Der Versionsaufruf der installierten GUI meldet `airctrl-desklet 0.3.4`.
 - Shellsyntax von Installations- und Deinstallationsskript geprüft.
 
 ## Layout und Einstellungen
@@ -122,8 +128,9 @@ visuell geprüft.
 Bis 0.3.1 hing die Freigabe der Gerätetasten am allgemeinen `busy`-Zustand des
 Controllers. Jede Hintergrundabfrage sperrte deshalb die gesamte Tastenleiste
 bis zum Empfang der Antwort. Version 0.3.2 sperrt die Tasten stattdessen während
-einer vom Benutzer ausgelösten Änderung und bis zu deren Rückmeldung. Offline-,
-Vorschau-, Kindersicherungs- und geräteabhängige Sperren bleiben erhalten.
+einer vom Benutzer ausgelösten Änderung und bis zu deren Rückmeldung. Seit 0.3.4
+ist Power von allen UI-Sperren ausgenommen. Offline-, Vorschau-, Kindersicherungs-
+und geräteabhängige Sperren gelten weiterhin für die übrigen Tasten.
 
 Der Controller merkt genau einen während einer laufenden Abfrage eingehenden
 Steuerbefehl vor und startet ihn nach einer gültigen Antwort. Diese ältere Antwort
@@ -135,8 +142,29 @@ Der neue Integrationstest hält die simulierte Leseantwort gezielt zurück und
 zeichnet alle `EnabledChange`-Ereignisse der acht Tasten auf. Während der normalen
 Abfrage tritt keine Deaktivierung auf. Ein anschließender echter Mausklick während
 einer weiteren Abfrage führt zur Folge Lesen → einmal Schreiben → neu Lesen.
-Die Tasten bleiben bis zu dieser neuen Antwort gesperrt. Weitere Prüfungen decken
+Außer Power bleiben die Tasten bis zu dieser neuen Antwort gesperrt. Weitere Prüfungen decken
 den Abbruch bei Prozessfehler, ungültiger Antwort, Timeout und Stoppen ab.
+
+## Power-Zustand und Offline-Bedienung
+
+Power wird nie deaktiviert. Der gefüllte Kreis zeigt Orange (`#ff9800`) ohne
+aktuellen gültigen Betriebszustand, Weiß (`#ffffff`) für bestätigt aus und Grün
+(`#2ecc71`) für bestätigt an. Sein dunkler Umriss und sein Symbol sorgen auch
+auf weißem Hintergrund für Sichtbarkeit. Benutzervordergrundfarbe und
+Hintergrundtransparenz überschreiben diese Anzeige nicht. Tooltips enthalten
+dieselben Informationen in Textform, einschließlich Vorschau und Kindersicherung.
+
+Im Offline-Zustand wird bei explizitem Klick einmal `pwr=1` gesendet, unabhängig
+vom alten letzten Wert. Eine noch laufende Statusabfrage darf dafür abgebrochen
+werden; der Schreibprozess beginnt erst nach deren Ende. Weder Prozessabbruch
+noch Schreibannahme täuschen eine erfolgreiche Verbindung vor. Erst der neue
+Status kann die Farbe auf Grün ändern. Zusätzliche Klicks während eines Befehls
+werden ignoriert, nicht gesammelt. In der Vorschau bewirkt Power keinen Zugriff.
+
+Die Tests prüfen laufende und gerade erst startende Abfragen, Abbruch beim
+Stoppen, fehlerhafte Schreibantworten, alte ON-Werte nach Verbindungsverlust,
+Doppelklicks und die Freigabe trotz Kindersicherung. Die drei tatsächlichen
+Qt-Renderings stehen in `power-vorschau.png` und wurden visuell geprüft.
 
 ## Menü und Wayland
 
@@ -177,7 +205,7 @@ Schreibbefehle wurden hier gegen simulierte Antworten geprüft.
 
 Der Screenshot des Benutzers zeigt auch bereits empfangene GUI-Messwerte und einen
 anschließenden Verbindungsfehler. Dessen genaue Ursache ist noch unbekannt.
-Version 0.3.3 verwendet weiterhin zehn Sekunden je CoAP-Anfrage, einen Prozess-Watchdog von
+Version 0.3.4 verwendet weiterhin zehn Sekunden je CoAP-Anfrage, einen Prozess-Watchdog von
 25 Sekunden und eine einmalige Wiederholung fehlgeschlagener Statusabfragen.
 Die neue Diagnose zeigt den tatsächlichen Backend-Fehler. Eine Behebung der
 AT-SPI-Startmeldungen ist nicht Teil dieses Updates.

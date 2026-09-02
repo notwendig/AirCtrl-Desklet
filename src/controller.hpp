@@ -19,7 +19,7 @@ public:
     void setWatchdogInterval(int milliseconds); // permits short deterministic tests
 public slots:
     void refresh();
-    void setPower(bool on);
+    void setPower(bool on, bool interruptRead = false);
     void setHumidity(int percent);
     void setPanelValues(const QJsonObject& values);
 signals:
@@ -43,6 +43,7 @@ private:
     bool active_ = false;
     bool timedOut_ = false;
     bool oversized_ = false;
+    bool powerInterrupt_ = false;
     Operation operation_ = Operation::Read;
     QProcess process_;
     QTimer poll_;

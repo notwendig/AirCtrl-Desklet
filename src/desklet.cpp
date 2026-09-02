@@ -177,7 +177,21 @@ void Desklet::sendValues(const QJsonObject& values) {
 }
 void Desklet::openControl(int index) {
     if(!controls_[index]->isEnabled()) return;
-    if(index==0) { sendValues({{"pwr",status_["pwr"]=="1" ? "0" : "1"}}); return; }
+    if(index==0) {
+        if(demo_) { notice_="Vorschau – keine Gerätesteuerung"; updateFooter(); return; }
+        if(awaitingConfirmation_) {
+            notice_="Ein Befehl läuft bereits · Geräterückmeldung abwarten …";
+            updateFooter(); return;
+        }
+        const bool known=connected_ && powerKnown(status_);
+        const bool turnOn=!known || status_["pwr"]!="1";
+        pending_={{"pwr",turnOn ? "1" : "0"}};
+        awaitingConfirmation_=true;
+        notice_=known ? "Änderung wird ausgeführt …" : "Keine aktuelle Rückmeldung · Einschalten wird versucht …";
+        updateControls(); updateFooter();
+        controller_.setPower(turnOn,!known);
+        return;
+    }
     if(index==1) { sendValues({{"cl",!status_["cl"].toBool()}}); return; }
     QMenu menu(this);
     auto item=[&](const QString& name,const QJsonObject& values) {
@@ -227,8 +241,19 @@ void Desklet::updateControls() {
     const bool available[]={powerKnown(status_),status_["cl"].isBool(),status_.contains("mode"),
         status_.contains("mode") && status_.contains("om"),status_.contains("rhset"),
         status_.contains("aqil") || status_.contains("uil"),status_.contains("func"),status_.contains("dt")};
-    for(int i=0;i<8;++i) controls_[i]->setEnabled(ready && available[i] && (i==1 || unlocked) && (i<=1 || on));
-    controls_[0]->setToolTip(on ? "Ausschalten" : "Einschalten");
+    for(int i=1;i<8;++i) controls_[i]->setEnabled(ready && available[i] && (i==1 || unlocked) && (i<=1 || on));
+    auto* power=controls_[0];
+    power->setEnabled(true);
+    const bool known=connected_ && powerKnown(status_);
+    power->setStatusColor(!known ? QColor("#ff9800") : on ? QColor("#2ecc71") : QColor("#ffffff"));
+    QString powerTip=!connected_ ? "Keine Verbindung · Einschalten versuchen" :
+        !known ? "Betriebszustand unbekannt · Einschalten versuchen" :
+        on ? "Gerät an · Ausschalten" : "Gerät aus · Einschalten";
+    if(demo_) powerTip+="\nVorschau – keine Gerätesteuerung";
+    else if(awaitingConfirmation_) powerTip+="\nBefehl läuft · weitere Klicks senden keinen zusätzlichen Befehl";
+    else if(!unlocked) powerTip+="\nKindersicherung aktiv · das Gerät kann den Befehl ablehnen";
+    power->setToolTip(powerTip);
+    power->setAccessibleDescription(powerTip);
     controls_[1]->setToolTip(status_["cl"].toBool() ? "Kindersicherung ausschalten" : "Kindersicherung einschalten");
     controls_[4]->setToolTip("Zielfeuchte: "+(status_.contains("rhset") ? QString::number(status_["rhset"].toInt())+" %" : "—"));
 }

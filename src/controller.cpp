@@ -52,6 +52,7 @@ void Controller::setWatchdogInterval(int milliseconds) { watchdogMs_ = qMax(50, 
 void Controller::start() { active_ = true; refresh(); }
 void Controller::stop() {
     active_ = false;
+    powerInterrupt_ = false;
     queuedWrite_.clear();
     poll_.stop(); verify_.stop(); watchdog_.stop(); readRetry_.stop();
     if (process_.state() != QProcess::NotRunning) process_.kill();
@@ -66,8 +67,18 @@ void Controller::refresh() {
     readAttempt_ = 0;
     launch(Operation::Read, {"status", "-J"});
 }
-void Controller::setPower(bool on) {
-    launch(Operation::Write, {"set", on ? "pwr=1" : "pwr=0"});
+void Controller::setPower(bool on, bool interruptRead) {
+    const QStringList command{"set", on ? "pwr=1" : "pwr=0"};
+    if (interruptRead && busy_ && operation_ == Operation::Read && queuedWrite_.isEmpty()) {
+        // An explicit offline power request must not depend on a successful read.
+        // Wait for the killed read's finished signal before starting the write.
+        queuedWrite_ = command;
+        powerInterrupt_ = true;
+        watchdog_.stop();
+        process_.kill();
+        return;
+    }
+    launch(Operation::Write, command);
 }
 void Controller::setHumidity(int percent) {
     if (percent != 40 && percent != 50 && percent != 60 && percent != 70) {
@@ -106,8 +117,8 @@ void Controller::setPanelValues(const QJsonObject& values) {
 }
 void Controller::launch(Operation operation, const QStringList& tail) {
     if (busy_) {
-        // Keep the read and write serialized. The UI blocks further commands
-        // once one has been submitted, but background reads do not block clicks.
+        // Keep read and write serialized. Further commands are ignored while
+        // awaiting confirmation, including repeated clicks on enabled Power.
         if (operation == Operation::Write && operation_ == Operation::Read && queuedWrite_.isEmpty())
             queuedWrite_ = tail;
         return;
@@ -128,6 +139,7 @@ void Controller::launch(Operation operation, const QStringList& tail) {
 void Controller::fail(const QString& reason) {
     // A failed read must not leave a command waiting for some future reconnect.
     queuedWrite_.clear();
+    powerInterrupt_ = false;
     emit failed(reason);
     if (!active_) return;
     if (operation_ == Operation::Read && readAttempt_ == 0) {
@@ -141,6 +153,15 @@ void Controller::finished(int code, QProcess::ExitStatus exitStatus) {
     error_ += process_.readAllStandardError();
     setBusy(false);
     if (!active_) return;
+    if (powerInterrupt_) {
+        powerInterrupt_ = false;
+        const auto command = queuedWrite_;
+        queuedWrite_.clear();
+        // Intentional cancellation is not a network error. Never overlap or
+        // retry the write; its result and fresh status follow the usual path.
+        if (!command.isEmpty()) launch(Operation::Write, command);
+        return;
+    }
     if (timedOut_) { fail("Keine Antwort vom Gerät. Neuer Versuch folgt automatisch."); return; }
     if (oversized_) { fail("Die Geräteantwort ist zu groß."); return; }
     if (code != 0 || exitStatus != QProcess::NormalExit) {
