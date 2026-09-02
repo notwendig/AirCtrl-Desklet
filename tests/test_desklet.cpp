@@ -16,6 +16,35 @@
 #include <QPlainTextEdit>
 #include <QClipboard>
 #include <QPainter>
+#include <QCheckBox>
+#include <QDBusConnection>
+#include <QDBusContext>
+
+class MonitoringProbe : public Desklet {
+public:
+    using Desklet::Desklet;
+    qint64 now=0;
+    int deliveries=0;
+    void advance(qint64 seconds) { now+=seconds*1000; updateMonitoring(); }
+    void refreshMonitor() { updateMonitoring(); }
+protected:
+    qint64 monotonicMs() const override { return now; }
+    void deliverAlarm(const QString&,bool) override { ++deliveries; }
+};
+
+class NotificationProbe : public QObject {
+    Q_OBJECT
+    Q_CLASSINFO("D-Bus Interface","org.freedesktop.Notifications")
+public:
+    int received=0;
+    QString body;
+    QVariantMap hints;
+public slots:
+    uint Notify(const QString&,uint,const QString&,const QString&,const QString& text,
+                const QStringList&,const QVariantMap& properties,int) {
+        ++received; body=text; hints=properties; return uint(received);
+    }
+};
 
 class ScopedEnvironment {
 public:
@@ -121,6 +150,8 @@ private slots:
         QSignalSpy status(c,&Controller::statusReceived), errors(c,&Controller::failed);
         QTRY_VERIFY(status.count()>=1);
         QTest::qWait(11000); // deliberately exceed the old 10 s limit
+        QVERIFY(widget.dataAgeSeconds()>=10);
+        QCOMPARE(widget.findChild<MonitorBar*>()->freshness(),DataFreshness::Fresh);
         QCOMPARE(status.count(),1); QCOMPARE(errors.count(),0); QCOMPARE(calls().size(),1);
         QCOMPARE(power->statusColor(),QColor("#2ecc71")); QVERIFY(power->isEnabled());
         QTRY_VERIFY_WITH_TIMEOUT(status.count()>=2,10000);
@@ -307,7 +338,7 @@ private slots:
 
         // Verify actual filled pixels, not just stored colours, also on a fully
         // transparent panel. Optional contact sheet contains real Qt renders.
-        QImage preview(327,450,QImage::Format_ARGB32_Premultiplied); preview.fill(QColor("#dddddd"));
+        QImage preview(327,540,QImage::Format_ARGB32_Premultiplied); preview.fill(QColor("#dddddd"));
         QPainter painter(&preview); painter.setPen(Qt::black);
         QFont caption=painter.font(); caption.setPixelSize(13); painter.setFont(caption);
         const QStringList names{"Orange · keine Verbindung","Weiß · Gerät aus","Grün · Gerät an"};
@@ -325,8 +356,8 @@ private slots:
                     if(image.pixelColor(x,y)==colours[i]) ++matching;
                 QVERIFY2(matching>30,"Power status disc must be opaque and visible");
                 if(transparency==0) {
-                    painter.drawText(20,i*150+20,names[i]);
-                    painter.drawPixmap(20,i*150+28,rendered.grab());
+                    painter.drawText(20,i*180+20,names[i]);
+                    painter.drawPixmap(20,i*180+28,rendered.grab());
                 }
             }
         }
@@ -405,6 +436,156 @@ private slots:
         QCOMPARE(value->text(),QString("Feuchte —"));
         QVERIFY(widget.findChild<QPushButton*>("power")->isEnabled());
         QVERIFY(!target->isEnabled());
+    }
+    void receptionAgeThresholdsAndLatch() {
+        MonitoringProbe widget(Preferences{},FAKE_BACKEND);
+        auto* bar=widget.findChild<MonitorBar*>();
+        QSignalSpy raised(&widget,&Desklet::alarmRaised);
+        QCOMPARE(widget.dataAgeSeconds(),qint64(-1)); QCOMPARE(bar->ageText(),QString("— s"));
+        QCOMPARE(bar->freshness(),DataFreshness::Waiting); QCOMPARE(raised.count(),0);
+        widget.applyStatus({{"pwr","1"},{"rh",55}});
+        QCOMPARE(bar->ageColor(),QColor("#2ecc71")); QCOMPARE(bar->ageText(),QString("0 s"));
+        widget.advance(44); QCOMPARE(bar->freshness(),DataFreshness::Fresh); QCOMPARE(raised.count(),0);
+        widget.advance(1); QCOMPARE(bar->ageText(),QString("45 s")); QCOMPARE(bar->ageColor(),QColor("#f1c40f"));
+        QCOMPARE(raised.count(),1); QVERIFY(!raised[0][1].toBool());
+        widget.advance(44); QCOMPARE(bar->ageText(),QString("89 s")); QCOMPARE(raised.count(),1);
+        widget.acknowledgeAlarms(); QVERIFY(bar->alarmText().contains("(Q)"));
+        widget.advance(1); QCOMPARE(bar->ageColor(),QColor("#e74c3c")); QCOMPARE(raised.count(),2);
+        QVERIFY(raised[1][1].toBool()); QVERIFY(!bar->alarmText().contains("(Q)"));
+        widget.setConnectionError("offline"); widget.setConnectionError("offline again");
+        widget.advance(500); QCOMPARE(raised.count(),2); QCOMPARE(widget.dataAgeSeconds(),qint64(590));
+        widget.applyStatus({{"pwr","1"},{"rh",56}});
+        QCOMPARE(bar->ageText(),QString("0 s")); QCOMPARE(bar->alarmText(),QString("Keine Alarme"));
+        widget.advance(45); QCOMPARE(raised.count(),3); QCOMPARE(widget.deliveries,3);
+    }
+    void validPacketsResetAgeWhileWriteIsPending() {
+        qputenv("AIRCTRL_TEST_WRITE_GATE",temp_.filePath("write.ready").toUtf8());
+        MonitoringProbe widget(Preferences{},FAKE_BACKEND); widget.start();
+        auto* c=widget.findChild<Controller*>(); QSignalSpy packets(c,&Controller::statusPacketReceived);
+        QSignalSpy status(c,&Controller::statusReceived);
+        QTRY_VERIFY(!status.isEmpty()); widget.findChild<QPushButton*>("power")->click();
+        const auto published=status.count(); widget.advance(50);
+        const auto before=packets.count(); QTRY_VERIFY(packets.count()>before);
+        QCOMPARE(widget.dataAgeSeconds(),qint64(0)); QCOMPARE(status.count(),published); QVERIFY(c->busy());
+        QCOMPARE(widget.findChild<MonitorBar*>()->freshness(),DataFreshness::Fresh);
+        QCOMPARE(widget.findChild<Emblem*>("emblem_mode")->icon(),EmblemIcon::Auto);
+        c->stop();
+    }
+    void commandAckAndInvalidJsonDoNotResetAge() {
+        MonitoringProbe widget(Preferences{},FAKE_BACKEND); widget.applyStatus({{"pwr","1"}});
+        widget.advance(22); auto* c=widget.findChild<Controller*>();
+        c->controlAccepted(); QCOMPARE(widget.dataAgeSeconds(),qint64(22));
+        c->commandFailed("rejected"); QCOMPARE(widget.dataAgeSeconds(),qint64(22));
+        QCOMPARE(widget.findChild<MonitorBar*>()->freshness(),DataFreshness::Fresh);
+        QVERIFY(widget.findChild<MonitorBar*>()->alarmText().contains("Fehler"));
+        widget.acknowledgeAlarms(); QCOMPARE(widget.findChild<MonitorBar*>()->alarmText(),QString("Keine Alarme"));
+        qputenv("AIRCTRL_TEST_MODE","bad-json");
+        QSignalSpy packets(c,&Controller::statusPacketReceived), errors(c,&Controller::failed);
+        widget.start(); QTRY_VERIFY(!errors.isEmpty());
+        QCOMPARE(packets.count(),0); QCOMPARE(widget.dataAgeSeconds(),qint64(22));
+        QCOMPARE(widget.findChild<MonitorBar*>()->freshness(),DataFreshness::Disconnected); c->stop();
+    }
+    void warningAlarmsDoNotRepeatAndCanRecur() {
+        MonitoringProbe widget(Preferences{},FAKE_BACKEND);
+        QSignalSpy raised(&widget,&Desklet::alarmRaised);
+        QJsonObject status{{"pwr","1"},{"modelid","AC2729/10"},{"func","PH"},{"wl",0},{"fltsts1",0},{"err",49236}};
+        widget.applyStatus(status); QCOMPARE(raised.count(),1); QVERIFY(!raised[0][1].toBool());
+        QVERIFY(raised[0][0].toString().contains("Filterwechsel")); QVERIFY(raised[0][0].toString().contains("Wasser"));
+        QCOMPARE(widget.findChild<MonitorBar*>()->alarmText(),QString("2 Warnungen"));
+        for(int i=0;i<5;++i) widget.applyStatus(status);
+        QCOMPARE(raised.count(),1); widget.acknowledgeAlarms(); widget.applyStatus(status);
+        QCOMPARE(raised.count(),1); QVERIFY(widget.findChild<MonitorBar*>()->alarmText().contains("(Q)"));
+        status["wl"]=100; status["fltsts1"]=119; widget.applyStatus(status);
+        QCOMPARE(widget.findChild<MonitorBar*>()->alarmText(),QString("Keine Alarme"));
+        status["wl"]=0; widget.applyStatus(status); QCOMPARE(raised.count(),2);
+    }
+    void monitoringSettingsRoundtripCancelAndNoWrites() {
+        MonitoringProbe widget(Preferences{},FAKE_BACKEND);
+        const auto edit=[](bool accept) {
+            QTimer::singleShot(20,[accept] {
+                auto* dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget()); if(!dialog) return;
+                dialog->findChild<QSpinBox*>("ageWarningSeconds")->setValue(60);
+                dialog->findChild<QSpinBox*>("ageStaleSeconds")->setValue(150);
+                dialog->findChild<QCheckBox*>("desktopAlarms")->setChecked(false);
+                dialog->findChild<QCheckBox*>("alarmSound")->setChecked(true);
+                if(accept) dialog->accept(); else dialog->reject();
+            });
+        };
+        edit(false); widget.showAlarmSettings(); QCOMPARE(Preferences::load().ageWarningSeconds,45);
+        edit(true); widget.showAlarmSettings(); const auto p=Preferences::load();
+        QCOMPARE(p.ageWarningSeconds,60); QCOMPARE(p.ageStaleSeconds,150); QVERIFY(!p.desktopAlarms); QVERIFY(p.alarmSound);
+        widget.applyStatus({{"pwr","1"}}); widget.advance(59);
+        QCOMPARE(widget.findChild<MonitorBar*>()->freshness(),DataFreshness::Fresh);
+        widget.advance(1); QCOMPARE(widget.findChild<MonitorBar*>()->freshness(),DataFreshness::Aging);
+        QVERIFY(!QFile::exists(log_));
+        QSettings settings; settings.setValue("alarms/warningSeconds",-1); settings.setValue("alarms/staleSeconds",0);
+        const auto sanitized=Preferences::load(); QCOMPARE(sanitized.ageWarningSeconds,5); QCOMPARE(sanitized.ageStaleSeconds,6);
+    }
+    void monitoringAlarmDialogAndContextMenu() {
+        MonitoringProbe widget(Preferences{},FAKE_BACKEND); widget.showAndPosition();
+        widget.applyStatus({{"pwr","1"}}); widget.advance(45);
+        bool opened=false, readable=false;
+        QTimer::singleShot(30,[&] {
+            auto* dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget()); if(!dialog) return;
+            opened=dialog->objectName()=="alarmsDialog";
+            auto* report=dialog->findChild<QPlainTextEdit*>("activeAlarmReport");
+            readable=report && report->toPlainText().contains("45 s");
+            dialog->findChild<QPushButton*>("acknowledgeAlarms")->click(); dialog->accept();
+        });
+        QTest::mouseClick(widget.findChild<MonitorBar*>(),Qt::LeftButton);
+        QTRY_VERIFY(opened); QVERIFY(readable);
+        QVERIFY(widget.findChild<MonitorBar*>()->alarmText().contains("(Q)"));
+        QCOMPARE(clickMenus(widget.findChild<MonitorBar*>(),Qt::RightButton),1); QVERIFY(!QFile::exists(log_));
+    }
+    void notificationsUseDesktopService() {
+        // Run this case under dbus-run-session: never claim/register the real
+        // desktop's service or issue test notifications into the user's session.
+        if(qEnvironmentVariable("AIRCTRL_TEST_PRIVATE_DBUS")!="1") QSKIP("Private D-Bus integration test needs dbus-run-session");
+        auto bus=QDBusConnection::sessionBus(); NotificationProbe service;
+        QVERIFY(bus.registerService("org.freedesktop.Notifications"));
+        QVERIFY(bus.registerObject("/org/freedesktop/Notifications",&service,QDBusConnection::ExportAllSlots));
+        Desklet widget(Preferences{},FAKE_BACKEND);
+        widget.setConnectionError("test <error>"); QTRY_COMPARE(service.received,1);
+        QVERIFY(service.body.contains("&lt;error&gt;")); QCOMPARE(service.hints.value("urgency").toUInt(),uint(2));
+        widget.setConnectionError("test again"); QTest::qWait(50); QCOMPARE(service.received,1);
+        Preferences disabled; disabled.desktopAlarms=false;
+        Desklet silent(disabled,FAKE_BACKEND); silent.setConnectionError("disabled");
+        Desklet demo(Preferences{},FAKE_BACKEND,true); demo.setConnectionError("demo");
+        QTest::qWait(50); QCOMPARE(service.received,1);
+        bus.unregisterObject("/org/freedesktop/Notifications"); bus.unregisterService("org.freedesktop.Notifications");
+    }
+    void desktopNotificationRequestIsTyped() {
+        for(bool critical:{false,true}) {
+            const auto request=alarmNotification("<test> & error",critical);
+            QCOMPARE(request.service(),QString("org.freedesktop.Notifications"));
+            QCOMPARE(request.path(),QString("/org/freedesktop/Notifications"));
+            QCOMPARE(request.interface(),QString("org.freedesktop.Notifications"));
+            QCOMPARE(request.member(),QString("Notify"));
+            const auto args=request.arguments(); QCOMPARE(args.size(),8);
+            QCOMPARE(args[1].metaType().id(),int(QMetaType::UInt));
+            QCOMPARE(args[4].toString(),QString("&lt;test&gt; &amp; error"));
+            QCOMPARE(args[5].metaType().id(),int(QMetaType::QStringList));
+            const auto hints=args[6].toMap(); QCOMPARE(hints["urgency"].metaType().id(),int(QMetaType::UChar));
+            QCOMPARE(hints["urgency"].toUInt(),critical ? uint(2) : uint(1));
+            QCOMPARE(args[7].toInt(),12000);
+        }
+    }
+    void monitoringPreviewAndDemoSilence() {
+        QImage preview(327,720,QImage::Format_ARGB32_Premultiplied); preview.fill(QColor("#dddddd"));
+        QPainter painter(&preview); painter.setPen(Qt::black); QFont caption=painter.font(); caption.setPixelSize(13); painter.setFont(caption);
+        const QStringList names{"Aktuelle Daten · OK","45 Sekunden · Achtung","90 Sekunden · Daten zu alt","Gerätewarnung · Daten aktuell"};
+        for(int i=0;i<4;++i) {
+            MonitoringProbe widget(Preferences{},FAKE_BACKEND,true);
+            QJsonObject status{{"pwr","1"},{"modelid","AC2729/10"},{"mode","P"},{"func","PH"},
+                {"rh",55},{"rhset",50},{"temp",24},{"pm25",1},{"wl",i==3 ? 0 : 100}};
+            widget.applyStatus(status); widget.showAndPosition(); widget.advance(i==1 ? 45 : i==2 ? 90 : 3);
+            QCoreApplication::processEvents(); QCOMPARE(widget.deliveries,0);
+            QCOMPARE(widget.size(),QSize(287,143));
+            painter.drawText(20,i*180+20,names[i]); painter.drawPixmap(20,i*180+28,widget.grab());
+        }
+        painter.end(); const auto path=qEnvironmentVariable("AIRCTRL_TEST_ALARMS_PNG");
+        if(!path.isEmpty()) QVERIFY(preview.save(path));
+        QVERIFY(!QFile::exists(log_));
     }
     void emblemModeMapping_data() {
         QTest::addColumn<QString>("mode"); QTest::addColumn<QString>("fan");
@@ -523,7 +704,7 @@ private slots:
             {{"mode","P"},{"func","PH"},{"cl",true},{"dt",12},{"ddp","0"},
                 {"wl",0},{"fltsts0",0},{"fltsts1",0}},
         };
-        QImage preview(347,samples.size()*154,QImage::Format_ARGB32_Premultiplied); preview.fill(QColor("#dddddd"));
+        QImage preview(347,samples.size()*190,QImage::Format_ARGB32_Premultiplied); preview.fill(QColor("#dddddd"));
         QPainter painter(&preview); painter.setPen(Qt::black);
         QFont caption=painter.font(); caption.setPixelSize(13); painter.setFont(caption);
         const QStringList names{"Automatik · 2-in-1","Ruhemodus · Luftreinigung","Allergen · Kindersicherung · Timer",
@@ -540,8 +721,8 @@ private slots:
                     QCOMPARE(emblem->width(),emblem->height());
                 }
                 if(points==10) {
-                    QCOMPARE(widget.width(),287); QCOMPARE(widget.height(),114);
-                    painter.drawText(20,i*154+20,names[i]); painter.drawPixmap(20,i*154+28,widget.grab());
+                    QCOMPARE(widget.width(),287); QCOMPARE(widget.height(),143);
+                    painter.drawText(20,i*190+20,names[i]); painter.drawPixmap(20,i*190+28,widget.grab());
                 }
             }
         }
@@ -670,7 +851,7 @@ private slots:
                 QVERIFY(value->fontMetrics().horizontalAdvance(value->text())<=value->width());
                 QVERIFY(widget.rect().contains(QRect(value->mapTo(&widget,QPoint()),value->size())));
             }
-            if(points==10) { QVERIFY(widget.width()<=340); QVERIFY(widget.height()<125); }
+            if(points==10) { QVERIFY(widget.width()<=340); QVERIFY(widget.height()<155); }
         }
     }
     void backgroundTransparencyAndForeground() {
@@ -746,6 +927,7 @@ private slots:
         QTest::addColumn<QString>("surface");
         QTest::newRow("value")<<QString("value_rh");
         QTest::newRow("emblem")<<QString("emblem_wifi");
+        QTest::newRow("monitor")<<QString("monitorBar");
     }
     void draggingMovesAndSavesWithoutOpeningMenu() {
         QFETCH(QString,surface);

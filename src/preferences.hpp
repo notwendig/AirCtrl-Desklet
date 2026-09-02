@@ -8,6 +8,10 @@ struct Preferences {
     QString host = "192.168.77.5";
     int port = 5683;
     int interval = 10;
+    int ageWarningSeconds = 45;
+    int ageStaleSeconds = 90;
+    bool desktopAlarms = true;
+    bool alarmSound = false;
     bool desktop = true;
     bool locked = false;
     QPoint position{-1, -1};

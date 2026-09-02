@@ -145,6 +145,8 @@ void Controller::readObserver() {
         }
         hasStatus_=true; ++statusCount_; progress_="Dauerbeobachtung aktiv";
         observationWatchdog_.start(idleMs_);
+        emit statusPacketReceived();
+        if(!active_ || observerStopping_) return;
         // Notifications received before the write ACK cannot confirm that write.
         if(busy_ && !awaitingConfirmation_) continue;
         if(awaitingConfirmation_) { awaitingConfirmation_=false; confirmation_.stop(); setBusy(false); }

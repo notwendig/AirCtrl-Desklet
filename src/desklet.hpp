@@ -3,6 +3,8 @@
 #include "preferences.hpp"
 #include "panel.hpp"
 #include "emblems.hpp"
+#include "alerts.hpp"
+#include <QElapsedTimer>
 #include <QDateTime>
 #include <QLabel>
 #include <QSystemTrayIcon>
@@ -17,16 +19,26 @@ public:
     void start();
     void showSettings();
     void showDetails();
+    void showAlarms();
+    void showAlarmSettings();
+    void acknowledgeAlarms();
+    qint64 dataAgeSeconds() const;
     void applyStatus(const QJsonObject& status);
     void setConnectionError(const QString& error);
     void showAndPosition();
+signals:
+    void alarmRaised(QString message, bool critical);
 protected:
     void paintEvent(QPaintEvent*) override;
     bool eventFilter(QObject*, QEvent*) override;
     void contextMenuEvent(QContextMenuEvent*) override;
     void closeEvent(QCloseEvent*) override;
     virtual bool startNativeMove();
+    virtual qint64 monotonicMs() const;
+    virtual void deliverAlarm(const QString& message, bool critical);
+    void updateMonitoring();
 private:
+    void recordReception();
     void updateControls();
     void updateFooter();
     void updateValues();
@@ -55,6 +67,15 @@ private:
     QPoint pressPosition_;
     QPoint dragOffset_;
     QDateTime updated_;
+    QDateTime packetReceivedAt_;
+    QElapsedTimer monitorClock_;
+    qint64 lastDataAt_=-1;
+    bool receptionFailed_=false, alarmsPaused_=false, notificationFailureLogged_=false;
+    QString activeCommandError_;
+    quint64 commandFailureId_=0;
+    AlertLatch alarmLatch_;
+    QList<Alert> activeAlerts_;
+    MonitorBar* monitorBar_;
     QJsonObject status_, pending_;
     QString error_, notice_, commandError_;
     std::array<PanelButton*,8> controls_{};

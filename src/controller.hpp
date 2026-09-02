@@ -33,6 +33,7 @@ public slots:
     void setHumidity(int percent);
     void setPanelValues(const QJsonObject& values);
 signals:
+    void statusPacketReceived(); // every complete valid status, even while a write is pending
     void statusReceived(QJsonObject status);
     void busyChanged(bool busy);
     void failed(QString reason); // observation/connection failure

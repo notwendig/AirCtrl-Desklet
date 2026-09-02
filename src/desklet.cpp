@@ -10,9 +10,14 @@
 #include <QCursor>
 #include <QScopedValueRollback>
 #include <QWindow>
+#include <QDBusConnection>
+#include <QDBusMessage>
+#include <QDBusPendingCallWatcher>
+#include <QDBusPendingReply>
 #include <QFontMetrics>
 #include <algorithm>
 #include <cmath>
+#include <time.h>
 #include <QCloseEvent>
 #include <QContextMenuEvent>
 #include <QDialog>
@@ -59,6 +64,9 @@ bool powerKnown(const QJsonObject& state) {
 }
 Desklet::Desklet(Preferences preferences, QString backend, bool demo)
     : preferences_(std::move(preferences)), controller_(std::move(backend), this), demo_(demo) {
+    monitorClock_.start();
+    preferences_.ageWarningSeconds=qBound(5,preferences_.ageWarningSeconds,3599);
+    preferences_.ageStaleSeconds=qBound(preferences_.ageWarningSeconds+1,preferences_.ageStaleSeconds,7200);
     waylandSession_=QGuiApplication::platformName().startsWith("wayland") ||
         qEnvironmentVariable("XDG_SESSION_TYPE")=="wayland" ||
         (!qEnvironmentVariableIsEmpty("WAYLAND_DISPLAY") && qEnvironmentVariable("XDG_SESSION_TYPE")!="x11");
@@ -115,14 +123,17 @@ Desklet::Desklet(Preferences preferences, QString backend, bool demo)
         value->setAlignment(Qt::AlignCenter); value->installEventFilter(this);
     }
     root->addWidget(valueArea_);
+    monitorBar_=new MonitorBar(this); monitorBar_->installEventFilter(this); root->addWidget(monitorBar_);
     auto* contextShortcut=new QShortcut(QKeySequence("Shift+F10"),this);
     connect(contextShortcut,&QShortcut::activated,this,[this] { openMenu(mapToGlobal(rect().center())); });
     auto* menuShortcut=new QShortcut(QKeySequence(Qt::Key_Menu),this);
     connect(menuShortcut,&QShortcut::activated,this,[this] { openMenu(mapToGlobal(rect().center())); });
     connect(&controller_,&Controller::statusReceived,this,&Desklet::applyStatus);
+    connect(&controller_,&Controller::statusPacketReceived,this,[this] { recordReception(); updateMonitoring(); });
     connect(&controller_,&Controller::failed,this,&Desklet::setConnectionError);
     connect(&controller_,&Controller::commandFailed,this,[this](const QString& error) {
         awaitingConfirmation_=false; pending_={}; notice_=error; commandError_=error;
+        activeCommandError_=error; ++commandFailureId_;
         qWarning().noquote()<<"AirControl – Schaltbefehl:"<<error;
         updateControls(); updateFooter();
     });
@@ -171,7 +182,10 @@ void Desklet::applyAppearance() {
     }
     valueArea_->setVisible(visible>0);
     for(auto* button:controls_) { button->setForeground(preferences_.foreground); button->setFont(preferences_.valueFont); }
-    updateEmblems(); updateValues(); update();
+    monitorBar_->setFont(preferences_.valueFont);
+    monitorBar_->setMinimumWidth(monitorBar_->sizeHint().width());
+    monitorBar_->setFixedHeight(monitorBar_->sizeHint().height());
+    updateEmblems(); updateValues(); updateMonitoring(); update();
 }
 void Desklet::saveAppearance() {
     applyAppearance();
@@ -251,17 +265,22 @@ void Desklet::openControl(int index) {
 }
 void Desklet::applyStatus(const QJsonObject& status) {
     status_=status; connected_=true; error_.clear(); updated_=QDateTime::currentDateTime();
+    recordReception();
     setWindowTitle("Philips AirControl – "+status.value("name").toString("Luftreiniger"));
     notice_="Status empfangen";
     if(awaitingConfirmation_) {
         bool confirmed=true;
         for(auto i=pending_.begin();i!=pending_.end();++i) if(status.value(i.key())!=i.value()) confirmed=false;
         notice_=confirmed ? "Änderung vom Gerät bestätigt." : "Gerät meldet noch den bisherigen Wert.";
+        if(confirmed) activeCommandError_.clear();
+        else { activeCommandError_="Gerät hat den gewünschten Schaltzustand nicht bestätigt.";
+            commandError_=activeCommandError_; ++commandFailureId_; }
     }
     awaitingConfirmation_=false; updateEmblems(); updateValues(); updateControls(); updateFooter();
 }
 void Desklet::setConnectionError(const QString& error) {
     connected_=false; error_=error; notice_=error;
+    receptionFailed_=true;
     if(!controller_.busy()) awaitingConfirmation_=false;
     updateEmblems(); updateValues();
     qWarning().noquote()<<"AirControl:"<<error; updateControls(); updateFooter();
@@ -291,9 +310,8 @@ void Desklet::updateControls() {
 }
 void Desklet::updateFooter() {
     QString age="Noch kein Empfang";
-    if(updated_.isValid()) {
-        const auto seconds=qMax<qint64>(0,updated_.secsTo(QDateTime::currentDateTime()));
-        age="Letzter Empfang vor "+QString::number(seconds<60 ? seconds : seconds/60)+(seconds<60 ? " s" : " min");
+    if(lastDataAt_>=0) {
+        age="Letzter Empfang vor "+QString::number(dataAgeSeconds())+" s";
     }
     const auto connection=demo_ ? QString("Vorschau – keine Gerätesteuerung") : connected_ ? QString("Verbunden") : QString("Keine Verbindung");
     const auto detail=connection+"\n"+preferences_.host+"\n"+age+"\n"+notice_+
@@ -302,7 +320,118 @@ void Desklet::updateFooter() {
     for(auto* value:values_) {
         value->setToolTip(detail); value->setAccessibleDescription(detail);
     }
-
+    updateMonitoring();
+}
+qint64 Desklet::monotonicMs() const {
+#ifdef CLOCK_BOOTTIME
+    timespec time{};
+    if(clock_gettime(CLOCK_BOOTTIME,&time)==0) return qint64(time.tv_sec)*1000+time.tv_nsec/1000000;
+#endif
+    return monitorClock_.elapsed();
+}
+qint64 Desklet::dataAgeSeconds() const {
+    return lastDataAt_<0 ? -1 : qMax<qint64>(0,monotonicMs()-lastDataAt_)/1000;
+}
+void Desklet::recordReception() {
+    lastDataAt_=monotonicMs(); packetReceivedAt_=QDateTime::currentDateTime(); receptionFailed_=false;
+}
+void Desklet::updateMonitoring() {
+    const auto seconds=dataAgeSeconds();
+    const auto freshness=dataFreshness(seconds,receptionFailed_,preferences_.ageWarningSeconds,preferences_.ageStaleSeconds);
+    activeAlerts_=deviceAlerts(status_);
+    if(receptionFailed_ || freshness==DataFreshness::Stale) {
+        activeAlerts_.prepend({"reception",AlertLevel::Error,receptionFailed_ ?
+            "Statusverbindung ausgefallen: "+error_ : "Daten zu alt: seit "+QString::number(seconds)+" s kein gültiges Statuspaket."});
+    } else if(freshness==DataFreshness::Aging) {
+        activeAlerts_.prepend({"reception",AlertLevel::Warning,
+            "Achtung: seit "+QString::number(seconds)+" s kein gültiges Statuspaket."});
+    }
+    if(!activeCommandError_.isEmpty()) activeAlerts_.append({"command-"+QString::number(commandFailureId_),
+        AlertLevel::Error,"Schaltfehler: "+activeCommandError_});
+    bool acknowledged=!activeAlerts_.isEmpty();
+    for(const auto& alert:activeAlerts_) acknowledged=acknowledged && alarmLatch_.acknowledged(alert);
+    const auto state=freshness==DataFreshness::Waiting ? QString("Noch kein Datenempfang") :
+        freshness==DataFreshness::Fresh ? QString("OK") : freshness==DataFreshness::Aging ? QString("Achtung") :
+        freshness==DataFreshness::Stale ? QString("Daten zu alt") : QString("Verbindung ausgefallen");
+    auto detail=state+" · Sekunden seit dem letzten gültigen Statuspaket\n"+
+        QString("Grün: 0–%1 s · Gelb: %2–%3 s · Rot: ab %4 s oder Verbindungsfehler\n")
+        .arg(preferences_.ageWarningSeconds-1).arg(preferences_.ageWarningSeconds)
+        .arg(preferences_.ageStaleSeconds-1).arg(preferences_.ageStaleSeconds)+alertReport(activeAlerts_);
+    if(!connected_ && updated_.isValid()) detail+="\nGerätewarnungen stammen aus dem letzten bestätigten Status.";
+    if(acknowledged) detail+="\nAlarme quittiert (Q); ihre Ursache bleibt sichtbar.";
+    if(alarmsPaused_) detail+="\nEmpfang für Verbindungseinstellungen pausiert; Benachrichtigungen ausgesetzt.";
+    monitorBar_->setState(seconds,freshness,activeAlerts_,acknowledged,detail);
+    if(alarmsPaused_) return;
+    const auto fresh=alarmLatch_.update(activeAlerts_);
+    if(!fresh.isEmpty()) {
+        bool critical=false;
+        for(const auto& alert:fresh) critical=critical || alert.level==AlertLevel::Error;
+        const auto message=alertReport(fresh);
+        emit alarmRaised(message,critical);
+        if(!demo_) deliverAlarm(message,critical);
+    }
+}
+void Desklet::deliverAlarm(const QString& message, bool critical) {
+    if(preferences_.alarmSound) QApplication::beep();
+    if(!preferences_.desktopAlarms) return;
+    const auto request=alarmNotification(message,critical);
+    auto* pending=new QDBusPendingCallWatcher(QDBusConnection::sessionBus().asyncCall(request),this);
+    connect(pending,&QDBusPendingCallWatcher::finished,this,[this,pending] {
+        const QDBusPendingReply<uint> reply=*pending;
+        if(reply.isError() && !notificationFailureLogged_) {
+            notificationFailureLogged_=true;
+            qWarning().noquote()<<"AirControl: Desktop-Benachrichtigung nicht verfügbar:"<<reply.error().message();
+        }
+        pending->deleteLater();
+    });
+}
+void Desklet::acknowledgeAlarms() {
+    // A failed command is a past event; acknowledging it removes only its active
+    // alarm. The last error remains in diagnostics. Ongoing conditions stay lit.
+    alarmLatch_.acknowledge(activeAlerts_); activeCommandError_.clear(); updateMonitoring();
+}
+void Desklet::showAlarms() {
+    QDialog dialog(this); dialog.setObjectName("alarmsDialog"); dialog.setWindowTitle("AirControl – aktive Alarme");
+    dialog.resize(580,320); auto* layout=new QVBoxLayout(&dialog);
+    auto* report=new QPlainTextEdit(&dialog); report->setObjectName("activeAlarmReport"); report->setReadOnly(true);
+    layout->addWidget(report);
+    const auto refresh=[&] {
+        updateMonitoring();
+        QString text=monitorBar_->accessibleDescription();
+        if(report->toPlainText()!=text) report->setPlainText(text);
+    };
+    auto* buttons=new QDialogButtonBox(QDialogButtonBox::Close,&dialog);
+    auto* acknowledge=buttons->addButton("Quittieren",QDialogButtonBox::ActionRole);
+    acknowledge->setObjectName("acknowledgeAlarms");
+    connect(acknowledge,&QPushButton::clicked,&dialog,[&] { acknowledgeAlarms(); refresh(); });
+    buttons->button(QDialogButtonBox::Close)->setText("Schließen");
+    connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject); layout->addWidget(buttons);
+    QTimer timer; connect(&timer,&QTimer::timeout,&dialog,refresh); timer.start(1000); refresh(); dialog.exec();
+}
+void Desklet::showAlarmSettings() {
+    QDialog dialog(this); dialog.setObjectName("alarmSettings"); dialog.setWindowTitle("Datenalter und Alarme");
+    auto* layout=new QVBoxLayout(&dialog); auto* form=new QFormLayout;
+    QSpinBox warning,stale; warning.setObjectName("ageWarningSeconds"); stale.setObjectName("ageStaleSeconds");
+    warning.setRange(5,3599); warning.setSuffix(" s"); warning.setValue(preferences_.ageWarningSeconds);
+    stale.setRange(warning.value()+1,7200); stale.setSuffix(" s"); stale.setValue(preferences_.ageStaleSeconds);
+    connect(&warning,&QSpinBox::valueChanged,&stale,[&](int value) { stale.setMinimum(value+1); });
+    form->addRow("Gelb / Achtung ab",&warning); form->addRow("Rot / zu alt ab",&stale); layout->addLayout(form);
+    QCheckBox desktop("Desktop-Benachrichtigungen"),sound("Zusätzlicher Signalton");
+    desktop.setObjectName("desktopAlarms"); sound.setObjectName("alarmSound");
+    desktop.setChecked(preferences_.desktopAlarms); sound.setChecked(preferences_.alarmSound);
+    layout->addWidget(&desktop); layout->addWidget(&sound);
+    auto* note=new QLabel("Meldung einmal pro Alarm, erneut bei Verschärfung oder nach zwischenzeitlicher Behebung.\n"
+        "Diese Grenzen ändern nicht den 90-s-Verbindungstimeout. Ohne Desktopdienst bleiben Alarme im Widget sichtbar.");
+    note->setWordWrap(true); layout->addWidget(note);
+    auto* buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel,&dialog);
+    buttons->button(QDialogButtonBox::Save)->setText("Speichern"); buttons->button(QDialogButtonBox::Cancel)->setText("Abbrechen");
+    connect(buttons,&QDialogButtonBox::accepted,&dialog,&QDialog::accept);
+    connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject); layout->addWidget(buttons);
+    if(dialog.exec()!=QDialog::Accepted) return;
+    preferences_.ageWarningSeconds=warning.value(); preferences_.ageStaleSeconds=stale.value();
+    preferences_.desktopAlarms=desktop.isChecked(); preferences_.alarmSound=sound.isChecked();
+    if(!demo_) preferences_.save();
+    updateMonitoring();
 }
 void Desklet::applyWindowMode() {
     const bool x11 = QGuiApplication::platformName() == "xcb";
@@ -384,7 +513,8 @@ bool Desklet::eventFilter(QObject* watched, QEvent* event) {
             leftPressed_=false;
             if (mouseMoved_) {
                 if (!preferences_.locked && preferences_.desktop) rememberPosition();
-            } else requestMenu(mouse->globalPosition().toPoint());
+            } else if(watched==monitorBar_) QTimer::singleShot(0,this,&Desklet::showAlarms);
+            else requestMenu(mouse->globalPosition().toPoint());
             return true;
         }
     }
@@ -456,6 +586,12 @@ void Desklet::openMenu(const QPoint& point) {
         });
     }
     menu.addSeparator();
+    auto* alarms=menu.addAction("Aktive Alarme …",this,&Desklet::showAlarms); alarms->setObjectName("showAlarms");
+    auto* acknowledge=menu.addAction("Alarme quittieren",this,&Desklet::acknowledgeAlarms);
+    acknowledge->setObjectName("acknowledgeAlarms"); acknowledge->setEnabled(!activeAlerts_.isEmpty());
+    auto* alarmSettings=menu.addAction("Datenalter und Alarme …",this,&Desklet::showAlarmSettings);
+    alarmSettings->setObjectName("alarmSettings");
+    menu.addSeparator();
     auto* refresh=menu.addAction("Statusverbindung neu starten (F5)",this,[this] { controller_.refresh(); });
     refresh->setEnabled(!controller_.busy() && !awaitingConfirmation_ && !demo_);
     auto* settings=menu.addAction("Verbindung und Autostart …",this,&Desklet::showSettings);
@@ -486,6 +622,7 @@ void Desklet::showPositionDialog() {
 }
 void Desklet::showSettings() {
     if (controller_.busy() || awaitingConfirmation_ || demo_) return;
+    QScopedValueRollback<bool> paused(alarmsPaused_,true);
     controller_.stop(); // no old-host reply can arrive during a modal configuration change
     QDialog dialog(this); dialog.setWindowTitle("AirControl – Einstellungen");
     auto* layout = new QVBoxLayout(&dialog); auto* form = new QFormLayout;
@@ -513,7 +650,12 @@ void Desklet::showSettings() {
     preferences_.host = host.text().trimmed(); preferences_.port = port.value(); preferences_.interval = interval.value();
     preferences_.desktop = desktop.isChecked(); rememberPosition();
     if (changedMode) { applyWindowMode(); showAndPosition(); }
-    if (changedDevice) { status_ = {}; updated_ = {}; connected_ = false; error_.clear(); notice_="Gerät gewechselt"; updateValues(); updateControls(); updateFooter(); }
+    if (changedDevice) {
+        status_={}; updated_={}; packetReceivedAt_={}; connected_=false; error_.clear();
+        lastDataAt_=-1; receptionFailed_=false; activeCommandError_.clear(); commandError_.clear();
+        activeAlerts_.clear(); alarmLatch_={}; notice_="Gerät gewechselt";
+        updateEmblems(); updateValues(); updateControls(); updateFooter();
+    }
     controller_.configure(preferences_.host, preferences_.port, preferences_.interval);
     controller_.start();
 }
@@ -569,13 +711,17 @@ void Desklet::showDetails() {
         {"Empfangsmodus","Dauerhafte Beobachtung","Ein langlebiger status-observe-Prozess empfängt neue Meldungen ohne regelmäßige Einzelabfragen."},
         {"Empfangsphase",controller_.observationProgress(),"Fortschritt des Empfängers; der Hintergrundempfang sperrt keine Bedienelemente."},
         {"Statusmeldungen",QString::number(controller_.statusCount()),"Anzahl gültiger Statuszeilen seit Programmstart."},
+        {"Datenalter",dataAgeSeconds()<0 ? "noch kein Status" : QString::number(dataAgeSeconds())+" s","Seit dem letzten gültigen Statuspaket; auch Pakete während eines Schreibbefehls zählen. Keine Rücksetzung durch Fehler oder Schalt-ACKs."},
+        {"Letztes Statuspaket",packetReceivedAt_.isValid() ? packetReceivedAt_.toString(Qt::ISODate) : "noch keines","Empfangszeit des letzten gültigen Pakets, unabhängig von der Bestätigung eines Schaltbefehls."},
+        {"Datenalter-Grenzen",QString("Gelb ab %1 s; Rot ab %2 s").arg(preferences_.ageWarningSeconds).arg(preferences_.ageStaleSeconds),"Lokale Alarmgrenzen. Verbindungsfehler sind sofort rot. Der CoAP-Timeout wird dadurch nicht verändert."},
+        {"Aktive Alarme",alertReport(activeAlerts_),"Warnungen aus bekannten Gerätestatusfeldern sowie Fehler beim Empfang oder Schalten. Unbekannte err-Codes werden nicht geraten."},
         {"Beobachtungsstarts",QString::number(controller_.observationStarts()),"Ein Start im Normalbetrieb; weitere Starts nur nach Fehler, F5 oder geänderten Einstellungen."},
         {"CoAP-Anlauf","60 Sekunden je Anfrage","Synchronisierung und erste Statusantwort erhalten jeweils bis zu 60 Sekunden. Der Prozess-Watchdog erlaubt insgesamt 125 Sekunden."},
         {"Maximale Datenpause","90 Sekunden","Erst nach längerem Ausbleiben von Statusmeldungen wird neu verbunden. Die beobachteten 18–19 Sekunden sind normale Pausen."},
         {"Schaltbefehl","10 Sekunden je Anfrage","Separater Schreibprozess; maximal 25 Sekunden einschließlich Synchronisierung. Keine automatische Wiederholung."},
         {"Statusbestätigung","90 Sekunden","Nach der Schreibannahme wird auf eine neue Meldung der laufenden Beobachtung gewartet."},
         {"Wiederverbindung",QString::number(preferences_.interval)+" Sekunden","Pause vor einem neuen Empfangsversuch nach einem Fehler; kein Abfrageintervall."},
-        {"Letzter Empfang",updated_.isValid() ? updated_.toString(Qt::ISODate) : "noch keiner","Zeitpunkt der letzten gültigen JSON-Statusantwort."}
+        {"Letzter Empfang",updated_.isValid() ? updated_.toString(Qt::ISODate) : "noch keiner","Zeitpunkt des letzten in Werte und Embleme übernommenen Status; während eines Schreibbefehls kann ein jüngeres Paket vorliegen."}
     };
     if(!error_.isEmpty()) connectionFields.append({"Letzter Fehler",error_,"Unveränderte letzte Fehlermeldung des Backends bzw. der Verbindungssteuerung."});
     if(!commandError_.isEmpty()) connectionFields.append({"Letzter Schaltfehler",commandError_,"Ein Schaltfehler bedeutet nicht automatisch, dass die weiterhin aktive Beobachtung offline ist."});

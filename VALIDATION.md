@@ -1,15 +1,15 @@
-# Validierung – Version 0.3.6
+# Validierung – Version 0.3.7
 
 Datum: 2026-09-02.
 
 ## Build und Installation
 
 - Linux x86-64, Ubuntu 24.04; GCC 13.3.0, C++17, Release.
-- Qt 6.8.3 (Core, Gui, Widgets, Test), OpenSSL 3.0.13, nlohmann/json 3.12.0.
+- Qt 6.8.3 (Core, Gui, Widgets, DBus, Test), OpenSSL 3.0.13, nlohmann/json 3.12.0.
 - Oberfläche, Backend und Testprogramme erfolgreich kompiliert.
 - Keine Compilerwarnungen aus dem UI-Code mit -Wall -Wextra -Wpedantic.
 - install.sh in einen separaten absoluten Testpräfix ausgeführt.
-- Installierte GUI meldet „airctrl-desklet 0.3.6“.
+- Installierte GUI meldet „airctrl-desklet 0.3.7“.
 - Test-SDK, Buildverzeichnisse und Binärdateien sind nicht im Projekt-ZIP enthalten.
   Unter Fedora werden weiterhin die bereits genannten Systempakete verwendet.
 
@@ -17,21 +17,35 @@ Datum: 2026-09-02.
 
 QtTest/CTest mit Qt-Offscreen:
 
-    Totals: 56 passed, 0 failed, 1 skipped, 0 blacklisted
+    Totals: 65 passed, 0 failed, 2 skipped, 0 blacklisted
     100% tests passed out of 1
 
 Die Zählung enthält Initialisierung/Aufräumen und parametrisierte Testfälle.
-Der native X11-Test wird ohne X11-Sitzung übersprungen.
+Der native X11-Test wird ohne X11-Sitzung übersprungen. Die direkte Zustellung
+an einen D-Bus-Testdienst wird ebenfalls übersprungen: Die Testumgebung verweigert
+das Anlegen des lokalen D-Bus-Sockets (Operation not permitted). Es wurde kein
+alternativer Zugriff auf eine echte Benutzersitzung versucht.
 
 | Bereich | Prüfung |
 |---|---|
+| Datenalter | Kein Empfang = — s; grün bei 0/44 s, gelb bei 45/89 s, rot bei 90 s; genaue Grenzübergänge |
+| Zeitbasis | Injizierbare monotone Testuhr; Produktionsuhr unter Linux CLOCK_BOOTTIME; realer Sekundentakt im 19-s-Pausentest |
+| Empfang während Schreiben | Jedes gültige Paket setzt den Zähler zurück, ohne den unbestätigten Schaltzustand zu übernehmen |
+| Ungültige Daten / ACKs | Ungültiges JSON und reine Schreibannahme setzen das Datenalter nicht zurück |
+| Alarm-Latch | Einmalige Warnung, Verschärfung zu Fehler, Quittierung, keine Timeout-Flut, Wiederauftreten nach Behebung |
+| Gerätewarnungen | Filter-/Wasserwarnungen gemeinsam, anhaltend und wiederkehrend; 49236 allein löst keinen Alarm aus |
+| Schaltfehler | Aktiver Fehler bei weiterhin grünem Datenalter; Quittierung entfernt vergangene Meldung |
+| Alarmeinstellungen | Speichern/Abbrechen, Grenzprüfung, Roundtrip, individuelle Schwellen, keine Geräteschreibzugriffe |
+| Alarmfenster | Linksklick öffnet Details, Quittierung sichtbar; Rechtsklick und Ziehen funktionieren |
+| D-Bus-Nachricht | Dienst/Pfad/Methode, Argumenttypen, Dringlichkeit als Byte, HTML-Escaping und Zeitlimit |
+| Demo | Alarmdarstellung mit Testdaten, keine Benachrichtigungen oder Töne |
 | Emblem-Modi | Automatik, Ruhe, Allergen, manuelle Stufen 1/2/3 und Turbo; mode=P mit om=s bleibt Automatik |
 | Emblem-Funktionen | Luftreinigung / 2-in-1, Kindersicherung, Timer, PM2.5 / IAI und unbekannte Anzeigecodes |
 | Alarmgrenzen | AC2729-Modellprüfung, bekannte Codes, abgelaufene Zähler; 49236 und Typkennungen A3/C7 erzeugen keinen Alarm |
 | Ungültige Daten | Fehlende/null/bools/falsche Strings/negative/gebrochene Zähler lösen keine Warnsymbole aus |
 | Bestätigte Embleme | Power-Klick lässt die Anzeige bis zur tatsächlichen Rückmeldung unverändert; nur ein Beobachtungsprozess |
 | Offline-Embleme | Letzte Symbole abgeblendet, WLAN orange/durchgestrichen, Tooltips markieren veralteten Status |
-| Emblem-Layout | 287 × 114 Pixel mit bis zu neun Symbolen; Schriftgrößen 10/24/48, Transparenz und Vordergrundfarbe |
+| Emblem-Layout | 287 × 143 Pixel einschließlich Ampel-/Alarmzeile, bis zu neun Symbolen; Schriftgrößen 10/24/48, Transparenz und Vordergrundfarbe |
 | Emblem-Bedienung | Linksklick/Rechtsklick öffnet genau ein Menü; Ziehen verschiebt ohne Menü oder Geräteschreibzugriff |
 | Dauerbeobachtung | Mehrere Meldungen aus genau einem Prozess; keine periodischen Einzelabfragen |
 | Reale Zeitspanne | 19 Sekunden zwischen Meldungen; nach 11 Sekunden weiterhin online; kein Neustart |
@@ -122,13 +136,14 @@ trat nur vor der Sitzung und nach ihrer Abmeldung auf.
 ## Oberfläche, Diagnose und Kompatibilität
 
 Die acht Buttons und ihre Power-Farben bleiben unverändert. Unter den Buttons
-erscheint eine neue Emblemzeile, darunter weiterhin die Messwerte. Standardgröße:
-287 × 114 Pixel, bei größerer Schrift mitwachsend. Das aktive Set folgt nur den
+stehen die Emblemzeile, die Messwerte und die neue Datenalter-/Alarmzeile. Standardgröße:
+287 × 143 Pixel, bei größerer Schrift mitwachsend. Das aktive Set folgt nur den
 bestätigten Statuswerten; es verursacht keine Geräteabfragen oder Schaltbefehle.
 
 Die installierte echte Qt-Oberfläche wurde als vorschau.png gerendert. Weitere
 Qt-Renderings: power-vorschau.png mit drei Power-Zuständen, embleme-vorschau.png
-mit mehreren Modi und ausdrücklich simulierten Wartungswarnungen sowie
+mit mehreren Modi und ausdrücklich simulierten Wartungswarnungen,
+alarme-vorschau.png mit drei Datenalterfarben und Gerätewarnung sowie
 diagnose-vorschau.png. Die Vorschauen wurden visuell geprüft.
 
 Die Diagnose erklärt jetzt Empfangsmodus, Empfangsphase, Zahl der Statusmeldungen,
@@ -139,13 +154,27 @@ offline zu setzen.
 Der alte gespeicherte Intervallwert bleibt erhalten und wird als Wiederverbindungspause
 nach einem Fehler genutzt. Darstellung und übrige Einstellungen bleiben erhalten.
 
-Ein Bytevergleich mit dem ZIP von 0.3.5 bestätigt unveränderte Controller-,
-Protokoll-, Einstellungs- und Installerdateien (15 Dateien). Der CoAP-Code ist
-weiterhin auch gegenüber 0.3.4 unverändert. Die vollständige frühere separate
+Der CoAP-Protokollcode bleibt unverändert. Im Controller wurde lediglich ein
+Signal für jedes vollständig gelesene gültige Statuspaket ergänzt, damit ein
+Schreibauftrag das Datenalter nicht verfälscht. Timeouts, Wiederverbindung und
+Schreibbefehle wurden nicht verändert. Die vollständige frühere separate
 Python/UDP-Protokolltestsuite wurde nicht erneut ausgeführt; der oben beschriebene
 reale UDP-Integrationstest ist Bestandteil der erneut erfolgreichen Qt-Testsuite.
 
 ## Grenzen der Prüfung
+
+Der D-Bus-Integrationstest ist enthalten und kann über AIRCTRL_TEST_WITH_DBUS=ON
+in einer eigenen dbus-run-session laufen. Hier scheiterte das Starten dieser
+Testsitzung an der Socket-Berechtigung. Die tatsächliche Cinnamon-Zustellung,
+deren Verhalten bei „Nicht stören“ und die Hörbarkeit des optionalen Systemtons
+sind daher nicht bestätigt. Ohne Benachrichtigungsdienst bleiben die sichtbaren
+Alarme und ihre Details im Widget erhalten; es gibt keinen automatischen
+Geräteeingriff als Reaktion auf einen Alarm.
+
+Die Buildumgebung musste nach dem Sitzungswechsel um CMake und die JSON-Header
+ergänzt werden. Ein erster Konfigurations-/Buildversuch traf noch auf die fehlenden
+Header. Nach ihrer Bereitstellung wurde das Projekt neu konfiguriert und vollständig
+erfolgreich gebaut. Diese Hilfsabhängigkeiten sind nicht Bestandteil des ZIPs.
 
 Keine laufende Cinnamon/Muffin- oder echte Wayland-Sitzung in dieser Umgebung.
 Popup-Darstellung, Desktop-Ebene, Tray, interaktives Verschieben und Autostart müssen

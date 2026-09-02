@@ -14,6 +14,10 @@ Preferences Preferences::load() {
     p.port = s.value("device/port", p.port).toInt();
     if (p.port < 1 || p.port > 65535) p.port = 5683;
     p.interval = qBound(5, s.value("device/interval", p.interval).toInt(), 300);
+    p.ageWarningSeconds=qBound(5,s.value("alarms/warningSeconds",45).toInt(),3599);
+    p.ageStaleSeconds=qBound(p.ageWarningSeconds+1,s.value("alarms/staleSeconds",90).toInt(),7200);
+    p.desktopAlarms=s.value("alarms/desktop",true).toBool();
+    p.alarmSound=s.value("alarms/sound",false).toBool();
     p.desktop = s.value("window/desktop", true).toBool();
     p.locked = s.value("window/locked", false).toBool();
     p.position = s.value("window/position", p.position).toPoint();
@@ -40,6 +44,10 @@ void Preferences::save() const {
     s.setValue("device/host", host);
     s.setValue("device/port", port);
     s.setValue("device/interval", interval);
+    s.setValue("alarms/warningSeconds",ageWarningSeconds);
+    s.setValue("alarms/staleSeconds",ageStaleSeconds);
+    s.setValue("alarms/desktop",desktopAlarms);
+    s.setValue("alarms/sound",alarmSound);
     s.setValue("window/desktop", desktop);
     s.setValue("window/locked", locked);
     s.setValue("window/position", position);

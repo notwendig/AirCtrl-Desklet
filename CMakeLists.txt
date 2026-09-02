@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(airctrl_desklet VERSION 0.3.6 LANGUAGES CXX)
+project(airctrl_desklet VERSION 0.3.7 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -7,7 +7,8 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 include(GNUInstallDirs)
 include(CTest)
-find_package(Qt6 6.2 REQUIRED COMPONENTS Core Gui Widgets)
+option(AIRCTRL_TEST_WITH_DBUS "Run tests with a private D-Bus notification service" OFF)
+find_package(Qt6 6.2 REQUIRED COMPONENTS Core Gui Widgets DBus)
 find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 find_package(Threads REQUIRED)
 find_package(nlohmann_json 3.9 REQUIRED)
@@ -24,10 +25,11 @@ set_target_properties(airctrl-backend PROPERTIES AUTOMOC OFF)
 target_link_libraries(airctrl-backend PRIVATE aioairctrl)
 
 add_library(desklet_ui STATIC src/controller.cpp src/controller.hpp
+    src/alerts.cpp src/alerts.hpp
     src/emblems.cpp src/emblems.hpp
     src/diagnostics.cpp src/diagnostics.hpp
     src/panel.cpp src/panel.hpp src/desklet.cpp src/desklet.hpp src/preferences.cpp src/preferences.hpp)
-target_link_libraries(desklet_ui PUBLIC Qt6::Widgets)
+target_link_libraries(desklet_ui PUBLIC Qt6::Widgets Qt6::DBus)
 target_include_directories(desklet_ui PUBLIC src)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(desklet_ui PRIVATE -Wall -Wextra -Wpedantic)
@@ -49,7 +51,16 @@ if(BUILD_TESTING)
         REAL_BACKEND="$<TARGET_FILE:airctrl-backend>"
         PARENT_PROBE="$<TARGET_FILE:parent-probe>")
     add_dependencies(desklet-tests fake-backend airctrl-backend parent-probe)
-    add_test(NAME desklet COMMAND desklet-tests -platform offscreen)
+    if(AIRCTRL_TEST_WITH_DBUS)
+        find_program(DBUS_RUN_SESSION dbus-run-session)
+        if(NOT DBUS_RUN_SESSION)
+            message(FATAL_ERROR "AIRCTRL_TEST_WITH_DBUS needs dbus-run-session")
+        endif()
+        add_test(NAME desklet COMMAND ${DBUS_RUN_SESSION} -- ${CMAKE_COMMAND} -E env
+            AIRCTRL_TEST_PRIVATE_DBUS=1 $<TARGET_FILE:desklet-tests> -platform offscreen)
+    else()
+        add_test(NAME desklet COMMAND desklet-tests -platform offscreen)
+    endif()
     set_tests_properties(desklet PROPERTIES TIMEOUT 90)
 endif()
 

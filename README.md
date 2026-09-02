@@ -1,10 +1,14 @@
-# Philips AirControl – Qt6-Gerätepanel 0.3.6
+# Philips AirControl – Qt6-Gerätepanel 0.3.7
 
 Kompaktes C++/Qt6-Desktopwidget für den Philips AC2729/10 „Wohnzimmer“ unter
 Cinnamon. Geräteadresse voreingestellt: **192.168.77.5**, UDP-Port **5683**.
 Der bereits am Gerät funktionierende C++-CoAP-Code ist vollständig enthalten.
 
-Version 0.3.6 ergänzt eine Zeile mit den aktuellen Status-Emblemen zwischen
+Version 0.3.7 ergänzt einen Sekundenzähler mit Datenalter-Ampel sowie sichtbare
+Warnungen und Fehler, Desktop-Benachrichtigungen und optionalen Signalton.
+Grenzwerte und Benachrichtigungen sind über das Kontextmenü einstellbar.
+
+Seit Version 0.3.6 gibt es eine Zeile mit den aktuellen Status-Emblemen zwischen
 Buttonleiste und Messwerten. Symbole, Schrift und Farben bleiben skalierbar;
 die erprobte Dauerbeobachtung und Gerätesteuerung sind unverändert.
 
@@ -16,15 +20,69 @@ orange ohne Verbindung, weiß bei „aus“, grün bei „an“.
 
 ## Kompakte Oberfläche
 
-Im Widget stehen die acht Kontrolltasten, die aktiven Status-Embleme und darunter die Werte.
+Im Widget stehen die acht Kontrolltasten, die aktiven Status-Embleme und darunter
+die Werte. Die unterste Zeile zeigt Datenalter und aktive Alarme.
 Standardmäßig sind Feuchte, Zielfeuchte, Temperatur und PM2,5 sichtbar.
-Das Standardlayout misst **287 × 114 Pixel** bei 100 % Desktopskalierung.
+Das Standardlayout misst **287 × 143 Pixel** bei 100 % Desktopskalierung.
 Bei größerer Schrift wächst das Fenster mit, damit nichts abgeschnitten wird.
 
 `vorschau.png` zeigt die echte Qt-Oberfläche, `embleme-vorschau.png` mehrere
 Modi und einen ausdrücklich simulierten Wartungsfall, `power-vorschau.png` die drei
 Power-Farben. In der Vorschau bleibt Power anklickbar, sendet aber keine Befehle;
 alle übrigen Gerätetasten sind deaktiviert. „Vorschau“ steht im Tooltip und Menü.
+
+## Datenalter und Alarme (neu in 0.3.7)
+
+Der Zähler zeigt **Sekunden seit dem letzten gültigen Statuspaket**, nicht Minuten.
+Er wird jede Sekunde aktualisiert und bei jedem vollständig empfangenen, gültigen
+JSON-Statuspaket auf null gesetzt – auch während der Bestätigung eines Schaltbefehls.
+Ein Schreib-ACK, eine ungültige/unvollständige JSON-Zeile, ein Fehler oder ein neuer
+Verbindungsversuch setzen ihn nicht zurück. Unter Linux nutzt er
+[CLOCK_BOOTTIME](https://man7.org/linux/man-pages/man2/clock_gettime.2.html):
+Uhrzeitkorrekturen verändern ihn nicht, Suspend-Zeit wird mitgezählt.
+
+| Farbe | Standardgrenze |
+|---|---|
+| Grün · OK | 0 bis 44 Sekunden |
+| Gelb · Achtung | 45 bis 89 Sekunden |
+| Rot · Zu alt | Ab 90 Sekunden |
+| Rot · Verbindungsfehler | Sofort bei gemeldetem Empfangsfehler, unabhängig vom Alter |
+| Grau · Noch keine Daten | „— s“, bis erstmals ein Statuspaket eingetroffen ist |
+
+Die Grenzen lassen sich unter **Rechtsklick → Datenalter und Alarme …** ändern.
+Die rote Grenze muss größer als die gelbe sein. Das verändert nur Anzeige/Alarme,
+nicht den bisherigen 90-Sekunden-Timeout des Empfängers. Schaltfehler machen den
+Alarmbereich rot, aber nicht den weiterhin frischen Datenzähler.
+
+**Alarmquellen:** ausbleibende Daten, Verbindungsfehler, abgelehnte/nicht bestätigte
+Schaltbefehle sowie die bekannten Wasser-, Reinigungs- und Filterwechselhinweise
+aus der Emblemzeile. Keine neue Interpretation unbekannter Gerätecodes: Ein
+`err=49236` allein erzeugt weiterhin keinen Alarm. Gerätewarnungen bei fehlender
+Verbindung beruhen auf dem letzten bestätigten Status, nicht auf neuen Messungen.
+
+Ein neuer Alarm löst standardmäßig **eine Desktop-Benachrichtigung** aus. Ein
+optionaler zusätzlicher Signalton ist ab Werk aus. Meldung/Ton erfolgen einmal
+pro Störung, erneut bei Verschärfung (Gelb → Rot) oder wenn eine zwischenzeitlich
+behobene Störung wieder auftritt. Wiederholte Empfangsfehler erzeugen keinen
+Alarmsturm. Die Demo erzeugt weder Desktop-Meldungen noch Töne.
+
+**Linksklick auf die unterste Zeile → aktive Alarme.** Das Fenster wird laufend
+aktualisiert. Alternativ: Rechtsklick → Aktive Alarme / Alarme quittieren.
+Quittierung markiert andauernde Ursachen mit „(Q)“; sie bleiben farbig sichtbar.
+Ein vergangener Schaltfehler verschwindet nach Quittierung oder erfolgreicher
+Bestätigung eines späteren Befehls aus den aktiven Alarmen, bleibt aber als letzter
+Schaltfehler in der Diagnose. Quittieren sendet keinen Befehl zum Gerät und setzt
+keinen Wartungszähler zurück. Ziehen an der Zeile verschiebt weiterhin das Widget.
+
+Desktop-Meldungen verwenden den
+[Benachrichtigungsdienst der Sitzung](https://specifications.freedesktop.org/notification/latest/protocol.html)
+über QtDBus,
+auch ohne Tray-Symbol. Falls der Dienst fehlt oder Meldungen unterdrückt werden,
+bleiben Zähler, Alarmfarbe und Alarmdetails im Widget verfügbar. Der optionale
+Signalton verwendet den Desktop-Systemton; dessen Hörbarkeit hängt von den
+Audio-/Desktop-Einstellungen ab. Die Alarmkonfiguration wird lokal gespeichert.
+
+`alarme-vorschau.png` zeigt die drei Ampelfarben und eine simulierte Gerätewarnung.
 
 ## Aktuelle Display-Embleme
 
@@ -107,10 +165,12 @@ Das neue ZIP im Ordner Downloads speichern. Die vorhandenen Abhängigkeiten reic
 
 ```bash
 pkill -x airctrl-desklet
-cd /home/juergen/Projects/Qt
-unzip -o ~/Downloads/airctrl-desklet-0.3.6.zip
-cd /home/juergen/Projects/Qt/airctrl-desklet
-bash install.sh
+pkill -x airctrl-backend
+
+cd /home/juergen/Projects/Qt &&
+unzip -o ~/Downloads/airctrl-desklet-0.3.7.zip &&
+cd airctrl-desklet &&
+bash install.sh &&
 env -u QT_QPA_PLATFORM ~/.local/bin/airctrl-desklet
 ```
 
@@ -127,6 +187,7 @@ sudo dnf install -y gcc-c++ cmake make qt6-qtbase-devel qt6-qtsvg openssl-devel 
 
 Installation für deinen Benutzer unter `~/.local`. Menüeintrag: **Philips AirControl**.
 Dein Quellverzeichnis bleibt `/home/juergen/Projects/Qt/airctrl-desklet`.
+Zusätzlich wird jetzt das Qt6-DBus-Modul aus Qt Base zum Bauen benötigt.
 Python dient ausschließlich zum Schreiben des Menüeintrags; beide laufenden
 Programme sind C++.
 
@@ -315,6 +376,18 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ./build/airctrl-desklet
 ```
+
+Optionaler D-Bus-Integrationstest in einer eigenen, isolierten Testsitzung:
+
+```bash
+cmake -S . -B build -DBUILD_TESTING=ON -DAIRCTRL_TEST_WITH_DBUS=ON
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+```
+
+Benötigt `dbus-run-session` und die Erlaubnis zum Anlegen lokaler D-Bus-Sockets.
+Ohne diese Option wird nur dieser Integrationstest übersprungen; Nachrichtenaufbau
+und Alarmzustandswechsel werden weiterhin ohne Desktopdienst geprüft.
 
 Qt Creator kann die oberste `CMakeLists.txt` direkt öffnen. `airctrl-desklet` und
 `airctrl-backend` müssen nach Build bzw. Installation nebeneinander liegen.
