@@ -10,6 +10,8 @@
 #include <QCursor>
 #include <QScopedValueRollback>
 #include <QWindow>
+#include <QFontMetrics>
+#include <algorithm>
 #include <cmath>
 #include <QCloseEvent>
 #include <QContextMenuEvent>
@@ -92,6 +94,17 @@ Desklet::Desklet(Preferences preferences, QString backend, bool demo)
         connect(b,&QPushButton::clicked,this,[this,i] { openControl(i); });
     }
     root->addWidget(bar);
+    emblemBar_=new QWidget(this); emblemBar_->setObjectName("emblemBar");
+    emblemBar_->installEventFilter(this);
+    auto* emblems=new QHBoxLayout(emblemBar_);
+    emblems->setContentsMargins(0,0,0,0); emblems->setSpacing(4); emblems->addStretch();
+    const QStringList emblemIds{"lock","mode","function","filter","water","clean","display","timer","wifi"};
+    for(int i=0;i<emblemIds.size();++i) {
+        auto* emblem=new Emblem(emblemBar_); emblems_[i]=emblem;
+        emblem->setObjectName("emblem_"+emblemIds[i]);
+        emblem->installEventFilter(this); emblems->addWidget(emblem);
+    }
+    emblems->addStretch(); root->addWidget(emblemBar_);
     valueArea_=new QWidget(this); valueArea_->setObjectName("values");
     valueArea_->installEventFilter(this);
     valueLayout_=new QGridLayout(valueArea_); valueLayout_->setContentsMargins(0,0,0,0);
@@ -158,7 +171,7 @@ void Desklet::applyAppearance() {
     }
     valueArea_->setVisible(visible>0);
     for(auto* button:controls_) { button->setForeground(preferences_.foreground); button->setFont(preferences_.valueFont); }
-    updateValues(); update();
+    updateEmblems(); updateValues(); update();
 }
 void Desklet::saveAppearance() {
     applyAppearance();
@@ -174,6 +187,19 @@ void Desklet::updateValues() {
         value->setAccessibleName(metricNames[i]+": "+value->text());
     }
     resizeToContent();
+}
+void Desklet::updateEmblems() {
+    // Reserve one row even with no status, so readings do not jump on/offline.
+    emblemBar_->setFixedHeight(qMax(24,QFontMetrics(preferences_.valueFont).height()+4));
+    const auto active=currentEmblems(status_,connected_);
+    for(auto* emblem:emblems_) {
+        const auto found=std::find_if(active.begin(),active.end(),[&](const EmblemState& state) {
+            return emblem->objectName()=="emblem_"+state.id;
+        });
+        if(found!=active.end()) emblem->configure(*found,preferences_.foreground,preferences_.valueFont,
+                                                connected_,updated_.isValid());
+        emblem->setVisible(found!=active.end());
+    }
 }
 void Desklet::sendValues(const QJsonObject& values) {
     if(!connected_ || demo_ || awaitingConfirmation_ || controller_.busy()) return;
@@ -232,12 +258,12 @@ void Desklet::applyStatus(const QJsonObject& status) {
         for(auto i=pending_.begin();i!=pending_.end();++i) if(status.value(i.key())!=i.value()) confirmed=false;
         notice_=confirmed ? "Änderung vom Gerät bestätigt." : "Gerät meldet noch den bisherigen Wert.";
     }
-    awaitingConfirmation_=false; updateValues(); updateControls(); updateFooter();
+    awaitingConfirmation_=false; updateEmblems(); updateValues(); updateControls(); updateFooter();
 }
 void Desklet::setConnectionError(const QString& error) {
     connected_=false; error_=error; notice_=error;
     if(!controller_.busy()) awaitingConfirmation_=false;
-    updateValues();
+    updateEmblems(); updateValues();
     qWarning().noquote()<<"AirControl:"<<error; updateControls(); updateFooter();
 }
 void Desklet::updateControls() {

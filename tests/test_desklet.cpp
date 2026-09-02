@@ -62,6 +62,11 @@ private:
             if (!line.isEmpty()) out.append(QJsonDocument::fromJson(line).array());
         return out;
     }
+    static QStringList emblemIds(const QJsonObject& status, bool connected=true) {
+        QStringList result;
+        for(const auto& emblem:currentEmblems(status,connected)) result.append(emblem.id);
+        return result;
+    }
     int clickMenus(QWidget* target, Qt::MouseButton button, bool nativeContext=false) {
         int opened=0;
         QTimer closer;
@@ -302,7 +307,7 @@ private slots:
 
         // Verify actual filled pixels, not just stored colours, also on a fully
         // transparent panel. Optional contact sheet contains real Qt renders.
-        QImage preview(327,360,QImage::Format_ARGB32_Premultiplied); preview.fill(QColor("#dddddd"));
+        QImage preview(327,450,QImage::Format_ARGB32_Premultiplied); preview.fill(QColor("#dddddd"));
         QPainter painter(&preview); painter.setPen(Qt::black);
         QFont caption=painter.font(); caption.setPixelSize(13); painter.setFont(caption);
         const QStringList names{"Orange · keine Verbindung","Weiß · Gerät aus","Grün · Gerät an"};
@@ -320,8 +325,8 @@ private slots:
                     if(image.pixelColor(x,y)==colours[i]) ++matching;
                 QVERIFY2(matching>30,"Power status disc must be opaque and visible");
                 if(transparency==0) {
-                    painter.drawText(20,i*120+20,names[i]);
-                    painter.drawPixmap(20,i*120+28,rendered.grab());
+                    painter.drawText(20,i*150+20,names[i]);
+                    painter.drawPixmap(20,i*150+28,rendered.grab());
                 }
             }
         }
@@ -400,6 +405,148 @@ private slots:
         QCOMPARE(value->text(),QString("Feuchte —"));
         QVERIFY(widget.findChild<QPushButton*>("power")->isEnabled());
         QVERIFY(!target->isEnabled());
+    }
+    void emblemModeMapping_data() {
+        QTest::addColumn<QString>("mode"); QTest::addColumn<QString>("fan");
+        QTest::addColumn<int>("icon"); QTest::addColumn<QString>("badge");
+        QTest::newRow("auto-not-sleep")<<QString("P")<<QString("s")<<int(EmblemIcon::Auto)<<QString();
+        QTest::newRow("sleep")<<QString("S")<<QString("s")<<int(EmblemIcon::Sleep)<<QString();
+        QTest::newRow("allergen")<<QString("A")<<QString("2")<<int(EmblemIcon::Allergen)<<QString();
+        QTest::newRow("manual-1")<<QString("M")<<QString("1")<<int(EmblemIcon::Fan)<<QString("1");
+        QTest::newRow("manual-2")<<QString("M")<<QString("2")<<int(EmblemIcon::Fan)<<QString("2");
+        QTest::newRow("manual-3")<<QString("M")<<QString("3")<<int(EmblemIcon::Fan)<<QString("3");
+        QTest::newRow("turbo")<<QString("M")<<QString("t")<<int(EmblemIcon::Fan)<<QString("T");
+    }
+    void emblemModeMapping() {
+        QFETCH(QString,mode); QFETCH(QString,fan); QFETCH(int,icon); QFETCH(QString,badge);
+        const auto states=currentEmblems({{"pwr","1"},{"mode",mode},{"om",fan}},true);
+        QCOMPARE(states.size(),2); QCOMPARE(states.first().id,QString("mode"));
+        QCOMPARE(int(states.first().icon),icon); QCOMPARE(states.first().badge,badge);
+        QCOMPARE(states.last().id,QString("wifi"));
+    }
+    void emblemFunctionsDisplayAndPower() {
+        QJsonObject status{{"pwr","1"},{"mode","P"},{"func","PH"},{"cl",true},{"dt",8},{"ddp","1"}};
+        QCOMPARE(emblemIds(status),QStringList({"lock","mode","function","display","timer","wifi"}));
+        auto states=currentEmblems(status,true);
+        QCOMPARE(states[2].icon,EmblemIcon::Humidify); QCOMPARE(states[3].icon,EmblemIcon::PM25);
+        QVERIFY(states[4].description.contains("keine Restzeit"));
+        status["func"]="P"; status["ddp"]="0";
+        states=currentEmblems(status,true);
+        QCOMPARE(states[2].icon,EmblemIcon::Purify); QCOMPARE(states[3].icon,EmblemIcon::IAI);
+        status["ddp"]="3"; status["dt"]=0; status["cl"]=false;
+        QCOMPARE(emblemIds(status),QStringList({"mode","function","wifi"}));
+        status["mode"]="unknown"; status["func"]="unknown";
+        QCOMPARE(emblemIds(status),QStringList({"wifi"}));
+        status["pwr"]="0"; status["mode"]="P"; status["func"]="PH"; status["cl"]=true; status["dt"]=8;
+        QCOMPARE(emblemIds(status),QStringList({"lock","wifi"}));
+        status.remove("pwr"); QCOMPARE(emblemIds(status),QStringList({"lock","wifi"}));
+    }
+    void emblemAlarmsAreConservative() {
+        QJsonObject status{{"pwr","1"},{"modelid","AC2729/10"},{"func","PH"},
+            {"wl",100},{"err",49236},{"fltsts0",357},{"fltsts1",119},{"fltsts2",119},{"wicksts",119},
+            {"fltt1","A3"},{"fltt2","C7"}};
+        QCOMPARE(emblemIds(status),QStringList({"function","wifi"}));
+        status["err"]=49408; QVERIFY(emblemIds(status).contains("water"));
+        status["err"]=32768; QVERIFY(!emblemIds(status).contains("water")); // tank-open != refill alarm
+        status["err"]=49153; QVERIFY(emblemIds(status).contains("clean"));
+        status["err"]=49155; QVERIFY(emblemIds(status).contains("clean"));
+        status["err"]=49236; status["wl"]=0; status["fltsts0"]=0; status["fltsts1"]=0;
+        QCOMPARE(emblemIds(status),QStringList({"function","filter","water","clean","wifi"}));
+        for(const auto& state:currentEmblems(status,true)) {
+            if(state.id=="filter" || state.id=="water" || state.id=="clean") QVERIFY(state.warning);
+        }
+        status["func"]="P"; QVERIFY(!emblemIds(status).contains("water"));
+        status["fltsts0"]=123; status["fltsts1"]=123;
+        status["wicksts"]="0"; status["fltsts2"]="0";
+        QVERIFY(emblemIds(status).contains("clean")); QVERIFY(emblemIds(status).contains("filter"));
+        status["modelid"]="AC9999/10";
+        QCOMPARE(emblemIds(status),QStringList({"function","wifi"}));
+        status.remove("modelid"); status["type"]="AC2729";
+        QVERIFY(emblemIds(status).contains("filter"));
+    }
+    void emblemInvalidValuesDoNotCreateAlarms() {
+        for(const QJsonValue& value:QList<QJsonValue>{QJsonValue(QJsonValue::Undefined),QJsonValue(),
+                false,true,"", "bad", "NaN", -1, 0.5}) {
+            QJsonObject status{{"pwr","1"},{"modelid","AC2729/10"},{"func","PH"}};
+            for(const auto& key:{"wl","err","fltsts0","fltsts1","fltsts2","wicksts","dt","ddp","cl"}) status[key]=value;
+            // cl=true is the only meaningful Boolean in this collection.
+            status["cl"]="true";
+            QCOMPARE(emblemIds(status),QStringList({"function","wifi"}));
+        }
+        QCOMPARE(emblemIds({},false),QStringList({"wifi"}));
+        QCOMPARE(emblemIds({{"pwr","1"},{"mode","M"},{"om","unexpected"}}),QStringList({"wifi"}));
+    }
+    void emblemsWaitForConfirmedState() {
+        qputenv("AIRCTRL_TEST_WRITE_GATE",temp_.filePath("write.ready").toUtf8());
+        Desklet widget(Preferences{},FAKE_BACKEND); widget.showAndPosition(); widget.start();
+        auto* mode=widget.findChild<Emblem*>("emblem_mode");
+        auto* c=widget.findChild<Controller*>();
+        QTRY_VERIFY(mode->isVisible()); QCOMPARE(mode->icon(),EmblemIcon::Auto);
+        widget.findChild<QPushButton*>("power")->click();
+        QTest::qWait(200); QVERIFY(mode->isVisible()); QCOMPARE(mode->icon(),EmblemIcon::Auto);
+        QFile gate(temp_.filePath("write.ready")); QVERIFY(gate.open(QIODevice::WriteOnly)); gate.close();
+        QTRY_VERIFY(!c->busy()); QVERIFY(mode->isHidden());
+        QCOMPARE(c->observationStarts(),quint64(1)); QCOMPARE(calls().size(),2); c->stop();
+    }
+    void emblemOfflineAppearanceAndGeometry() {
+        Preferences p; p.desktop=false; p.foreground=QColor("#2468ac"); p.transparency=100;
+        Desklet widget(p,FAKE_BACKEND,true); widget.showAndPosition();
+        auto* mode=widget.findChild<Emblem*>("emblem_mode"); auto* wifi=widget.findChild<Emblem*>("emblem_wifi");
+        auto* bar=widget.findChild<QWidget*>("emblemBar");
+        QVERIFY(mode->isHidden()); QVERIFY(wifi->toolTip().contains("noch kein Status"));
+        const auto initial=widget.size();
+        widget.applyStatus({{"pwr","1"},{"mode","P"},{"func","PH"},{"cl",true}});
+        QCoreApplication::processEvents();
+        QVERIFY(mode->isVisible()); QCOMPARE(mode->ink(),p.foreground); QVERIFY(!mode->stale());
+        QVERIFY(widget.findChild<QWidget*>("controlBar")->geometry().bottom()<bar->geometry().top());
+        QVERIFY(bar->geometry().bottom()<widget.findChild<QWidget*>("values")->geometry().top());
+        QCOMPARE(initial,widget.size());
+        const auto onlineWifi=wifi->grab().toImage();
+        // Inspect the composed top-level window; grabbing a plain child in
+        // isolation can synthesize an opaque palette background in Qt.
+        const auto transparent=widget.grab().toImage();
+        QCOMPARE(transparent.pixelColor(bar->mapTo(&widget,QPoint(0,0))).alpha(),0);
+        widget.setConnectionError("offline"); QCoreApplication::processEvents();
+        QVERIFY(mode->isVisible()); QVERIFY(mode->stale()); QVERIFY(mode->ink().alpha()<255);
+        QVERIFY(mode->accessibleDescription().contains("Letzter bestätigter"));
+        QVERIFY(!wifi->stale()); QCOMPARE(wifi->ink(),QColor("#d97706"));
+        QVERIFY(wifi->grab().toImage()!=onlineWifi); QCOMPARE(initial,widget.size());
+        widget.applyStatus({{"pwr","0"}}); QVERIFY(mode->isHidden()); QCOMPARE(initial,widget.size());
+        QVERIFY(!QFile::exists(log_));
+    }
+    void emblemPreviewAndLargeFonts() {
+        const QList<QJsonObject> samples{
+            {{"mode","P"},{"func","PH"}},
+            {{"mode","S"},{"func","P"}},
+            {{"mode","A"},{"func","PH"},{"cl",true},{"dt",8}},
+            {{"mode","M"},{"om","3"},{"func","P"},{"ddp","1"}},
+            {{"mode","P"},{"func","PH"},{"cl",true},{"dt",12},{"ddp","0"},
+                {"wl",0},{"fltsts0",0},{"fltsts1",0}},
+        };
+        QImage preview(347,samples.size()*154,QImage::Format_ARGB32_Premultiplied); preview.fill(QColor("#dddddd"));
+        QPainter painter(&preview); painter.setPen(Qt::black);
+        QFont caption=painter.font(); caption.setPixelSize(13); painter.setFont(caption);
+        const QStringList names{"Automatik · 2-in-1","Ruhemodus · Luftreinigung","Allergen · Kindersicherung · Timer",
+            "Manuell · Stufe 3 · PM2.5","Wartungshinweise · Testdaten"};
+        for(int points:{10,24,48}) {
+            Preferences p; p.valueFont.setPointSize(points);
+            Desklet widget(p,FAKE_BACKEND,true); widget.showAndPosition();
+            for(int i=0;i<samples.size();++i) {
+                auto sample=samples[i]; sample["pwr"]="1"; sample["modelid"]="AC2729/10";
+                sample["rh"]=55; sample["rhset"]=50; sample["temp"]=24; sample["pm25"]=1;
+                widget.applyStatus(sample); QCoreApplication::processEvents();
+                for(auto* emblem:widget.findChildren<Emblem*>()) if(emblem->isVisible()) {
+                    QVERIFY(widget.rect().contains(QRect(emblem->mapTo(&widget,QPoint()),emblem->size())));
+                    QCOMPARE(emblem->width(),emblem->height());
+                }
+                if(points==10) {
+                    QCOMPARE(widget.width(),287); QCOMPARE(widget.height(),114);
+                    painter.drawText(20,i*154+20,names[i]); painter.drawPixmap(20,i*154+28,widget.grab());
+                }
+            }
+        }
+        painter.end();
+        const auto png=qEnvironmentVariable("AIRCTRL_TEST_EMBLEMS_PNG"); if(!png.isEmpty()) QVERIFY(preview.save(png));
     }
     void diagnosticWindowExplainsFieldsAndPreservesRawData() {
         Desklet widget(Preferences{},FAKE_BACKEND,true);
@@ -523,7 +670,7 @@ private slots:
                 QVERIFY(value->fontMetrics().horizontalAdvance(value->text())<=value->width());
                 QVERIFY(widget.rect().contains(QRect(value->mapTo(&widget,QPoint()),value->size())));
             }
-            if(points==10) { QVERIFY(widget.width()<=340); QVERIFY(widget.height()<110); }
+            if(points==10) { QVERIFY(widget.width()<=340); QVERIFY(widget.height()<125); }
         }
     }
     void backgroundTransparencyAndForeground() {
@@ -575,6 +722,7 @@ private slots:
         Desklet widget(p,FAKE_BACKEND); widget.showAndPosition();
         widget.applyStatus({{"pwr","1"},{"rh",55},{"rhset",50}});
         const QList<QWidget*> surfaces{&widget,widget.findChild<QWidget*>("controlBar"),
+            widget.findChild<QWidget*>("emblemBar"),widget.findChild<Emblem*>("emblem_wifi"),
             widget.findChild<QWidget*>("values"),widget.findChild<QLabel*>("value_rh"),
             widget.findChild<QPushButton*>("power")};
         for(auto* target:surfaces) {
@@ -591,13 +739,20 @@ private slots:
         Desklet widget(p,FAKE_BACKEND); widget.showAndPosition();
         const auto position=widget.pos();
         QCOMPARE(clickMenus(widget.findChild<QLabel*>("value_rh"),Qt::LeftButton),1);
+        QCOMPARE(clickMenus(widget.findChild<Emblem*>("emblem_wifi"),Qt::LeftButton),1);
         QCOMPARE(widget.pos(),position); QVERIFY(!QFile::exists(log_));
     }
+    void draggingMovesAndSavesWithoutOpeningMenu_data() {
+        QTest::addColumn<QString>("surface");
+        QTest::newRow("value")<<QString("value_rh");
+        QTest::newRow("emblem")<<QString("emblem_wifi");
+    }
     void draggingMovesAndSavesWithoutOpeningMenu() {
+        QFETCH(QString,surface);
         ScopedEnvironment session("XDG_SESSION_TYPE","x11");
         Preferences p; p.desktop=true; p.position={80,80};
         Desklet widget(p,FAKE_BACKEND); widget.showAndPosition();
-        auto* value=widget.findChild<QLabel*>("value_rh");
+        auto* value=widget.findChild<QWidget*>(surface); QVERIFY(value);
         const QPoint local(6,6), delta(35,24), oldPosition=widget.pos();
         const auto global=value->mapToGlobal(local);
         int menus=0;

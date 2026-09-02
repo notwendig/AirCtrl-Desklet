@@ -1,4 +1,4 @@
-# Validierung – Version 0.3.5
+# Validierung – Version 0.3.6
 
 Datum: 2026-09-02.
 
@@ -9,7 +9,7 @@ Datum: 2026-09-02.
 - Oberfläche, Backend und Testprogramme erfolgreich kompiliert.
 - Keine Compilerwarnungen aus dem UI-Code mit -Wall -Wextra -Wpedantic.
 - install.sh in einen separaten absoluten Testpräfix ausgeführt.
-- Installierte GUI meldet „airctrl-desklet 0.3.5“.
+- Installierte GUI meldet „airctrl-desklet 0.3.6“.
 - Test-SDK, Buildverzeichnisse und Binärdateien sind nicht im Projekt-ZIP enthalten.
   Unter Fedora werden weiterhin die bereits genannten Systempakete verwendet.
 
@@ -17,7 +17,7 @@ Datum: 2026-09-02.
 
 QtTest/CTest mit Qt-Offscreen:
 
-    Totals: 42 passed, 0 failed, 1 skipped, 0 blacklisted
+    Totals: 56 passed, 0 failed, 1 skipped, 0 blacklisted
     100% tests passed out of 1
 
 Die Zählung enthält Initialisierung/Aufräumen und parametrisierte Testfälle.
@@ -25,6 +25,14 @@ Der native X11-Test wird ohne X11-Sitzung übersprungen.
 
 | Bereich | Prüfung |
 |---|---|
+| Emblem-Modi | Automatik, Ruhe, Allergen, manuelle Stufen 1/2/3 und Turbo; mode=P mit om=s bleibt Automatik |
+| Emblem-Funktionen | Luftreinigung / 2-in-1, Kindersicherung, Timer, PM2.5 / IAI und unbekannte Anzeigecodes |
+| Alarmgrenzen | AC2729-Modellprüfung, bekannte Codes, abgelaufene Zähler; 49236 und Typkennungen A3/C7 erzeugen keinen Alarm |
+| Ungültige Daten | Fehlende/null/bools/falsche Strings/negative/gebrochene Zähler lösen keine Warnsymbole aus |
+| Bestätigte Embleme | Power-Klick lässt die Anzeige bis zur tatsächlichen Rückmeldung unverändert; nur ein Beobachtungsprozess |
+| Offline-Embleme | Letzte Symbole abgeblendet, WLAN orange/durchgestrichen, Tooltips markieren veralteten Status |
+| Emblem-Layout | 287 × 114 Pixel mit bis zu neun Symbolen; Schriftgrößen 10/24/48, Transparenz und Vordergrundfarbe |
+| Emblem-Bedienung | Linksklick/Rechtsklick öffnet genau ein Menü; Ziehen verschiebt ohne Menü oder Geräteschreibzugriff |
 | Dauerbeobachtung | Mehrere Meldungen aus genau einem Prozess; keine periodischen Einzelabfragen |
 | Reale Zeitspanne | 19 Sekunden zwischen Meldungen; nach 11 Sekunden weiterhin online; kein Neustart |
 | Startparameter | status-observe -J --timeout 60 --idle-timeout 90 |
@@ -75,9 +83,16 @@ Der Empfänger dokumentiert anschließend seinen tatsächlichen SIGTERM-Ausstieg
 Dies prüft Linux PR_SET_PDEATHSIG, ohne sich auf Prozessnummern im möglicherweise
 anders eingebundenen /proc der Testumgebung zu verlassen.
 
-Die erste Variante dieser Testprüfung über /proc/<pid>/stat schlug bereits bei
-der Prüfung des laufenden Kindes fehl. Sie wurde durch die direkte Exit-Bestätigung
-des Testempfängers ersetzt. Das Produktionsverhalten wurde dabei nicht abgeschwächt.
+Die seit 0.3.5 vorhandene Prüfung über die direkte Exit-Bestätigung des
+Testempfängers wurde unverändert erneut erfolgreich ausgeführt.
+
+### Transparenzprüfung der Emblemzeile
+
+Die erste Testvariante prüfte die Emblemzeile über einen isolierten Child-Grab.
+Qt ergänzte dabei einen deckenden Palettenhintergrund. Der Test prüft jetzt die
+tatsächlich zusammengesetzte Oberfläche über den Top-Level-Grab: Der freie
+Hintergrund der Emblemzeile ist bei 100 % Transparenz ebenfalls transparent.
+Die produktive Darstellung musste dafür nicht geändert werden.
 
 ## Erkenntnisse aus dem Benutzer-Mitschnitt
 
@@ -97,11 +112,24 @@ fehlgeschlagenen Widget-Einzelabfragen.
 Die Mitschnittdaten selbst, Gerätekennungen und sonstiger mitgeschnittener
 Netzverkehr sind nicht Bestandteil dieses ZIPs.
 
+Der nachfolgende Benutzermitschnitt von 0.3.5 bestätigte anschließend den Betrieb
+am echten Gerät: 385,35 Sekunden zwischen Anmeldung und Abmeldung, 39 gültige
+Statusmeldungen mit fortlaufender Sequenz, 13 Schaltbefehle mit success-Antwort
+und jeweils passender nächster Statusmeldung. Die längste Pause während dieser
+Sitzung betrug 37,07 Sekunden; es gab keine Neuanmeldung. ICMP Port unreachable
+trat nur vor der Sitzung und nach ihrer Abmeldung auf.
+
 ## Oberfläche, Diagnose und Kompatibilität
 
-Das kompakte Panel und die Power-Farben bleiben unverändert. Die echte Qt-Oberfläche
-wurde als vorschau.png und mit drei Power-Zuständen als power-vorschau.png gerendert.
-Die Diagnoseansicht steht in diagnose-vorschau.png.
+Die acht Buttons und ihre Power-Farben bleiben unverändert. Unter den Buttons
+erscheint eine neue Emblemzeile, darunter weiterhin die Messwerte. Standardgröße:
+287 × 114 Pixel, bei größerer Schrift mitwachsend. Das aktive Set folgt nur den
+bestätigten Statuswerten; es verursacht keine Geräteabfragen oder Schaltbefehle.
+
+Die installierte echte Qt-Oberfläche wurde als vorschau.png gerendert. Weitere
+Qt-Renderings: power-vorschau.png mit drei Power-Zuständen, embleme-vorschau.png
+mit mehreren Modi und ausdrücklich simulierten Wartungswarnungen sowie
+diagnose-vorschau.png. Die Vorschauen wurden visuell geprüft.
 
 Die Diagnose erklärt jetzt Empfangsmodus, Empfangsphase, Zahl der Statusmeldungen,
 Beobachtungsstarts, Anlauf-/Stillstandsfristen, Bestätigung und Wiederverbindung.
@@ -111,11 +139,11 @@ offline zu setzen.
 Der alte gespeicherte Intervallwert bleibt erhalten und wird als Wiederverbindungspause
 nach einem Fehler genutzt. Darstellung und übrige Einstellungen bleiben erhalten.
 
-Der CoAP-Protokollcode ist gegenüber 0.3.4 unverändert; der Controller nutzt den
-bereits vorhandenen und vom Benutzer erfolgreich getesteten Observe-Modus.
-Die vollständige frühere Python/UDP-Protokolltestsuite wurde für 0.3.5 nicht erneut
-ausgeführt; stattdessen wurde der oben beschriebene reale UDP-Integrationstest
-für die veränderte GUI-Anbindung hinzugefügt.
+Ein Bytevergleich mit dem ZIP von 0.3.5 bestätigt unveränderte Controller-,
+Protokoll-, Einstellungs- und Installerdateien (15 Dateien). Der CoAP-Code ist
+weiterhin auch gegenüber 0.3.4 unverändert. Die vollständige frühere separate
+Python/UDP-Protokolltestsuite wurde nicht erneut ausgeführt; der oben beschriebene
+reale UDP-Integrationstest ist Bestandteil der erneut erfolgreichen Qt-Testsuite.
 
 ## Grenzen der Prüfung
 
@@ -123,8 +151,10 @@ Keine laufende Cinnamon/Muffin- oder echte Wayland-Sitzung in dieser Umgebung.
 Popup-Darstellung, Desktop-Ebene, Tray, interaktives Verschieben und Autostart müssen
 weiterhin in der Benutzersitzung geprüft werden.
 
-Kein Zugriff auf den physischen AC2729/10. Der Benutzer hat den CLI-Observe-Modus
-am Gerät bestätigt; die neue GUI-Anbindung einschließlich gleichzeitiger
-Schreibbefehle wurde hier mit simuliertem Gerät getestet. Das Update ist somit
-noch kein Nachweis, dass jede mögliche Ursache eines Netzwerkausfalls behoben ist.
+Kein eigener Zugriff auf den physischen AC2729/10. Der Benutzer hat den Empfang
+und die Steuerung mit 0.3.5 am Gerät bestätigt. Die neue Emblemzeile ist mit
+synthetischen Zuständen geprüft; reale Filter- oder Wasseralarme wurden nicht
+ausgelöst oder nachgestellt. Wartungssymbole sind Hinweise aus bekannten Codes
+und abgelaufenen Zählern, keine vollständige Garantie einer identischen
+Firmware-Displayanzeige. Unbekannte Codes bleiben in der Diagnose sichtbar.
 AT-SPI-Startmeldungen werden durch dieses Update nicht verändert.

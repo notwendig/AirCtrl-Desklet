@@ -1,10 +1,14 @@
-# Philips AirControl – Qt6-Gerätepanel 0.3.5
+# Philips AirControl – Qt6-Gerätepanel 0.3.6
 
 Kompaktes C++/Qt6-Desktopwidget für den Philips AC2729/10 „Wohnzimmer“ unter
 Cinnamon. Geräteadresse voreingestellt: **192.168.77.5**, UDP-Port **5683**.
 Der bereits am Gerät funktionierende C++-CoAP-Code ist vollständig enthalten.
 
-Version 0.3.5 ersetzt wiederholte Einzelabfragen durch eine dauerhafte
+Version 0.3.6 ergänzt eine Zeile mit den aktuellen Status-Emblemen zwischen
+Buttonleiste und Messwerten. Symbole, Schrift und Farben bleiben skalierbar;
+die erprobte Dauerbeobachtung und Gerätesteuerung sind unverändert.
+
+Seit Version 0.3.5 ersetzen wir wiederholte Einzelabfragen durch eine dauerhafte
 CoAP-Beobachtung (`status-observe`). Schaltbefehle beenden diese Beobachtung nicht.
 Die im Mitschnitt beobachteten 18–19 Sekunden zwischen Meldungen lösen keinen
 Offline-Wechsel mehr aus. Power bleibt wie in 0.3.4 immer anklickbar:
@@ -12,14 +16,62 @@ orange ohne Verbindung, weiß bei „aus“, grün bei „an“.
 
 ## Kompakte Oberfläche
 
-Im Widget stehen nur die acht Kontrolltasten und darunter die Werte.
+Im Widget stehen die acht Kontrolltasten, die aktiven Status-Embleme und darunter die Werte.
 Standardmäßig sind Feuchte, Zielfeuchte, Temperatur und PM2,5 sichtbar.
-Das Standardlayout misst **287 × 85 Pixel** bei 100 % Desktopskalierung.
+Das Standardlayout misst **287 × 114 Pixel** bei 100 % Desktopskalierung.
 Bei größerer Schrift wächst das Fenster mit, damit nichts abgeschnitten wird.
 
-`vorschau.png` zeigt die echte Qt-Oberfläche, `power-vorschau.png` die drei
+`vorschau.png` zeigt die echte Qt-Oberfläche, `embleme-vorschau.png` mehrere
+Modi und einen ausdrücklich simulierten Wartungsfall, `power-vorschau.png` die drei
 Power-Farben. In der Vorschau bleibt Power anklickbar, sendet aber keine Befehle;
 alle übrigen Gerätetasten sind deaktiviert. „Vorschau“ steht im Tooltip und Menü.
+
+## Aktuelle Display-Embleme
+
+Die Symbole sind native Qt-Vektorgrafiken nach der vom Benutzer bereitgestellten
+Philips-Legende, keine Unicode-Zeichen mit fontabhängiger Darstellung.
+Nur aktive, aus dem letzten bestätigten Gerätestatus ableitbare Zustände erscheinen:
+
+| Emblem | Statuszuordnung |
+|---|---|
+| Mond · Ruhemodus | `pwr="1"`, `mode="S"` |
+| A im Kreis · Automatik | `pwr="1"`, `mode="P"`; `om="s"` allein bedeutet hier nicht Nacht |
+| Allergen | `pwr="1"`, `mode="A"` |
+| Lüfter mit Stufe / T | Manuell (`mode="M"`), `om="1"/"2"/"3"/"t"` |
+| Haus mit Blatt | Nur Luftreinigung: `func="P"` |
+| Haus mit Tropfen | 2-in-1: `func="PH"` |
+| Schloss | Kindersicherung `cl=true` |
+| Uhr mit Zahl | Eingestellter Timer `dt=1…12` Stunden, nicht die verbleibende Zeit |
+| PM2.5 / IAI | Am Gerät ausgewählte Anzeige `ddp=1` / `ddp=0`; keine Deutung unbekannter Codes |
+| WLAN | Aktuelle Statusverbindung; offline orange und durchgestrichen |
+| Filterwechsel | Beim AC2729: `fltsts1=0` oder `fltsts2=0` |
+| Wasser nachfüllen | Beim AC2729 in 2-in-1: `wl=0` oder bekannter Code `err=49408` |
+| Reinigung | Beim AC2729: `fltsts0=0`, `wicksts=0` oder `err=49153/49155` |
+
+Betriebs-, Anzeigen-, Timer- und Wartungssymbole erscheinen nur bei bestätigtem
+`pwr="1"`. Bei ausgeschaltetem oder unbekanntem Betriebszustand bleiben nur die
+Verbindungsanzeige und gegebenenfalls das Schloss. Offline bleiben die letzten
+Betriebssymbole abgeblendet und mit „Letzter bestätigter Zustand“ im Tooltip erhalten.
+Ein noch unbestätigter Schaltbefehl ändert keine Symbole.
+
+Die Wartungssymbole sind **Hinweise aus Statuscodes und Restlaufzeitzählern**, keine
+vollständige Spiegelung aller firmwareinternen Display-Alarme. Die Legacy-Codes
+sind auf eine erkannte Modellkennung AC2729 begrenzt. `err=49236` und unbekannte
+Codes erzeugen keine Warnung. `32768` wird wegen uneinheitlicher Deutung von
+Wassermangel/Tanköffnung nicht als Leerstandscode verwendet. Fehlende, ungültige
+oder negative Zähler werden niemals als Null interpretiert. Geräteanzeige abgleichen;
+das Widget setzt keinen Wartungszähler zurück.
+
+Die Zuordnungen stützen sich auf die vorhandene
+[Philips-CoAP-Referenzintegration](https://github.com/betaboon/philips-airpurifier/blob/master/custom_components/philips_airpurifier_coap/const.py).
+Die Bedeutung der Filterwechsel- und Reinigungshinweise beschreibt auch
+[Philips](https://www.philips.co.uk/c-f/XC000005727/what-filters-should-i-use-with-my-philips-air-purifier/1000).
+
+Die Zeile behält beim Statuswechsel ihre Höhe. Embleme folgen Schriftgröße und
+Vordergrundfarbe; Wartungshinweise bleiben orange. Ihre Tooltips erklären den
+Zustand und das auslösende Statusfeld. Linksklick oder Rechtsklick öffnet das
+Kontextmenü; Ziehen verschiebt das Widget wie bisher. Es gibt keine zusätzlichen
+Geräteabfragen und keine neuen Schaltbefehle.
 
 ## Kontextmenü und Darstellung
 
@@ -56,7 +108,7 @@ Das neue ZIP im Ordner Downloads speichern. Die vorhandenen Abhängigkeiten reic
 ```bash
 pkill -x airctrl-desklet
 cd /home/juergen/Projects/Qt
-unzip -o ~/Downloads/airctrl-desklet-0.3.5.zip
+unzip -o ~/Downloads/airctrl-desklet-0.3.6.zip
 cd /home/juergen/Projects/Qt/airctrl-desklet
 bash install.sh
 env -u QT_QPA_PLATFORM ~/.local/bin/airctrl-desklet
@@ -159,7 +211,7 @@ JSON-Zeile wird sofort verarbeitet, auch wenn Zeilen über mehrere Prozessausgab
 verteilt sind oder mehrere Meldungen zusammen eintreffen. Es gibt keinen
 periodischen Neustart des Empfängers und keine zyklische Neusynchronisierung.
 
-| Grenze | Einstellung in 0.3.5 |
+| Grenze | Einstellung seit 0.3.5 |
 |---|---|
 | Synchronisierung / erste Statusantwort | Jeweils bis zu 60 s |
 | Gesamter Anlauf-Watchdog | 125 s einschließlich Startreserve |
@@ -208,8 +260,11 @@ Nach dem Beenden sendete das Gerät noch an geschlossene UDP-Ports.
 Diese Messungen begründen den Wechsel von kurzlebigen Einzelabfragen mit
 10-s-Frist zur Dauerbeobachtung. Die fehlgeschlagenen Widget-Abfragen selbst
 waren nicht im Mitschnitt enthalten; eine Behebung sämtlicher möglicher
-Netzwerkprobleme wird daher nicht behauptet. Die neue GUI-Anbindung ist hier
-automatisiert und per UDP-Loopback getestet, aber noch nicht am physischen Gerät.
+Netzwerkprobleme wird daher nicht behauptet. Der anschließende Benutzermitschnitt
+von 0.3.5 bestätigt am echten Gerät eine 6 Minuten 25 Sekunden lange Beobachtung,
+39 gültige Statusmeldungen und 13 erfolgreich zurückgemeldete Schaltbefehle ohne
+Neuanmeldung. Die Emblemzeile von 0.3.6 wurde hier mit Qt-Offscreen getestet;
+physische Wartungsalarme konnten nicht ausgelöst oder überprüft werden.
 Der CoAP-Protokollcode selbst ist unverändert. AT-SPI-Meldungen der
 Desktop-Bedienungshilfen sind nicht Gegenstand dieses Updates.
 

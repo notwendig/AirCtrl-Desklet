@@ -2,6 +2,7 @@
 #include "controller.hpp"
 #include "preferences.hpp"
 #include "panel.hpp"
+#include "emblems.hpp"
 #include <QDateTime>
 #include <QLabel>
 #include <QSystemTrayIcon>
@@ -29,6 +30,7 @@ private:
     void updateControls();
     void updateFooter();
     void updateValues();
+    void updateEmblems();
     void applyAppearance();
     void saveAppearance();
     void resizeToContent();
@@ -56,6 +58,8 @@ private:
     QJsonObject status_, pending_;
     QString error_, notice_, commandError_;
     std::array<PanelButton*,8> controls_{};
+    QWidget* emblemBar_;
+    std::array<Emblem*,9> emblems_{};
     QWidget* valueArea_;
     QGridLayout* valueLayout_;
     std::array<QLabel*,5> values_{};
