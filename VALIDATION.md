@@ -1,13 +1,53 @@
-# Validierung – v1.00 Stable
+# Validierung – v1.01
 
-Datum: 2026-09-02.
+Datum: 2026-09-03.
 
-Stable-Freigabe des Funktionsstands 0.3.8 auf Benutzerwunsch. Nur die
-Release-Kennung und Dokumentation wurden geändert; es gibt keine neue Geräte-,
-Fenster- oder Alarmlogik. Die unten genannten Testgrenzen bleiben bestehen.
-Der Dateivergleich mit dem 0.3.8-ZIP bestätigt unveränderte Laufzeitquellen und
-Tests; in main.cpp und CMakeLists.txt unterscheidet sich nur die Versionsangabe.
-Die installierte Demo-Vorschau ist ebenfalls bytegleich mit 0.3.8.
+## GitHub-Fassung: erneut geprüft am 2026-09-03
+
+Die GitHub-Vorbereitung behält die Anwendungsversion **1.01** bei. Neu sind die
+Projektunterlagen, CI-/Release-Vorlagen, Presets, Paketwerkzeuge und ein
+reproduzierbarer Diagnosebild-Renderer. Die Versionszeichenfolge wird jetzt aus
+CMake erzeugt; die Tests verwenden wie die Anwendung den Fusion-Stil.
+
+- Frischer Release-Build mit GCC 13.3.0, Qt 6.8.3 und CMake 4.4.3 auf Ubuntu 24.04.
+  Konfiguration über das Preset `ci`; lokal wurde mangels Ninja der Generator
+  mit `-G "Unix Makefiles"` überschrieben. Das lokale Qt-SDK wurde über
+  `CMAKE_PREFIX_PATH` und `LD_LIBRARY_PATH` eingebunden.
+- QtTest erneut: **102 bestanden, 0 fehlgeschlagen, 2 übersprungen**, 32,40 s
+  CTest-Laufzeit. Die beiden ausgelassenen Prüfungen benötigen natives X11 bzw.
+  den privaten D-Bus-Testdienst. Die frühere Socket-Berechtigungssperre wurde
+  nicht umgangen; der lokale Test verwendet `AIRCTRL_TEST_WITH_DBUS=OFF`.
+- Neun zusätzliche Python-Tests bestanden: Repository-/Versionsprüfung,
+  fehlerhafte Bildlinks, unerlaubte Mitschnitte, mögliche echte Gerätekennungen,
+  Symlinks, ungepinnte Actions, reproduzierbarer ZIP, Entpacken und Erhalt
+  vorhandener Ausgabedateien.
+- Alle lokalen Markdown-Dateiverweise und eingebundenen Bilder vorhanden;
+  JSON-Dateien parsebar. Sechs GitHub-YAML-Dateien lokal geparst und
+  Workflow-/Berechtigungsstruktur geprüft. Kein ausgeführter GitHub-CI-Lauf und
+  keine Bestätigung durch GitHubs Workflow-Validator.
+- Installation in einen separaten Testpräfix erfolgreich. Installierte Anwendung
+  meldet `airctrl-desklet 1.01`; Demo-PNG erfolgreich ohne Gerätezugriff erzeugt.
+- Öffentliche Diagnoseansicht mit synthetischen `demo-device`/`demo-product`
+  aus dem echten Qt-Dialog neu gerendert und visuell geprüft. Das dunkle
+  Nutzerbild ist byte-identisch zum bereitgestellten Screenshot. Keine echte
+  DeviceId/ProductId und kein privater Netzwerkmitschnitt im Quellpaket.
+- Vergleich zum ursprünglichen v1.01-Quellstand: Controller, Protokollbackend und
+  übriges UI-Verhalten unverändert. `main.cpp` verwendet lediglich die generierte
+  Versionskonstante. Installer und gespeicherte Einstellungen unverändert.
+
+Der vom Maintainer vorgelegte vollständige Diagnoseexport aus v1.01 bestätigt
+zusätzlich die Nutzung unter **Fedora/Cinnamon, Sitzung X11, Qt-Plattform xcb**.
+Er zeigt eine laufende Dauerbeobachtung und drei getrennte Filtervorwarnungen
+mit positiven Reststunden. Dies ist ein Nutzerbefund, kein eigener
+Hardwaretest und kein Nachweis jeder nativen Desktopfunktion.
+
+Die folgenden Abschnitte dokumentieren die Funktionsprüfungen und ihre Grenzen.
+
+Korrektur auf Benutzerwunsch: Filtervorwarnung für A3/C7/F1, Austausch statt
+Reinigung für wicksts, Kopieren des Diagnoseberichts und kleinere Statuskreise.
+Die 120-h-Vorwarnung ist eine lokale Desklet-Entscheidung, keine aus 0xC054
+abgeleitete Bitmaske oder bestätigte Philips-Firmwaregrenze. Die vorgelegte
+AC2729-Meldung mit drei Zählern auf 88 h dient als Regressionstest.
 
 ## Build und Installation
 
@@ -16,7 +56,7 @@ Die installierte Demo-Vorschau ist ebenfalls bytegleich mit 0.3.8.
 - Oberfläche, Backend und Testprogramme erfolgreich kompiliert.
 - Keine Compilerwarnungen aus dem UI-Code mit -Wall -Wextra -Wpedantic.
 - install.sh in einen separaten absoluten Testpräfix ausgeführt.
-- Installierte GUI meldet „airctrl-desklet 1.00“.
+- Installierte GUI meldet „airctrl-desklet 1.01“.
 - Test-SDK, Buildverzeichnisse und Binärdateien sind nicht im Projekt-ZIP enthalten.
   Unter Fedora werden weiterhin die bereits genannten Systempakete verwendet.
 
@@ -24,7 +64,7 @@ Die installierte Demo-Vorschau ist ebenfalls bytegleich mit 0.3.8.
 
 QtTest/CTest mit Qt-Offscreen:
 
-    Totals: 85 passed, 0 failed, 2 skipped, 0 blacklisted
+    Totals: 102 passed, 0 failed, 2 skipped, 0 blacklisted
     100% tests passed out of 1
 
 Die Zählung enthält Initialisierung/Aufräumen und parametrisierte Testfälle.
@@ -35,10 +75,16 @@ Es wurde kein alternativer Zugriff auf eine echte Benutzersitzung versucht.
 
 | Bereich | Prüfung |
 |---|---|
+| Filtervorwarnung | Für jeden der drei Zähler: 121 h ohne Warnung; 120/119/88/1 h gelb; 0 h rot; Dezimalstrings und ungültige/fehlende Werte |
+| Filteridentitäten | A3/C7/F1 bei je 88 h als drei Warnungen; Stundenänderung wiederholt nicht; quittiertes F1 eskaliert bei 0 h, danach A3 unabhängig; Aufhebung und Wiederauftreten |
+| F1 statt F0 | wicksts=0 meldet Austausch, ohne falschen Reinigungsalarm; fltsts0/alte bekannte Reinigungscodes bleiben erhalten |
+| Kopierbutton | Echter QtTest-Mausklick kopiert vollständigen Unicode-/Hexbericht; sichtbare Rückmeldung; Dialog bleibt offen; Inhalt bleibt nach Schließen erhalten |
+| Kopierkürzel | Strg+Umschalt+C ersetzt vorhandene Zwischenablage; Qt-Buttonanimation vor der Prüfung abgewartet |
+| Kontextmenü → Diagnose | Aktion per Mausklick, Popup beendet, danach Kopie im Diagnosefenster; keine Gerätezugriffe |
 | Fensterdekoration | Kontextmenü-Haken in beide Richtungen; sichtbares Fenster, unveränderte Größe, gespeicherte Auswahl, nur ein weiterlaufender Empfänger |
 | Dekorations-Migration | Bestehendes window/desktop wird bei fehlendem neuen Schlüssel übernommen; danach separat gespeicherte Auswahl |
 | X11-/Wayland-Routing | Umschalten unter simuliertem Sitzungstyp, X11-Position erhalten, gespeicherte Wayland-Koordinaten nicht überschrieben; keine Prüfung echter Compositor-Dekoration |
-| Runde Anzeigen | Zwei echte Kreise im Statusfeld; transparente Ecken, unverzerrte Geometrie, Farbwechsel und Alarmanzahl; Schriftgrößen 6/10/24/48 |
+| Runde Anzeigen | 26 px bei Standard- und kleiner Schrift statt bisher 40 px; transparente Ecken, unverzerrte Geometrie, Farbwechsel und Alarmanzahl; Schriftgrößen 6/10/24/48 |
 | Langer Datenstillstand | 123456 Sekunden weiterhin exakt als Sekunden; keine Änderung der Fenstergröße |
 | Diagnose Hex | 15 Datensätze für sieben Code-Tags; u.a. 49236 = 0xC054, Dezimalstrings, Null, große Zahlen, Überlauf und ungültige Typen |
 | Rohdatenschutz | Hexdarstellung in eigener Spalte und Kopierbericht, unveränderte empfangene Werte/JSON; keine Umdeutung von Messwerten oder Filterstunden |
@@ -55,7 +101,7 @@ Es wurde kein alternativer Zugriff auf eine echte Benutzersitzung versucht.
 | Demo | Alarmdarstellung mit Testdaten, keine Benachrichtigungen oder Töne |
 | Emblem-Modi | Automatik, Ruhe, Allergen, manuelle Stufen 1/2/3 und Turbo; mode=P mit om=s bleibt Automatik |
 | Emblem-Funktionen | Luftreinigung / 2-in-1, Kindersicherung, Timer, PM2.5 / IAI und unbekannte Anzeigecodes |
-| Alarmgrenzen | AC2729-Modellprüfung, bekannte Codes, abgelaufene Zähler; 49236 und Typkennungen A3/C7 erzeugen keinen Alarm |
+| Alarmgrenzen | AC2729-Modellprüfung, bekannte Codes, lokale Filtervorwarnung und abgelaufene Zähler; 49236 und Typkennungen A3/C7 allein erzeugen keinen Alarm |
 | Ungültige Daten | Fehlende/null/bools/falsche Strings/negative/gebrochene Zähler lösen keine Warnsymbole aus |
 | Bestätigte Embleme | Power-Klick lässt die Anzeige bis zur tatsächlichen Rückmeldung unverändert; nur ein Beobachtungsprozess |
 | Offline-Embleme | Letzte Symbole abgeblendet, WLAN orange/durchgestrichen, Tooltips markieren veralteten Status |
@@ -159,7 +205,7 @@ Die installierte echte Qt-Oberfläche wurde als vorschau.png gerendert. Weitere
 Qt-Renderings: power-vorschau.png mit drei Power-Zuständen, embleme-vorschau.png
 mit mehreren Modi und ausdrücklich simulierten Wartungswarnungen,
 alarme-vorschau.png mit drei Datenalterfarben und Gerätewarnung sowie
-diagnose-vorschau.png. Die Vorschauen wurden visuell geprüft.
+diagnose-vorschau.png und filter-vorschau.png. Die Vorschauen wurden visuell geprüft.
 
 Die Diagnose erklärt jetzt Empfangsmodus, Empfangsphase, Zahl der Statusmeldungen,
 Beobachtungsstarts, Anlauf-/Stillstandsfristen, Bestätigung und Wiederverbindung.
@@ -187,7 +233,7 @@ Alarme und ihre Details im Widget erhalten; es gibt keinen automatischen
 Geräteeingriff als Reaktion auf einen Alarm.
 
 Die bei 0.3.7 bereitgestellten CMake-/JSON-Hilfsabhängigkeiten wurden wiederverwendet
-und sind nicht Bestandteil des ZIPs. Für v1.00 wurde in einem neuen Buildverzeichnis
+und sind nicht Bestandteil des ZIPs. Für v1.01 wurde in einem neuen Buildverzeichnis
 konfiguriert und gebaut; die vollständige Testsuite wurde erneut ausgeführt.
 Build, Installation und Tests erfolgten lokal, nicht auf dem Benutzerrechner.
 
@@ -195,10 +241,20 @@ Keine laufende Cinnamon/Muffin- oder echte Wayland-Sitzung in dieser Umgebung.
 Native Titelleiste/Rahmen, Popup-Darstellung, Desktop-Ebene, Tray, interaktives Verschieben und Autostart müssen
 weiterhin in der Benutzersitzung geprüft werden.
 
+Der Kopierbericht ist mit Qt-Offscreen im selben Prozess geprüft. Dort wird
+PRIMARY nicht unterstützt; der bedingte PRIMARY-Test ist nur in einer unterstützten
+nativen Sitzung wirksam. Eine Übergabe an Firefox/Terminal, Wayland-Seriennummern
+und Zwischenablagebesitz durch den Compositor wurden hier nicht Ende-zu-Ende getestet.
+Der lokale Rücklesevergleich allein beweist diese Übergabe nicht. Die ursprüngliche
+Ursache des Benutzerfehlers ist deshalb nicht abschließend bestätigt. Der Fix
+ergänzt die zuvor fehlende PRIMARY-Auswahl und Rückmeldung, schließt Popup-Grabs
+vor dem Dialog ab und bietet einen manuell markierbaren Kopierbericht.
+
 Kein eigener Zugriff auf den physischen AC2729/10. Der Benutzer hat den Empfang
 und die Steuerung mit 0.3.5 am Gerät bestätigt. Die neue Emblemzeile ist mit
 synthetischen Zuständen geprüft; reale Filter- oder Wasseralarme wurden nicht
-ausgelöst oder nachgestellt. Wartungssymbole sind Hinweise aus bekannten Codes
-und abgelaufenen Zählern, keine vollständige Garantie einer identischen
+ausgelöst oder nachgestellt. Der beobachtete Filterstatus wurde zusätzlich als
+Testdatensatz eingespielt. Wartungssymbole sind Hinweise aus bekannten Codes
+und Reststundenzählern einschließlich lokaler Vorwarnung, keine Garantie einer identischen
 Firmware-Displayanzeige. Unbekannte Codes bleiben in der Diagnose sichtbar.
 AT-SPI-Startmeldungen werden durch dieses Update nicht verändert.

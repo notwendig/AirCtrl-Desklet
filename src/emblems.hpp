@@ -17,6 +17,15 @@ struct EmblemState {
     bool warning = false;
 };
 
+// Local desklet policy, NOT a decoded/documented Philips firmware threshold.
+inline constexpr int FilterWarningHours = 120;
+struct FilterNotice {
+    QString key;
+    QString message;
+    bool due = false;
+};
+QList<FilterNotice> filterNotices(const QJsonObject& status);
+
 // Derived exclusively from the last confirmed snapshot, never pending commands.
 QList<EmblemState> currentEmblems(const QJsonObject& status, bool connected);
 

@@ -1,5 +1,6 @@
 #include "desklet.hpp"
 #include <QApplication>
+#include "airctrl_version.hpp"
 #include <QCommandLineParser>
 #include <QDir>
 #include <QFile>
@@ -14,7 +15,7 @@ int main(int argc, char** argv) {
     QApplication app(argc, argv);
     QCoreApplication::setOrganizationName("AirControl");
     QCoreApplication::setApplicationName("airctrl-desklet");
-    QCoreApplication::setApplicationVersion("1.00");
+    QCoreApplication::setApplicationVersion(AIRCTRL_VERSION);
     QApplication::setApplicationDisplayName("Philips AirControl");
     QApplication::setStyle("Fusion");
     QCommandLineParser parser;

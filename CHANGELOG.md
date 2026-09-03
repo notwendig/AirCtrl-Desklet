@@ -1,5 +1,33 @@
 # Änderungsübersicht
 
+## GitHub-Projektvorbereitung – 2026-09-03
+
+Anwendungsstand bleibt **v1.01**; kein neues Protokoll- oder Geräteverhalten.
+
+- Deutsche und englische README mit echtem Nutzerbild und neutralen Qt-Demobildern.
+- Rollen von Jürgen Sievers und OpenAI Codex sowie betaboons Ursprung dokumentiert.
+- MIT-/Herkunftshinweise, Beitragsregeln, Sicherheitshinweise und Issue-/PR-Vorlagen.
+- CMake-Presets; gemeinsame generierte Versionskennung für Anwendung und Tests.
+- Vorbereitete Ubuntu-/Fedora-CI und taggebundener Release-Entwurf, SHA-gepinnte Actions.
+- Offline-Repositoryprüfung, reproduzierbarer Quell-ZIP, Prüfsumme und Pakettests.
+- GitHub-Einrichtungsanleitung; noch kein Repository angelegt oder veröffentlicht.
+
+## v1.01 – 2026-09-03
+
+- AC2729: A3/HEPA, C7/Aktivkohle und F1/Befeuchtungsdocht jeweils einzeln mit
+  lokaler Vorwarnung bei 1–120 Restbetriebsstunden; bei 0 h roter Alarm.
+- F1 ist ein Austauschhinweis. `wicksts=0` löst keinen Reinigungsalarm mehr aus.
+- Keine Behauptung einer bekannten Philips-120-h-Schwelle oder Decodierung von
+  `0xC054`; Diagnose und README nennen ausdrücklich die lokale Warnlogik.
+- Individuelle Alarmidentitäten: keine Wiederholung beim stündlichen Zählerwechsel,
+  aber erneute Meldung beim Ablauf oder nach Behebung und Wiederauftreten.
+- Diagnosekopie: Clipboard plus unterstützte PRIMARY-Auswahl, sichtbare Rückmeldung,
+  Strg+Umschalt+C, vollständiger markierbarer Kopierbericht; Öffnen nach Menüabbau.
+- Datenalter-/Alarmkreise bei Standardschrift 26 statt 40 px. Die Sekunden stehen
+  einzeilig im Kreis; Einheit und Details im Tooltip. Schriftgröße bleibt skalierbar.
+- Vollständiges Quellpaket. Empfang, Schaltbefehle, Installer und Einstellungen
+  bleiben erhalten. Native Cinnamon-/Wayland-Zwischenablage hier nicht verifiziert.
+
 ## v1.00 Stable – 2026-09-02
 
 Erste stabile Ausgabe, unveränderter Funktionsstand von 0.3.8.

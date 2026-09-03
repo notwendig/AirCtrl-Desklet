@@ -158,7 +158,7 @@ Desklet::Desklet(Preferences preferences, QString backend, bool demo)
         menu->addAction("Widget anzeigen",this,[this] { showAndPosition(); });
         menu->addAction("Menü / Darstellung …",this,[this] { requestMenu(QCursor::pos()); });
         menu->addAction("Einstellungen",this,&Desklet::showSettings);
-        menu->addAction("Diagnose",this,&Desklet::showDetails);
+        menu->addAction("Diagnose",this,[this] { QTimer::singleShot(0,this,&Desklet::showDetails); });
         menu->addAction("Beenden",this,&QWidget::close); tray_->setContextMenu(menu);
         connect(tray_,&QSystemTrayIcon::activated,this,[this](QSystemTrayIcon::ActivationReason reason) {
             if(reason==QSystemTrayIcon::Trigger) { show(); raise(); }
@@ -622,7 +622,8 @@ void Desklet::openMenu(const QPoint& point) {
     refresh->setEnabled(!controller_.busy() && !awaitingConfirmation_ && !demo_);
     auto* settings=menu.addAction("Verbindung und Autostart …",this,&Desklet::showSettings);
     settings->setEnabled(!controller_.busy() && !awaitingConfirmation_ && !demo_);
-    menu.addAction("Diagnose / Gerätedaten (F1) …",this,&Desklet::showDetails);
+    // Let the popup release its input grab before opening the focused dialog.
+    menu.addAction("Diagnose / Gerätedaten (F1) …",this,[this] { QTimer::singleShot(0,this,&Desklet::showDetails); });
     if (!waylandSession_) menu.addAction("Position festlegen …",this,&Desklet::showPositionDialog);
     auto* locked=menu.addAction("Position sperren"); locked->setCheckable(true); locked->setChecked(preferences_.locked);
     connect(locked,&QAction::toggled,this,[this](bool value) { preferences_.locked=value; rememberPosition(); });
@@ -687,7 +688,8 @@ void Desklet::showSettings() {
     controller_.start();
 }
 void Desklet::showDetails() {
-    QDialog dialog(this); dialog.setWindowTitle("AirControl – Diagnose"); dialog.resize(860,620);
+    QDialog dialog(this,Qt::Dialog); dialog.setObjectName("diagnosticsDialog");
+    dialog.setWindowTitle("AirControl – Diagnose"); dialog.resize(860,620);
     dialog.setMinimumSize(640,420);
     auto* layout = new QVBoxLayout(&dialog);
     auto* tabs = new QTabWidget(&dialog); tabs->setObjectName("diagnosticTabs");
@@ -749,6 +751,7 @@ void Desklet::showDetails() {
         {"Datenalter",dataAgeSeconds()<0 ? "noch kein Status" : QString::number(dataAgeSeconds())+" s","Seit dem letzten gültigen Statuspaket; auch Pakete während eines Schreibbefehls zählen. Keine Rücksetzung durch Fehler oder Schalt-ACKs."},
         {"Letztes Statuspaket",packetReceivedAt_.isValid() ? packetReceivedAt_.toString(Qt::ISODate) : "noch keines","Empfangszeit des letzten gültigen Pakets, unabhängig von der Bestätigung eines Schaltbefehls."},
         {"Datenalter-Grenzen",QString("Gelb ab %1 s; Rot ab %2 s").arg(preferences_.ageWarningSeconds).arg(preferences_.ageStaleSeconds),"Lokale Alarmgrenzen. Verbindungsfehler sind sofort rot. Der CoAP-Timeout wird dadurch nicht verändert."},
+        {"Filter-Vorwarngrenze",QString::number(FilterWarningHours)+" Betriebsstunden","Lokale Desklet-Grenze für AC2729: A3, C7 und F1 einzeln gelb bei 1–120 h, rot bei 0 h. Keine gesichert dokumentierte Philips-Frühwarnschwelle; keine Bitmasken-Deutung von err."},
         {"Aktive Alarme",alertReport(activeAlerts_),"Warnungen aus bekannten Gerätestatusfeldern sowie Fehler beim Empfang oder Schalten. Unbekannte err-Codes werden nicht geraten."},
         {"Beobachtungsstarts",QString::number(controller_.observationStarts()),"Ein Start im Normalbetrieb; weitere Starts nur nach Fehler, F5 oder geänderten Einstellungen."},
         {"CoAP-Anlauf","60 Sekunden je Anfrage","Synchronisierung und erste Statusantwort erhalten jeweils bis zu 60 Sekunden. Der Prozess-Watchdog erlaubt insgesamt 125 Sekunden."},
@@ -764,15 +767,38 @@ void Desklet::showDetails() {
     auto* raw = new QPlainTextEdit(&dialog); raw->setObjectName("rawDiagnostics"); raw->setReadOnly(true);
     raw->setAccessibleName("Unveränderte Verbindungsdiagnose und Geräte-Rohdaten");
     raw->setPlainText(heading+session+errorText+rawJson); tabs->addTab(raw,"Rohdaten");
+    const auto reportText=heading+session+errorText+"ERKLÄRTE VERBINDUNGSFELDER\n"+
+        diagnosticFieldReport(connectionFields)+"\nERKLÄRTE GERÄTEWERTE\n"+diagnosticFieldReport(deviceFields)+
+        "\nUNVERÄNDERTE ROHDATEN\n"+rawJson;
+    auto* report=new QPlainTextEdit(&dialog); report->setObjectName("diagnosticReport");
+    report->setReadOnly(true); report->setPlainText(reportText);
+    report->setAccessibleName("Vollständiger Diagnosebericht zum Markieren und Kopieren");
+    tabs->addTab(report,"Kopierbericht");
     layout->addWidget(tabs);
     auto* note=new QLabel("Code (Hex): Fehler-/Statuscodes zusätzlich hexadezimal. Rohwerte bleiben unverändert; unbekannte Codes werden nicht als gesicherter Wartungsalarm bewertet.",&dialog);
     note->setWordWrap(true); layout->addWidget(note);
-    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close);
+    auto* copyStatus=new QLabel("Einfügen: Strg+V · im Terminal: Strg+Umschalt+V",&dialog);
+    copyStatus->setObjectName("reportCopyStatus"); copyStatus->setTextFormat(Qt::PlainText);
+    copyStatus->setWordWrap(true); layout->addWidget(copyStatus);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close,&dialog);
     auto* copy = buttons->addButton("Bericht kopieren", QDialogButtonBox::ActionRole);
-    connect(copy,&QPushButton::clicked,this,[heading,session,errorText,deviceFields,connectionFields,rawJson] {
-        QApplication::clipboard()->setText(heading+session+errorText+"ERKLÄRTE VERBINDUNGSFELDER\n"+
-            diagnosticFieldReport(connectionFields)+"\nERKLÄRTE GERÄTEWERTE\n"+diagnosticFieldReport(deviceFields)+
-            "\nUNVERÄNDERTE ROHDATEN\n"+rawJson);
+    copy->setObjectName("copyDiagnosticReport"); copy->setAutoDefault(false);
+    copy->setShortcut(QKeySequence("Ctrl+Shift+C"));
+    copy->setToolTip("Vollständigen Bericht kopieren (Strg+Umschalt+C), ohne vorheriges Markieren.");
+    connect(copy,&QPushButton::clicked,&dialog,[reportText,copyStatus,&dialog] {
+        // Keep this synchronous with the actual input event (Wayland serial /
+        // X11 ownership). Do not invoke shell helpers or copy on a timer.
+        if(QGuiApplication::platformName().startsWith("wayland") && !dialog.isActiveWindow()) {
+            copyStatus->setText("Keine aktive Diagnose: Fenster anklicken und nochmals kopieren.");
+            return;
+        }
+        auto* clipboard=QApplication::clipboard();
+        clipboard->setText(reportText,QClipboard::Clipboard);
+        if(clipboard->supportsSelection()) clipboard->setText(reportText,QClipboard::Selection);
+        if(clipboard->text(QClipboard::Clipboard)==reportText)
+            copyStatus->setText(QString("Bericht kopiert (%1 Zeichen) · Strg+V; Terminal: Strg+Umschalt+V%2")
+                .arg(reportText.size()).arg(clipboard->supportsSelection() ? " · auch Mittelklick" : ""));
+        else copyStatus->setText("Kopieren nicht bestätigt. Im Tab Kopierbericht: Strg+A, Strg+C.");
     });
     buttons->button(QDialogButtonBox::Close)->setText("Schließen");
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject); layout->addWidget(buttons); dialog.exec();

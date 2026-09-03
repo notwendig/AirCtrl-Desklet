@@ -6,6 +6,7 @@
 #include <QtMath>
 #include <QSet>
 #include <QStringList>
+#include <algorithm>
 
 DataFreshness dataFreshness(qint64 seconds, bool failed, int warningAfter, int staleAfter) {
     if(failed) return DataFreshness::Disconnected;
@@ -15,8 +16,12 @@ DataFreshness dataFreshness(qint64 seconds, bool failed, int warningAfter, int s
 }
 QList<Alert> deviceAlerts(const QJsonObject& status) {
     QList<Alert> result;
+    // Stable, separate identities avoid both hourly repeat notifications and
+    // one acknowledged filter hiding a newly due second filter.
+    for(const auto& filter:filterNotices(status))
+        result.append({filter.key,filter.due ? AlertLevel::Error : AlertLevel::Warning,filter.message});
     for(const auto& emblem:currentEmblems(status,true)) {
-        if(emblem.warning && emblem.id!="wifi")
+        if(emblem.warning && emblem.id!="wifi" && emblem.id!="filter")
             result.append({"device-"+emblem.id,AlertLevel::Warning,emblem.description});
     }
     return result;
@@ -64,7 +69,7 @@ MonitorBar::MonitorBar(QWidget* parent) : QWidget(parent) {
     setSizePolicy(QSizePolicy::Fixed,QSizePolicy::Fixed);
 }
 int MonitorBar::diameter() const {
-    return qMax(40,qCeil(QFontMetricsF(font()).height()*2.4));
+    return qMax(26,qCeil(QFontMetricsF(font()).height()*1.4));
 }
 QSize MonitorBar::sizeHint() const {
     return {2*diameter()+6,diameter()};
@@ -116,7 +121,9 @@ void MonitorBar::paintEvent(QPaintEvent*) {
         QFont f=font();
         const qreal pixels=QFontMetricsF(f).height()*0.82*scale;
         f.setPixelSize(qMax(1,qRound(pixels)));
-        const qreal ratio=qMin(1.0,area.width()/qMax(1.0,QFontMetricsF(f).horizontalAdvance(value)));
+        const QFontMetricsF metrics(f);
+        const qreal ratio=std::min({1.0,area.width()/qMax(1.0,metrics.horizontalAdvance(value)),
+                               area.height()/qMax(1.0,metrics.height())});
         f.setPixelSize(qMax(1,qFloor(f.pixelSize()*ratio)));
         p.setFont(f); p.setPen(ink); p.drawText(area,Qt::AlignCenter,value);
     };
@@ -124,8 +131,9 @@ void MonitorBar::paintEvent(QPaintEvent*) {
         return QRectF(circle.left()+circle.width()*0.12,circle.top()+circle.height()*top,
                       circle.width()*0.76,circle.height()*h);
     };
-    text(seconds_<0 ? QString("—") : QString::number(seconds_),zone(age,0.13,0.45));
-    text("s",zone(age,0.55,0.30),0.72);
+    // One centered line remains legible in the smaller circle. Exact seconds
+    // and their unit are also available in the tooltip and accessible name.
+    text(seconds_<0 ? QString("—") : QString::number(seconds_),zone(age,0.16,0.68));
     // Native vectors keep the OK/bell symbols independent of installed fonts.
     p.save(); p.translate(alarm.topLeft()); p.scale(alarm.width()/40,alarm.height()/40);
     p.setPen(QPen(ink,1.8,Qt::SolidLine,Qt::RoundCap,Qt::RoundJoin)); p.setBrush(Qt::NoBrush);

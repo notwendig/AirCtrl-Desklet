@@ -95,6 +95,27 @@ void drawGlyph(QPainter& p, EmblemIcon icon, const QColor& color, const QString&
 }
 }
 
+QList<FilterNotice> filterNotices(const QJsonObject& status) {
+    QList<FilterNotice> result;
+    if(!isAc2729(status) || status.value("pwr")!="1") return result;
+    struct Filter { const char* tag; const char* key; const char* label; };
+    const Filter filters[]{
+        {"fltsts1","hepa","A3 · HEPA-Filter"},
+        {"fltsts2","carbon","C7 · Aktivkohlefilter"},
+        {"wicksts","wick","F1 · Befeuchtungsdocht"}
+    };
+    for(const auto& filter:filters) {
+        const auto hours=integer(status.value(filter.tag));
+        if(!hours || *hours<0 || *hours>FilterWarningHours) continue;
+        const bool due=*hours==0;
+        const auto message=QString(due ? "Filterwechsel fällig: " : "Filterwechsel vorbereiten: ")+
+            QString::fromUtf8(filter.label)+" · "+QString::number(*hours)+" Betriebsstunden Rest ("+
+            filter.tag+")"+(due ? QString() : QString(" · lokale Vorwarngrenze: %1 h").arg(FilterWarningHours));
+        result.append({"device-filter-"+QString(filter.key),message,due});
+    }
+    return result;
+}
+
 QList<EmblemState> currentEmblems(const QJsonObject& status, bool connected) {
     QList<EmblemState> result;
     const auto add = [&](const QString& id, EmblemIcon icon, const QString& description,
@@ -123,16 +144,12 @@ QList<EmblemState> currentEmblems(const QJsonObject& status, bool connected) {
         if(isAc2729(status)) {
             const auto err=integer(status.value("err"));
             QStringList replace, clean;
-            for(const auto& key : {"fltsts1","fltsts2"}) {
-                if(integer(status.value(key))==0) replace.append(QString(key)+"=0");
-            }
-            if(!replace.isEmpty()) add("filter",EmblemIcon::Filter,
-                "Filterwechsel fällig: Restlaufzeitzähler abgelaufen ("+replace.join(", ")+")",{},true);
+            for(const auto& filter:filterNotices(status)) replace.append(filter.message);
+            if(!replace.isEmpty()) add("filter",EmblemIcon::Filter,replace.join("\n"),{},true);
             if(function=="PH" && (integer(status.value("wl"))==0 || err==49408))
                 add("water",EmblemIcon::Water,"Wasser nachfüllen: wl=0 oder bekannter Leerstandscode 49408",{},true);
-            for(const auto& key : {"fltsts0","wicksts"}) {
-                if(integer(status.value(key))==0) clean.append(QString(key)+"=0");
-            }
+            // wicksts is F1 replacement lifetime, not the F0 cleaning interval.
+            if(integer(status.value("fltsts0"))==0) clean.append("fltsts0=0");
             if(err==49153 || err==49155) clean.append("Vorfiltercode "+QString::number(*err));
             if(!clean.isEmpty()) add("clean",EmblemIcon::Clean,
                 "Reinigung fällig: Vorfilter / Befeuchtungselement ("+clean.join(", ")+")",{},true);

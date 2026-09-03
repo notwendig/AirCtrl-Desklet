@@ -1,4 +1,5 @@
 #include "desklet.hpp"
+#include "airctrl_version.hpp"
 #include "diagnostics.hpp"
 #include "udp_device.hpp"
 #include <QFile>
@@ -14,6 +15,7 @@
 #include <QMouseEvent>
 #include <QSpinBox>
 #include <QTableWidget>
+#include <QTabWidget>
 #include <QPlainTextEdit>
 #include <QClipboard>
 #include <QPainter>
@@ -119,6 +121,8 @@ private slots:
         QVERIFY(temp_.isValid());
         QCoreApplication::setOrganizationName("AirControlTests");
         QCoreApplication::setApplicationName("AirControlTests");
+        QCoreApplication::setApplicationVersion(AIRCTRL_VERSION);
+        QApplication::setStyle("Fusion");
         qputenv("XDG_CONFIG_HOME", temp_.path().toUtf8());
         log_ = temp_.filePath("calls.jsonl"); state_ = temp_.filePath("state.json");
         qputenv("AIRCTRL_TEST_LOG", log_.toUtf8()); qputenv("AIRCTRL_TEST_STATE", state_.toUtf8());
@@ -489,14 +493,14 @@ private slots:
     void warningAlarmsDoNotRepeatAndCanRecur() {
         MonitoringProbe widget(Preferences{},FAKE_BACKEND);
         QSignalSpy raised(&widget,&Desklet::alarmRaised);
-        QJsonObject status{{"pwr","1"},{"modelid","AC2729/10"},{"func","PH"},{"wl",0},{"fltsts1",0},{"err",49236}};
+        QJsonObject status{{"pwr","1"},{"modelid","AC2729/10"},{"func","PH"},{"wl",0},{"fltsts1",88},{"err",49236}};
         widget.applyStatus(status); QCOMPARE(raised.count(),1); QVERIFY(!raised[0][1].toBool());
         QVERIFY(raised[0][0].toString().contains("Filterwechsel")); QVERIFY(raised[0][0].toString().contains("Wasser"));
         QCOMPARE(widget.findChild<MonitorBar*>()->alarmText(),QString("2 Warnungen"));
         for(int i=0;i<5;++i) widget.applyStatus(status);
         QCOMPARE(raised.count(),1); widget.acknowledgeAlarms(); widget.applyStatus(status);
         QCOMPARE(raised.count(),1); QVERIFY(widget.findChild<MonitorBar*>()->alarmText().contains("(Q)"));
-        status["wl"]=100; status["fltsts1"]=119; widget.applyStatus(status);
+        status["wl"]=100; status["fltsts1"]=121; widget.applyStatus(status);
         QCOMPARE(widget.findChild<MonitorBar*>()->alarmText(),QString("Keine Alarme"));
         status["wl"]=0; widget.applyStatus(status); QCOMPARE(raised.count(),2);
     }
@@ -595,6 +599,8 @@ private slots:
             widget.applyStatus({{"pwr","1"},{"mode","P"},{"func","PH"},{"rh",55}});
             auto* bar=widget.findChild<MonitorBar*>(); auto* area=widget.findChild<QWidget*>("statusArea");
             QCOMPARE(bar->parentWidget(),area);
+            if(points<=10) QCOMPARE(bar->height(),26);
+            QVERIFY(bar->height()<qMax(40,qCeil(QFontMetricsF(p.valueFont).height()*2.4)));
             const auto before=widget.size();
             QCOMPARE(bar->ageCircle().width(),bar->ageCircle().height());
             QCOMPARE(bar->alarmCircle().size(),bar->ageCircle().size());
@@ -746,7 +752,7 @@ private slots:
     }
     void emblemAlarmsAreConservative() {
         QJsonObject status{{"pwr","1"},{"modelid","AC2729/10"},{"func","PH"},
-            {"wl",100},{"err",49236},{"fltsts0",357},{"fltsts1",119},{"fltsts2",119},{"wicksts",119},
+            {"wl",100},{"err",49236},{"fltsts0",357},{"fltsts1",121},{"fltsts2",121},{"wicksts",121},
             {"fltt1","A3"},{"fltt2","C7"}};
         QCOMPARE(emblemIds(status),QStringList({"function","wifi"}));
         status["err"]=49408; QVERIFY(emblemIds(status).contains("water"));
@@ -761,11 +767,80 @@ private slots:
         status["func"]="P"; QVERIFY(!emblemIds(status).contains("water"));
         status["fltsts0"]=123; status["fltsts1"]=123;
         status["wicksts"]="0"; status["fltsts2"]="0";
-        QVERIFY(emblemIds(status).contains("clean")); QVERIFY(emblemIds(status).contains("filter"));
+        QVERIFY(!emblemIds(status).contains("clean")); QVERIFY(emblemIds(status).contains("filter"));
         status["modelid"]="AC9999/10";
         QCOMPARE(emblemIds(status),QStringList({"function","wifi"}));
         status.remove("modelid"); status["type"]="AC2729";
         QVERIFY(emblemIds(status).contains("filter"));
+    }
+    void filterWarningBoundaries_data() {
+        QTest::addColumn<QJsonValue>("hours"); QTest::addColumn<int>("level");
+        QTest::newRow("above-threshold")<<QJsonValue(121)<<int(AlertLevel::None);
+        QTest::newRow("local-threshold")<<QJsonValue(120)<<int(AlertLevel::Warning);
+        QTest::newRow("earlier-user-snapshot")<<QJsonValue(119)<<int(AlertLevel::Warning);
+        QTest::newRow("current-user-snapshot")<<QJsonValue(88)<<int(AlertLevel::Warning);
+        QTest::newRow("last-hour")<<QJsonValue(1)<<int(AlertLevel::Warning);
+        QTest::newRow("expired")<<QJsonValue(0)<<int(AlertLevel::Error);
+        QTest::newRow("numeric-string")<<QJsonValue("88")<<int(AlertLevel::Warning);
+        QTest::newRow("expired-string")<<QJsonValue("0")<<int(AlertLevel::Error);
+        QTest::newRow("missing")<<QJsonValue(QJsonValue::Undefined)<<int(AlertLevel::None);
+        QTest::newRow("null")<<QJsonValue()<<int(AlertLevel::None);
+        QTest::newRow("bool")<<QJsonValue(false)<<int(AlertLevel::None);
+        QTest::newRow("negative")<<QJsonValue(-1)<<int(AlertLevel::None);
+        QTest::newRow("fraction")<<QJsonValue(0.5)<<int(AlertLevel::None);
+        QTest::newRow("invalid-string")<<QJsonValue("bad")<<int(AlertLevel::None);
+    }
+    void filterWarningBoundaries() {
+        QFETCH(QJsonValue,hours); QFETCH(int,level);
+        const QStringList tags{"fltsts1","fltsts2","wicksts"}, codes{"A3","C7","F1"};
+        for(int i=0;i<tags.size();++i) {
+            QJsonObject status{{"pwr","1"},{"modelid","AC2729/10"},{"func","PH"},{"err",0}};
+            status[tags[i]]=hours;
+            const auto alerts=deviceAlerts(status);
+            QCOMPARE(alerts.size(),level==int(AlertLevel::None) ? 0 : 1);
+            QVERIFY(!emblemIds(status).contains("clean"));
+            if(alerts.isEmpty()) continue;
+            QCOMPARE(int(alerts[0].level),level);
+            QVERIFY(alerts[0].message.contains(tags[i])); QVERIFY(alerts[0].message.contains(codes[i]));
+            QVERIFY(emblemIds(status).contains("filter"));
+            if(level==int(AlertLevel::Warning)) QVERIFY(alerts[0].message.contains("lokale Vorwarngrenze"));
+            status["pwr"]="0"; QVERIFY(deviceAlerts(status).isEmpty());
+            status["pwr"]="1"; status["modelid"]="AC9999/10"; QVERIFY(deviceAlerts(status).isEmpty());
+        }
+    }
+    void observedFilterWarningsAndIndependentEscalation() {
+        MonitoringProbe widget(Preferences{},FAKE_BACKEND);
+        widget.showAndPosition();
+        QSignalSpy raised(&widget,&Desklet::alarmRaised);
+        QJsonObject status{{"pwr","1"},{"modelid","AC2729/10"},{"func","PH"},
+            {"err",49236},{"wl",100},{"fltsts0",326},{"fltsts1",88},{"fltsts2",88},{"wicksts",88},
+            {"fltt1","A3"},{"fltt2","C7"},{"mode","P"},{"rh",67},{"rhset",50},{"temp",24},{"pm25",2}};
+        auto* bar=widget.findChild<MonitorBar*>();
+        widget.applyStatus(status); QCOMPARE(raised.count(),1);
+        QCOMPARE(deviceAlerts(status).size(),3); QCOMPARE(bar->alarmText(),QString("3 Warnungen"));
+        QCOMPARE(bar->alarmColor(),QColor("#f1c40f"));
+        QCoreApplication::processEvents(); // lay out newly visible emblems before rendering
+        const auto preview=qEnvironmentVariable("AIRCTRL_TEST_FILTERS_PNG");
+        if(!preview.isEmpty()) QVERIFY(widget.grab().save(preview));
+        for(const auto& code:{"A3","C7","F1"}) QVERIFY(raised[0][0].toString().contains(code));
+        QVERIFY(!emblemIds(status).contains("clean"));
+        widget.acknowledgeAlarms();
+        for(const auto& tag:{"fltsts1","fltsts2","wicksts"}) status[tag]=87;
+        widget.applyStatus(status); QCOMPARE(raised.count(),1); QVERIFY(bar->alarmText().contains("(Q)"));
+        status["wicksts"]=0; widget.applyStatus(status);
+        QCOMPARE(raised.count(),2); QVERIFY(raised[1][1].toBool());
+        QVERIFY(raised[1][0].toString().contains("F1")); QCOMPARE(bar->alarmColor(),QColor("#e74c3c"));
+        QVERIFY(!bar->alarmText().contains("(Q)")); QVERIFY(!emblemIds(status).contains("clean"));
+        widget.acknowledgeAlarms(); widget.applyStatus(status); QCOMPARE(raised.count(),2);
+        status["fltsts1"]=0; widget.applyStatus(status); QCOMPARE(raised.count(),3);
+        QVERIFY(raised[2][0].toString().contains("A3"));
+        for(const auto& tag:{"fltsts1","fltsts2","wicksts"}) status[tag]=2000;
+        widget.applyStatus(status); QCOMPARE(bar->alarmText(),QString("Keine Alarme"));
+        // err and the installed filter identifiers by themselves are no alarm.
+        QVERIFY(deviceAlerts(status).isEmpty());
+        status["wicksts"]=119; widget.applyStatus(status); QCOMPARE(raised.count(),4);
+        QVERIFY(raised[3][0].toString().contains("F1")); QVERIFY(!raised[3][1].toBool());
+        QVERIFY(!QFile::exists(log_));
     }
     void emblemInvalidValuesDoNotCreateAlarms() {
         for(const QJsonValue& value:QList<QJsonValue>{QJsonValue(QJsonValue::Undefined),QJsonValue(),
@@ -895,6 +970,77 @@ private slots:
         QVERIFY(copied.contains("ERKLÄRTE GERÄTEWERTE")); QVERIFY(copied.contains("UNVERÄNDERTE ROHDATEN"));
         if(qEnvironmentVariableIsSet("AIRCTRL_TEST_DIAGNOSTICS_PNG")) QVERIFY(screenshotSaved);
         QVERIFY(!QFile::exists(log_));
+    }
+    void diagnosticCopyButtonAndShortcut() {
+        Desklet widget(Preferences{},FAKE_BACKEND,true); widget.showAndPosition();
+        widget.applyStatus({{"pwr","1"},{"modelid","AC2729/10"},{"err",49236},{"wicksts",88},
+            {"name","Wohnzimmer · Jürgen"}});
+        bool inspected=false;
+        QString copied, expected, feedback, shortcutCopy, selectionCopy;
+        auto* clipboard=QApplication::clipboard(); clipboard->setText("old clipboard");
+        const bool selection=clipboard->supportsSelection();
+        if(selection) clipboard->setText("old selection",QClipboard::Selection);
+        QTimer::singleShot(80,[&] {
+            auto* dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget());
+            if(!dialog) return;
+            auto* copy=dialog->findChild<QPushButton*>("copyDiagnosticReport");
+            auto* report=dialog->findChild<QPlainTextEdit*>("diagnosticReport");
+            auto* status=dialog->findChild<QLabel*>("reportCopyStatus");
+            if(copy && report && status) {
+                expected=report->toPlainText();
+                QTest::mouseClick(copy,Qt::LeftButton);
+                copied=clipboard->text(QClipboard::Clipboard); feedback=status->text();
+                if(selection) selectionCopy=clipboard->text(QClipboard::Selection);
+                inspected=dialog->isVisible() && !dialog->windowFlags().testFlag(Qt::FramelessWindowHint);
+                clipboard->setText("replace before shortcut");
+                copy->setFocus(); QTest::keyClick(copy,Qt::Key_C,Qt::ControlModifier|Qt::ShiftModifier);
+                QTest::qWait(150); // QAbstractButton shortcuts use animateClick().
+                shortcutCopy=clipboard->text(QClipboard::Clipboard);
+            }
+            dialog->accept();
+        });
+        widget.showDetails();
+        QVERIFY(inspected); QVERIFY(!expected.isEmpty()); QCOMPARE(copied,expected); QCOMPARE(shortcutCopy,expected);
+        if(selection) QCOMPARE(selectionCopy,expected);
+        QVERIFY(feedback.contains("Bericht kopiert")); QVERIFY(feedback.contains("Strg+Umschalt+V"));
+        QVERIFY(copied.contains("Jürgen")); QVERIFY(copied.contains("err = 49236 [0xC054]"));
+        QVERIFY(copied.contains("F1")); QVERIFY(copied.contains("ERKLÄRTE GERÄTEWERTE"));
+        QCOMPARE(clipboard->text(QClipboard::Clipboard),expected); // survives closing the dialog
+        QVERIFY(!QFile::exists(log_));
+    }
+    void diagnosticCopyAfterContextMenu() {
+        Desklet widget(Preferences{},FAKE_BACKEND,true); widget.showAndPosition();
+        bool selected=false, inspected=false, popupGone=false, copied=false;
+        QTimer inspector;
+        connect(&inspector,&QTimer::timeout,this,[&] {
+            if(auto* menu=qobject_cast<QMenu*>(QApplication::activePopupWidget())) {
+                if(selected) return;
+                for(auto* action:menu->actions()) if(action->text().startsWith("Diagnose /")) {
+                    selected=true;
+                    QTest::mouseClick(menu,Qt::LeftButton,Qt::NoModifier,menu->actionGeometry(action).center());
+                    break;
+                }
+            } else if(auto* dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget())) {
+                inspector.stop();
+                popupGone=QApplication::activePopupWidget()==nullptr;
+                if(auto* copy=dialog->findChild<QPushButton*>("copyDiagnosticReport")) {
+                    QTest::mouseClick(copy,Qt::LeftButton);
+                    copied=QApplication::clipboard()->text().contains("ERKLÄRTE GERÄTEWERTE");
+                }
+                inspected=true; dialog->accept();
+            }
+        });
+        inspector.start(25);
+        // Ensure a failed popup transition cannot leave the test stuck in exec().
+        QTimer watchdog; watchdog.setSingleShot(true);
+        connect(&watchdog,&QTimer::timeout,this,[] {
+            if(auto* dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget())) dialog->reject();
+            if(auto* popup=QApplication::activePopupWidget()) popup->close();
+        });
+        watchdog.start(1500);
+        QTest::mouseClick(&widget,Qt::RightButton,Qt::NoModifier,QPoint(3,3));
+        QTRY_VERIFY_WITH_TIMEOUT(inspected,2000);
+        QVERIFY(selected); QVERIFY(popupGone); QVERIFY(copied); QVERIFY(!QFile::exists(log_));
     }
     void panelCommandsAndReadback() {
         Controller c(FAKE_BACKEND); QSignalSpy status(&c,&Controller::statusReceived);
