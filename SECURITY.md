@@ -5,7 +5,7 @@
 Sicherheitskorrekturen sind für den aktuellen `main`-Stand und die jeweils neueste
 1.x-Veröffentlichung vorgesehen. Das ist ein gemeinschaftlich gepflegtes Projekt,
 kein Produkt mit garantierter Reaktionszeit. Alte ZIP-Versionen erhalten keine
-zugesicherte Rückportierung. Der aktuelle vorbereitete Anwendungsstand ist 1.02.
+zugesicherte Rückportierung. Der aktuelle vorbereitete Anwendungsstand ist 1.03.
 
 ## Vertraulich melden
 

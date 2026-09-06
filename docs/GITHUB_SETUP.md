@@ -1,8 +1,7 @@
-# GitHub-Veröffentlichung vorbereiten
+# GitHub-Veröffentlichung und Releases
 
-Dieses Paket wurde **noch nicht auf GitHub veröffentlicht**. Die folgenden
-Schritte führt Jürgen als Maintainer nach seiner Prüfung selbst aus.
-Repositoryname: **AirCtrl-Desklet**. Ein GitHub-Kontoname wird nicht vorgegeben.
+Das öffentliche Repository ist `notwendig/AirCtrl-Desklet`. Jürgen führt als
+Maintainer Commits, Tags und Veröffentlichungen nach seiner Prüfung selbst aus.
 
 ## 1. Lokal prüfen
 
@@ -40,7 +39,7 @@ git diff --cached
 Prüfe die vorgemerkten Dateien. Erst danach:
 
 ```bash
-git commit -m "Prepare AirCtrl-Desklet v1.02 for public development"
+git commit -m "Prepare AirCtrl-Desklet v1.03"
 ```
 
 Git verwendet deine vorhandene Identität. Falls sie fehlt, entscheide selbst
@@ -49,23 +48,15 @@ Git verwendet deine vorhandene Identität. Falls sie fehlt, entscheide selbst
 in deinem Namen erstellt. Codex wird in AUTHORS und README als KI-Partner
 genannt, nicht mit einer erfundenen Commit-E-Mail.
 
-## 3. Veröffentlichung bewusst freigeben
+## 3. Remote prüfen
 
-Mit installierter GitHub CLI und deinem angemeldeten Konto. Bei Bedarf zuerst
-den normalen interaktiven Anmeldeweg `gh auth login` verwenden.
-
-**Der folgende Befehl erstellt ein öffentliches Repository und lädt den Code hoch.**
-Führe ihn erst aus, wenn Inhalt und Sichtbarkeit freigegeben sind:
+Das vorhandene SSH-Remote lautet:
 
 ```bash
-gh repo create AirCtrl-Desklet --public --source=. --remote=origin --push
+git@github.com:notwendig/AirCtrl-Desklet.git
 ```
 
-Für eine zunächst private Prüfung stattdessen `--private` verwenden.
-Existiert das Repository oder `origin` bereits, nicht blind fortfahren und
-keinen Force-Push verwenden: zuerst `git remote -v` und den bestehenden Inhalt
-prüfen. Alternativ über die GitHub-Weboberfläche ein leeres Repository ohne
-zusätzliche README/Lizenz anlegen und dessen eigene Push-Anleitung verwenden.
+Keinen Force-Push verwenden. Vor dem Push Arbeitsbaum und Remote prüfen.
 
 Empfohlene Beschreibung:
 
@@ -89,18 +80,18 @@ Passende Topics: `qt6`, `cpp17`, `linux`, `cinnamon`, `philips`, `air-purifier`,
 - Wenn verfügbar, Secret Scanning/Push Protection einschalten. Das ersetzt
   keine manuelle Prüfung von Gerätenummern und Screenshots.
 
-## 5. Release v1.02 als Entwurf
+## 5. Release v1.03 als Entwurf
 
 Erst nach erfolgreicher CI und lokalem Gegenprüfen:
 
 ```bash
-git tag -a v1.02 -m "AirCtrl-Desklet v1.02"
-git push origin v1.02
+git tag -a v1.03 -m "AirCtrl-Desklet v1.03"
+git push origin v1.03
 ```
 
 Der vorbereitete Release-Workflow baut und testet den Tag erneut. Er erzeugt
 einen **nicht veröffentlichten Entwurf** mit Quell-ZIP, SHA-256-Datei und den
-[Release-Notizen](releases/v1.02.md). Prüfe Dateien und Grenzen, bevor du im
+[Release-Notizen](releases/v1.03.md). Prüfe Dateien und Grenzen, bevor du im
 GitHub-Release auf „Publish release“ klickst. Bei Wiederholung wird ein
 vorhandener Release nicht überschrieben.
 

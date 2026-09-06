@@ -1,0 +1,3 @@
+#pragma once
+
+inline constexpr auto AirctrlAutomationExample = R"airctrl(@AIRCTRL_AUTOMATION_EXAMPLE@)airctrl";

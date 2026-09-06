@@ -81,7 +81,7 @@ void Controller::setBusy(bool busy) {
     busy_=busy; emit busyChanged(busy);
 }
 QString Controller::addressError() const {
-    if(host_.isEmpty() || port_<1 || port_>65535) return "Ungültige Geräteadresse.";
+    if(host_.isEmpty() || port_<1 || port_>65535) return "Ungültiger Hostname oder ungültige IP-Adresse.";
     if(!QFileInfo(executable_).isExecutable()) return "Geräteprogramm fehlt: "+executable_;
     return {};
 }

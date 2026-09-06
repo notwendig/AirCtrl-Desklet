@@ -22,7 +22,7 @@ int main(int argc, char** argv) {
     parser.setApplicationDescription("Qt6-Desktopwidget für Philips AC2729/10");
     parser.addHelpOption(); parser.addVersionOption();
     parser.addOptions({
-        {{"H","host"}, "Geräteadresse (Standard: 192.168.77.5)", "host"},
+        {{"H","host"}, "Hostname oder IP-Adresse des Geräts (Standard: 192.168.77.5)", "host"},
         {{"P","port"}, "UDP-Port (Standard: 5683)", "port"},
         {"window", "Als normales Fenster starten"},
         {"demo", "Vorschau ohne Geräteverbindung oder Speichern von Einstellungen"},

@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
-project(airctrl_desklet VERSION 1.02 LANGUAGES C CXX)
+project(airctrl_desklet VERSION 1.03 LANGUAGES C CXX)
 configure_file(src/version.hpp.in generated/airctrl_version.hpp @ONLY)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/examples/automation.lua" AIRCTRL_AUTOMATION_EXAMPLE)
+configure_file(src/automation_example.hpp.in generated/airctrl_automation_example.hpp @ONLY)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -66,6 +68,8 @@ if(BUILD_TESTING)
     target_link_libraries(parent-probe PRIVATE desklet_ui)
     target_link_libraries(desklet-tests PRIVATE desklet_ui aioairctrl Qt6::Test)
     target_link_libraries(automation-tests PRIVATE desklet_ui Qt6::Test)
+    target_compile_definitions(automation-tests PRIVATE
+        AUTOMATION_EXAMPLE_FILE="${CMAKE_CURRENT_SOURCE_DIR}/examples/automation.lua")
     target_include_directories(desklet-tests PRIVATE ${AIRCTRL_SOURCE}/src)
     target_compile_definitions(desklet-tests PRIVATE
         FAKE_BACKEND="$<TARGET_FILE:fake-backend>"

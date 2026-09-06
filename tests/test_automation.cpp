@@ -1,6 +1,7 @@
 #include "automation.hpp"
 #include "controlvalues.hpp"
 
+#include <QFile>
 #include <QJsonObject>
 #include <QSignalSpy>
 #include <QtTest>
@@ -9,8 +10,16 @@ class AutomationTests : public QObject {
     Q_OBJECT
 private slots:
     void exampleAndSandboxLoad() {
+        QFile example(AUTOMATION_EXAMPLE_FILE);
+        QVERIFY(example.open(QIODevice::ReadOnly));
+        const auto text=AutomationEngine::exampleScript();
+        QCOMPARE(text.toUtf8(),example.readAll());
+        for(const auto& event:QStringList{"startup","time","connected","disconnected","status","alarm","command"})
+            QVERIFY2(text.contains("-- "+event),qPrintable("Ereignis fehlt in der Beispielreferenz: "+event));
+        for(const auto& field:QStringList{"pwr","cl","mode","om","func","uil","rhset","aqil","dt"})
+            QVERIFY2(text.contains("-- "+field),qPrintable("Steuerwert fehlt in der Beispielreferenz: "+field));
         AutomationEngine engine(false);
-        QVERIFY2(engine.loadScriptText(AutomationEngine::exampleScript()),qPrintable(engine.lastError()));
+        QVERIFY2(engine.loadScriptText(text),qPrintable(engine.lastError()));
         QCOMPARE(engine.scheduleCount(),2);
         QVERIFY(engine.logEntries().isEmpty());
         QVERIFY(engine.diagnostics().contains("ohne io, os, package, debug"));

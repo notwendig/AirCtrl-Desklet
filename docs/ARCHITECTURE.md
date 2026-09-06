@@ -13,6 +13,7 @@ JavaScript-Erweiterung. Die Oberfläche bleibt deutsch; C++-Bezeichner sind engl
 | `src/diagnostics.*` | Rohwert-Erklärungen, Hexcodes und Kopierbericht |
 | `src/preferences.*` | Benutzereinstellungen und Autostart |
 | `src/automation.*` | Eingebettete Lua-Sandbox, Ereignisse, Zeitpläne und Skriptprotokoll |
+| `examples/automation.lua` | Kanonische Editorvorlage und kommentierte Lua-/Statusreferenz |
 | `src/controlvalues.*` | Gemeinsame Positivliste und Kodierung erlaubter Steuerwerte |
 | `src/controller.*` | Beobachtungsprozess, Schreibprozess, Fristen und Wiederverbindung |
 | `third_party/aioairctrl` | Separates CLI und C++-Implementierung des Philips-CoAP-Protokolls |
@@ -25,6 +26,10 @@ Ein langlebiger `status-observe`-Prozess liefert zeilenweise JSON. Gültige
 Statuspakete aktualisieren den Empfangszeitpunkt. Reine ACKs und fehlerhafte
 Zeilen tun dies nicht. Reguläre Pausen zwischen Gerätepaketen starten keine
 zyklische Neuabfrage.
+
+Die konfigurierte Geräteadresse bleibt ein Host-String. Das Backend löst ihn mit
+`getaddrinfo(AF_UNSPEC)` auf und unterstützt dadurch IPv4, IPv6 sowie DNS-/mDNS-
+Hostnamen. Protokollschema und UDP-Port werden getrennt behandelt.
 
 Ein Benutzerbefehl läuft in einem separaten Schreibprozess. Die Annahme eines
 Schreibbefehls ist nicht mit einer bestätigten Zustandsänderung gleichzusetzen:

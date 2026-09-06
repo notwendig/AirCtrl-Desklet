@@ -2,7 +2,7 @@
 
 **Your Philips air purifier, right on your Linux desktop.**
 
-C++17 · Qt 6 · Lua 5.4 · local CoAP communication · MIT · **v1.02**
+C++17 · Qt 6 · Lua 5.4 · local CoAP communication · MIT · **v1.03**
 
 [Deutsch](README.md) · [Development](docs/DEVELOPMENT.md) · [Changelog](CHANGELOG.md)
 
@@ -38,10 +38,12 @@ bash install.sh
 ~/.local/bin/airctrl-desklet --demo
 ```
 
-Close the demo and start with your device's actual IP:
+Close the demo and start with your device's IP address or hostname:
 
 ```bash
 ~/.local/bin/airctrl-desklet --host 192.0.2.10
+# or, for example, through local DNS/mDNS:
+~/.local/bin/airctrl-desklet --host aircleaner.local
 ```
 
 Replace the documentation-only example address. Save the real address in
@@ -68,7 +70,8 @@ The alarm circle is independent of data freshness. Both are 26 px at the default
 
 Open **right-click → Lua-Automatik** to edit and enable the local script. It is
 disabled by default. The supplied example schedules night mode at 22:00 and
-automatic day mode at 07:00. `on_event(event)` receives `startup`, `time`,
+automatic day mode at 07:00. Its comments also form a complete event, status-field
+and control-value reference. `on_event(event)` receives `startup`, `time`,
 `connected`, `disconnected`, `status`, `alarm` and `command`; status events expose
 both `event.status` and `event.changed`. `airctrl.set { ... }` uses the same field
 allow-list and confirmed-state command path as the UI.

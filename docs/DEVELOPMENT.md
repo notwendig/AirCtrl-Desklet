@@ -47,6 +47,9 @@ Tests. Die Buildverzeichnisse sind voneinander getrennt. Lokale SDK-Pfade gehör
 in ein nicht eingechecktes `CMakeUserPresets.json` oder in `-DCMAKE_PREFIX_PATH=…`.
 Die Versionsnummer des Widgets stammt aus `project(... VERSION ...)` in der
 obersten CMake-Datei. Das eigenständig versionierte CLI-Backend bleibt bei 0.1.0.
+Die Editorvorlage wird beim Konfigurieren aus `examples/automation.lua` in den
+generierten Header `airctrl_automation_example.hpp` übernommen; diese generierte
+Datei nicht manuell bearbeiten.
 
 Klassisch, ohne Presets/Ninja:
 
@@ -64,8 +67,10 @@ GUI-Versuche `--demo` als Programmargument setzen.
 CTest startet QtTest mit `-platform offscreen`. Fake-Backend und lokaler
 UDP-Simulator ersetzen das Gerät. Der UDP-Test verwendet nur `127.0.0.1` und
 einen dynamischen Port; keine IP des echten Geräts wird getestet.
-`automation-tests` prüft die Lua-Sandbox, Zeitpläne, Wochentage, Nachholen,
-Ereignisdaten, erlaubte Steuerfelder und das Ausführungslimit ohne Gerätezugriff.
+`automation-tests` prüft die Lua-Sandbox, die bytegleiche Beispielvorlage,
+Zeitpläne, Wochentage, Nachholen, Ereignisdaten, erlaubte Steuerfelder und das
+Ausführungslimit ohne Gerätezugriff. Die Desklet-Suite prüft zusätzlich, dass
+IPv4, IPv6 und Hostnamen unverändert als Hostargument beim Backend ankommen.
 
 Die native Fensterverwaltung, Clipboard-/Popup-Verhalten, Tray und Autostart
 müssen zusätzlich interaktiv geprüft werden. Simuliertes Wayland-Routing ist

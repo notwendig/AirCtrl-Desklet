@@ -177,6 +177,22 @@ private slots:
         QVERIFY(requests[2].contains("rhset=60")); QVERIFY(requests[2].contains("-I"));
         QCOMPARE(c.observationStarts(),quint64(1)); c.stop();
     }
+    void hostnamesAndIpAddressesReachBackendUnchanged() {
+        const QList<QPair<QString,QString>> hosts{
+            {" 192.0.2.10 ","192.0.2.10"},
+            {" luftreiniger.local ","luftreiniger.local"},
+            {" [2001:db8::5] ","[2001:db8::5]"},
+        };
+        for(const auto& item:hosts) {
+            QFile::remove(log_);
+            Controller c(FAKE_BACKEND); c.configure(item.first,5683,5);
+            QCOMPARE(c.host(),item.second); c.start(); QTRY_COMPARE(calls().size(),1);
+            const auto args=calls().first(); int hostArgument=-1;
+            for(int i=0;i<args.size();++i) if(args[i].toString()=="-H") hostArgument=i;
+            QVERIFY(hostArgument>=0); QVERIFY(hostArgument+1<args.size());
+            QCOMPARE(args[hostArgument+1].toString(),item.second); c.stop();
+        }
+    }
     void luaStatusEventUsesConfirmedWritePathOnce() {
         QVERIFY(QDir().mkpath(QFileInfo(AutomationEngine::scriptPath()).absolutePath()));
         QFile script(AutomationEngine::scriptPath());

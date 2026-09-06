@@ -61,6 +61,11 @@ QString metricText(const QString& key, const QJsonValue& value) {
 bool powerKnown(const QJsonObject& state) {
     const auto v=state.value("pwr").toString(); return v=="0" || v=="1";
 }
+QString endpointText(QString host, int port) {
+    host=host.trimmed();
+    if(host.contains(':') && !(host.startsWith('[') && host.endsWith(']'))) host="["+host+"]";
+    return host+":"+QString::number(port);
+}
 }
 Desklet::Desklet(Preferences preferences, QString backend, bool demo)
     : preferences_(std::move(preferences)), controller_(std::move(backend), this),
@@ -750,14 +755,16 @@ void Desklet::showSettings() {
     controller_.stop(); // no old-host reply can arrive during a modal configuration change
     QDialog dialog(this); dialog.setWindowTitle("AirControl – Einstellungen");
     auto* layout = new QVBoxLayout(&dialog); auto* form = new QFormLayout;
-    QLineEdit host(preferences_.host); host.setMinimumWidth(240);
+    QLineEdit host(preferences_.host); host.setObjectName("deviceHost"); host.setMinimumWidth(240);
+    host.setPlaceholderText("192.168.77.5 oder luftreiniger.local");
+    host.setToolTip("IPv4-, IPv6-Adresse oder DNS-/mDNS-Hostname; ohne http:// und ohne Port.");
     QSpinBox port; port.setRange(1,65535); port.setValue(preferences_.port);
     QSpinBox interval; interval.setRange(5,300); interval.setSuffix(" Sekunden"); interval.setValue(preferences_.interval);
     QCheckBox desktop("Desktopmodus (unter X11 hinter normalen Fenstern)"); desktop.setChecked(preferences_.desktop);
     desktop.setToolTip("Die Fensterdekoration wird separat im Kontextmenü ein- oder ausgeblendet.");
     QCheckBox autostart("Bei der Anmeldung starten"); autostart.setChecked(QFileInfo::exists(autostartPath()));
     interval.setToolTip("Pause vor einem neuen Verbindungsversuch nach einem Fehler. Statusmeldungen kommen automatisch vom Gerät.");
-    form->addRow("Geräteadresse", &host); form->addRow("UDP-Port", &port); form->addRow("Wiederverbindung nach Fehler", &interval);
+    form->addRow("IP-Adresse oder Hostname", &host); form->addRow("UDP-Port", &port); form->addRow("Wiederverbindung nach Fehler", &interval);
     layout->addLayout(form); layout->addWidget(&desktop); layout->addWidget(&autostart);
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel);
     buttons->button(QDialogButtonBox::Save)->setText("Speichern"); buttons->button(QDialogButtonBox::Cancel)->setText("Abbrechen");
@@ -790,11 +797,11 @@ void Desklet::showDetails() {
     dialog.setMinimumSize(640,420);
     auto* layout = new QVBoxLayout(&dialog);
     auto* tabs = new QTabWidget(&dialog); tabs->setObjectName("diagnosticTabs");
-    const auto heading = QString("AirControl %1\nGerät: %2:%3\nPlattform: %4\nBackend: %5\n"
+    const auto heading = QString("AirControl %1\nGerät: %2\nPlattform: %3\nBackend: %4\n"
                                  "Empfang: dauerhafte CoAP-Beobachtung (status-observe)\n"
-                                 "Anlauf: 60 s je Anfrage · Datenpause: 90 s · Schaltanfrage: 10 s\nLetzter Empfang: %6\n\n")
-        .arg(QCoreApplication::applicationVersion(), preferences_.host)
-        .arg(preferences_.port).arg(QGuiApplication::platformName(), controller_.backendPath(),
+                                 "Anlauf: 60 s je Anfrage · Datenpause: 90 s · Schaltanfrage: 10 s\nLetzter Empfang: %5\n\n")
+        .arg(QCoreApplication::applicationVersion(),endpointText(preferences_.host,preferences_.port),
+            QGuiApplication::platformName(),controller_.backendPath(),
             updated_.isValid() ? updated_.toString(Qt::ISODate) : "noch keiner");
     const auto session=QString("Desktopsitzung: %1\nWayland-Behandlung: %2\n\n")
         .arg(qEnvironmentVariable("XDG_SESSION_TYPE","unbekannt"),waylandSession_ ? "ja" : "nein");
@@ -837,7 +844,7 @@ void Desklet::showDetails() {
     tabs->addTab(table(deviceFields,"deviceFields",true),"Gerätewerte erklärt");
     QList<DiagnosticField> connectionFields{
         {"AirControl",QCoreApplication::applicationVersion(),"Version des Qt-Widgets."},
-        {"Gerät",preferences_.host+":"+QString::number(preferences_.port),"Konfigurierte Zieladresse und UDP-Port des Luftreinigers."},
+        {"Gerät",endpointText(preferences_.host,preferences_.port),"Konfigurierter Hostname oder IP-Adresse und UDP-Port des Luftreinigers."},
         {"Verbindung",demo_ ? "Vorschau" : connected_ ? "Verbunden" : "Keine Verbindung","Zustand der Verbindung aus Sicht des Widgets."},
         {"Plattform",QGuiApplication::platformName(),"Tatsächlich von Qt verwendetes Fenster-Backend, z.B. xcb oder wayland."},
         {"Desktopsitzung",qEnvironmentVariable("XDG_SESSION_TYPE","unbekannt"),"Vom Desktop gemeldeter Sitzungstyp. Er kann vom Qt-Fenster-Backend abweichen."},

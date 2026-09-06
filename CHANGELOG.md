@@ -1,5 +1,16 @@
 # Änderungsübersicht
 
+## v1.03 – 2026-09-06
+
+- Verbindungseinstellung und Kommandozeilenhilfe nennen IPv4, IPv6 und
+  DNS-/mDNS-Hostnamen ausdrücklich; die Übergabe an das Backend ist getestet.
+- IPv6-Adressen erscheinen in Diagnose-Endpunkten eindeutig in eckigen Klammern.
+- `examples/automation.lua` dokumentiert als Kommentar alle sieben Ereignisse,
+  ihre Felder, alle erlaubten Steuerwerte und die bekannten AC2729-Statusfelder
+  samt Bedeutung beziehungsweise ausdrücklich ungesicherter Bedeutung.
+- Editorvorlage und installiertes Beispiel stammen nun aus derselben Quelldatei;
+  ein Test verhindert ein unbemerktes Auseinanderlaufen.
+
 ## v1.02 – 2026-09-06
 
 - Eingebettetes Lua 5.4.9 aus dem per SHA-256 geprüften offiziellen Quellarchiv.

@@ -1,11 +1,13 @@
-# Philips AirControl – Qt6-Gerätepanel v1.02
+# Philips AirControl – Qt6-Gerätepanel v1.03
 
 Kompaktes C++/Qt6-Desktopwidget für den Philips AC2729/10 unter
-Cinnamon. Geräteadresse voreingestellt: **192.168.77.5**, UDP-Port **5683**.
+Cinnamon. Als Geräteadresse sind IPv4, IPv6 oder ein DNS-/mDNS-Hostname möglich;
+voreingestellt ist **192.168.77.5**, UDP-Port **5683**.
 Der bereits am Gerät funktionierende C++-CoAP-Code ist vollständig enthalten.
 
-**v1.02** ergänzt eine standardmäßig ausgeschaltete Lua-Automatik für Ereignisse
-und lokale Zeitpläne. Das eingebaute Beispiel schaltet Tag/Nacht; alle Aufträge
+**v1.03** kennzeichnet die Hosteingabe ausdrücklich und ergänzt die vollständige
+kommentierte Lua-Referenz. Die seit v1.02 vorhandene, standardmäßig ausgeschaltete
+Lua-Automatik verarbeitet Ereignisse und lokale Zeitpläne. Das Beispiel schaltet Tag/Nacht; alle Aufträge
 verwenden die vorhandene Feldprüfung und bestätigte Gerätesteuerung.
 Änderungsübersicht: [CHANGELOG.md](../CHANGELOG.md). Prüfungen und verbleibende
 Umgebungsgrenzen: [VALIDATION.md](../VALIDATION.md).
@@ -223,7 +225,8 @@ Diese Optionen verändern das Widget; die Lichttaste oben steuert das reale Ger�
 
 **Rechtsklick → Lua-Automatik** öffnet Editor, Aktivierung und Ladezustand. Die
 Taste **Tag/Nacht-Beispiel** setzt einen Entwurf mit Nachtmodus um 22:00 Uhr und
-Automatikmodus um 07:00 Uhr ein. Erst **Speichern und neu laden** übernimmt ihn.
+Automatikmodus um 07:00 Uhr ein. Seine Kommentare erklären sämtliche Ereignisse,
+bekannten Statusfelder und erlaubten Steuerwerte. Erst **Speichern und neu laden** übernimmt ihn.
 
 Lua kann auf Statusänderungen, Verbindung, Alarme, Befehlsresultate und den
 Minutentakt reagieren. Zeitpläne werden lokal ausgewertet. Ist das Widget beim
@@ -456,11 +459,14 @@ Der Installer aktiviert den Autostart nicht selbst. Einstellungen liegen unter
 ```bash
 ~/.local/bin/airctrl-desklet --window
 ~/.local/bin/airctrl-desklet --host 192.0.2.10
+~/.local/bin/airctrl-desklet --host luftreiniger.local
 ~/.local/bin/airctrl-desklet --reset-position
 ~/.local/bin/airctrl-desklet --demo
 ```
 
-`192.0.2.10` ist ein Beispiel; durch die eigene Geräteadresse ersetzen.
+Beide Hostangaben sind Beispiele; eine IPv4-/IPv6-Adresse oder den eigenen lokalen
+DNS-/mDNS-Namen des Geräts einsetzen. Kein `http://`, `https://` oder `:Port` im
+Hostfeld ergänzen; der UDP-Port hat ein eigenes Feld.
 `--reset-position` wirkt nur bei einer Plattform, die globale Fensterpositionen
 unterstützt. Unter Wayland entscheidet der Fenstermanager über die Startposition.
 

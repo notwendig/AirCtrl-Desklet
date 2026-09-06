@@ -26,7 +26,7 @@ REQUIRED = ROOT_FILES + (
     "docs/DEVELOPMENT.md", "docs/GITHUB_SETUP.md", "docs/ARCHITECTURE.md",
     "docs/USER_GUIDE.de.md", "docs/LUA_AUTOMATION.md", "docs/images/README.md", "docs/images/desklet-dark.png",
     "docs/images/desklet-light.png", "docs/images/diagnostics-demo.png",
-    "docs/images/alarms-demo.png", "src/version.hpp.in",
+    "docs/images/alarms-demo.png", "src/version.hpp.in", "src/automation_example.hpp.in",
     "third_party/aioairctrl/LICENSE", "third_party/aioairctrl/ORIGIN.md",
     "third_party/lua/LICENSE", "third_party/lua/ORIGIN.md", "third_party/lua/src/lua.h",
     "examples/automation.lua", "tests/test_automation.cpp",

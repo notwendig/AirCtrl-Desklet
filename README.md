@@ -2,7 +2,7 @@
 
 **Dein Philips-Luftreiniger. Direkt auf dem Linux-Desktop.**
 
-C++17 · Qt 6 · Lua 5.4 · lokale CoAP-Kommunikation · MIT · Version **v1.02**
+C++17 · Qt 6 · Lua 5.4 · lokale CoAP-Kommunikation · MIT · Version **v1.03**
 
 [English](README.en.md) · [Bedienung](docs/USER_GUIDE.de.md) · [Entwicklung](docs/DEVELOPMENT.md) · [Änderungen](CHANGELOG.md)
 
@@ -53,13 +53,16 @@ bash install.sh
 ~/.local/bin/airctrl-desklet --demo
 ```
 
-Die Vorschau schließen. Danach die IP-Adresse des eigenen Geräts verwenden:
+Die Vorschau schließen. Danach die IP-Adresse oder den Hostnamen des eigenen
+Geräts verwenden:
 
 ```bash
 ~/.local/bin/airctrl-desklet --host 192.0.2.10
+# oder beispielsweise im lokalen DNS/mDNS:
+~/.local/bin/airctrl-desklet --host luftreiniger.local
 ```
 
-`192.0.2.10` ist **nur ein Dokumentationsbeispiel**. Die tatsächliche Adresse
+`192.0.2.10` und `luftreiniger.local` sind **nur Dokumentationsbeispiele**. Die tatsächliche Adresse
 anschließend unter **Rechtsklick → Verbindung und Autostart** dauerhaft speichern.
 `--host` gilt zunächst für diesen Start. Der historische Standard in v1.01 bleibt
 aus Kompatibilitätsgründen erhalten; er ist keine automatische Geräteerkennung.
@@ -93,7 +96,9 @@ Die Kreise messen bei Standardschrift 26 px und wachsen mit der Schriftgröße.
 
 Unter **Rechtsklick → Lua-Automatik** öffnet sich der integrierte Skripteditor.
 Die Automatik ist nach Installation zunächst ausgeschaltet. Das mitgelieferte
-Beispiel schaltet täglich um 22:00 Uhr auf Nacht und um 07:00 Uhr auf Tag:
+Beispiel enthält als Kommentare die vollständige Ereignis-, Statusfeld- und
+Steuerwertreferenz. Aktiv schaltet es täglich um 22:00 Uhr auf Nacht und um
+07:00 Uhr auf Tag:
 
 ```lua
 airctrl.schedule {

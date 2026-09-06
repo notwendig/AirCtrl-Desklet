@@ -2,7 +2,7 @@
 
 [Projektübersicht](../README.md) · [Architektur](ARCHITECTURE.md) · [Sicherheit](../SECURITY.md)
 
-AirCtrl-Desklet 1.02 enthält Lua 5.4.9 als eingebettetes Automatikmodul. Es kann
+AirCtrl-Desklet 1.03 enthält Lua 5.4.9 als eingebettetes Automatikmodul. Es kann
 auf bestätigte Gerätezustände und lokale Ereignisse reagieren oder zu festen
 Uhrzeiten schalten. Nach der Installation ist es **deaktiviert**.
 
@@ -11,6 +11,11 @@ Editor, den Ladezustand und die Taste **Tag/Nacht-Beispiel**. Erst **Speichern
 und neu laden** prüft den Text, schreibt die Datei und übernimmt die Aktivierung.
 Ein Syntax- oder API-Fehler bleibt im Dialog und erscheint bei aktivierter
 Automatik außerdem als roter Widget-Alarm und in der Diagnose.
+
+Die mitgelieferte Datei `examples/automation.lua` ist zugleich die im Editor
+eingesetzte Vorlage. Ihre Kommentare führen alle Ereignisse, bekannten
+Statusfelder, erlaubten Steuerwerte und deren Bedeutung auf. Der Build erzeugt
+die eingebettete Vorlage direkt aus dieser Datei; es gibt keine zweite Kopie.
 
 ## Tag und Nacht
 

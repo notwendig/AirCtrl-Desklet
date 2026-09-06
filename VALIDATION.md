@@ -1,6 +1,35 @@
-# Validierung – v1.02
+# Validierung – v1.03
 
 Datum: 2026-09-06.
+
+Version 1.03 kennzeichnet die Geräteadresse als IP-Adresse oder Hostname und
+erweitert die Lua-Vorlage zur vollständigen kommentierten Referenz.
+
+## Prüfungen in v1.03
+
+- `desklet-tests`: **104 bestanden, 0 fehlgeschlagen, 2 umgebungsbedingt
+  übersprungen**. IPv4 `192.0.2.10`, DNS/mDNS `luftreiniger.local` und die
+  geklammerte IPv6-Adresse `[2001:db8::5]` erreichen das Fake-Backend exakt als
+  `-H`-Argument; umgebende Leerzeichen werden entfernt.
+- `automation-tests`: **12 bestanden, 0 fehlgeschlagen, 0 übersprungen**. Die
+  vom Build eingebettete Editorvorlage ist bytegleich mit
+  `examples/automation.lua`; alle sieben Ereignisse und neun steuerbaren Felder
+  werden in ihrer Kommentarreferenz geprüft.
+- Beide CTest-Ziele: **100 % bestanden**, 31,88 Sekunden. Vollständiger
+  Release-Build mit GCC 13.3.0, Qt 6.8.3 und eingebettetem Lua 5.4.9.
+- Der Quell-ZIP wurde frisch entpackt und über `install.sh` in einen separaten
+  absoluten Präfix installiert. Die Binärdatei meldet `airctrl-desklet 1.03`,
+  `--help` nennt Hostname oder IP-Adresse, und die installierte Lua-Referenz ist
+  bytegleich mit der Quelldatei.
+- Das Backend verwendet weiterhin `getaddrinfo(AF_UNSPEC)` und akzeptiert damit
+  IPv4, IPv6 und auf dem Rechner auflösbare DNS-/mDNS-Namen. Die Tests öffnen
+  für die neuen Hostfälle keine Netzwerkverbindung und kein echtes Gerät.
+
+Eine reale Verbindung über den lokalen Hostnamen des AC2729/10 ist noch nicht
+am physischen Gerät bestätigt; sie hängt von dessen DNS-/mDNS-Auflösung im
+lokalen Netz ab.
+
+## Übernommene Lua- und Integrationsprüfung aus v1.02
 
 Version 1.02 ergänzt die eingebettete Lua-Automatik. Die bestehende Qt-/CoAP-
 Suite aus 1.01 läuft unverändert weiter; hinzu kommt eine getrennte
