@@ -18,6 +18,7 @@ Preferences Preferences::load() {
     p.ageStaleSeconds=qBound(p.ageWarningSeconds+1,s.value("alarms/staleSeconds",90).toInt(),7200);
     p.desktopAlarms=s.value("alarms/desktop",true).toBool();
     p.alarmSound=s.value("alarms/sound",false).toBool();
+    p.automationEnabled=s.value("automation/enabled",false).toBool();
     p.desktop = s.value("window/desktop", true).toBool();
     p.hideDecoration = s.value("window/hideDecoration", p.desktop).toBool();
     p.locked = s.value("window/locked", false).toBool();
@@ -49,6 +50,7 @@ void Preferences::save() const {
     s.setValue("alarms/staleSeconds",ageStaleSeconds);
     s.setValue("alarms/desktop",desktopAlarms);
     s.setValue("alarms/sound",alarmSound);
+    s.setValue("automation/enabled",automationEnabled);
     s.setValue("window/desktop", desktop);
     s.setValue("window/hideDecoration", hideDecoration);
     s.setValue("window/locked", locked);

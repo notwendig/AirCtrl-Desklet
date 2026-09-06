@@ -1,5 +1,21 @@
 # Änderungsübersicht
 
+## v1.02 – 2026-09-06
+
+- Eingebettetes Lua 5.4.9 aus dem per SHA-256 geprüften offiziellen Quellarchiv.
+- Neue, standardmäßig ausgeschaltete Lua-Automatik mit integriertem Editor,
+  Syntax-/API-Prüfung, Neuladen, Diagnose und sichtbarem Fehleralarm.
+- Ereignisse für Start, Minute, Verbindung, bestätigten Status einschließlich
+  Feldänderungen, Alarmänderungen und Resultate automatischer Befehle.
+- Lokale Zeitpläne mit Wochentagen, Tag/Nacht-Beispiel, optionalem Nachholen des
+  jüngsten Termins und dauerhaftem Schutz vor mehrfacher Ausführung.
+- `airctrl.set` benutzt dieselbe Positivliste, Ein-Befehl-Sperre und
+  Statusbestätigung wie die Oberfläche; bereits passende Werte werden nicht gesendet.
+- Sandbox ohne Datei-, Netzwerk-, Shell-, Prozess-, Paket- oder Debugzugriff;
+  256-KiB-Skript-, 8-MiB-Speicher- und 200.000-Instruktionsgrenze.
+- Separate Automatiktests sowie ergänzte Architektur-, Sicherheits-, API-,
+  Lizenz- und GitHub-Dokumentation.
+
 ## GitHub-Projektvorbereitung – 2026-09-03
 
 Anwendungsstand bleibt **v1.01**; kein neues Protokoll- oder Geräteverhalten.

@@ -1,4 +1,5 @@
 #include "controller.hpp"
+#include "controlvalues.hpp"
 #include <QJsonDocument>
 #include <QJsonParseError>
 #include <QFileInfo>
@@ -182,23 +183,8 @@ void Controller::setPower(bool on) { launchWrite({"set",on ? "pwr=1" : "pwr=0"})
 void Controller::setHumidity(int percent) { setPanelValues({{"rhset",percent}}); }
 void Controller::setPanelValues(const QJsonObject& values) {
     if(busy_ || values.isEmpty()) return;
-    const bool integers=values.begin().value().isDouble();
-    QStringList args{"set"}; if(integers) args<<"-I";
-    for(auto i=values.begin();i!=values.end();++i) {
-        const auto v=i.value(); const auto s=v.toString(); const auto n=v.toDouble(-1);
-        const bool valid=
-            (i.key()=="pwr" && v.isString() && (s=="0" || s=="1")) ||
-            (i.key()=="cl" && v.isBool()) ||
-            (i.key()=="mode" && v.isString() && QStringList{"P","A","S","M"}.contains(s)) ||
-            (i.key()=="om" && v.isString() && QStringList{"1","2","3","s","t"}.contains(s)) ||
-            (i.key()=="func" && v.isString() && (s=="P" || s=="PH")) ||
-            (i.key()=="uil" && v.isString() && (s=="0" || s=="1")) ||
-            (i.key()=="rhset" && v.isDouble() && (n==40 || n==50 || n==60 || n==70)) ||
-            (i.key()=="aqil" && v.isDouble() && (n==0 || n==25 || n==50 || n==75 || n==100)) ||
-            (i.key()=="dt" && v.isDouble() && n>=0 && n<=12 && n==int(n));
-        if(!valid || v.isDouble()!=integers) { failCommand("Ungültiger Steuerwert: "+i.key()); return; }
-        args<<i.key()+"="+(v.isBool() ? (v.toBool() ? "true" : "false") : integers ? QString::number(v.toInt()) : s);
-    }
+    QString problem; const auto args=controlValueArguments(values,&problem);
+    if(!problem.isEmpty()) { failCommand(problem); return; }
     launchWrite(args);
 }
 void Controller::launchWrite(const QStringList& tail) {

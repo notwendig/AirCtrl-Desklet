@@ -36,6 +36,9 @@ bewusste Entscheidung der testenden Person.
   Regressionstest für Fehlerkorrekturen.
 - Halte UI-, Controller- und Protokollzustände auseinander. Ein Schreib-ACK ist
   kein neuer Gerätestatus. Wiederhole Schaltbefehle nicht automatisch.
+- Lua-Regeln dürfen ausschließlich über die gemeinsame Steuerwert-Positivliste
+  gehen. Neue Ereignisse brauchen deterministische Tests; Datei-, Prozess- oder
+  Netzwerkzugriff gehört nicht in die Skript-Sandbox.
 - Dokumentiere Modellgrenzen und Unsicherheiten. Unbekannte `err`-Bits werden
   nicht geraten; eine lokale Warnschwelle ist keine Herstellerangabe.
 - Keine stillen Änderungen an Geräte-IP, gespeicherten Einstellungen oder

@@ -1,12 +1,12 @@
-# Philips AirControl – Qt6-Gerätepanel v1.01
+# Philips AirControl – Qt6-Gerätepanel v1.02
 
 Kompaktes C++/Qt6-Desktopwidget für den Philips AC2729/10 unter
 Cinnamon. Geräteadresse voreingestellt: **192.168.77.5**, UDP-Port **5683**.
 Der bereits am Gerät funktionierende C++-CoAP-Code ist vollständig enthalten.
 
-**v1.01** korrigiert die Filtervorwarnung und das Kopieren des Diagnoseberichts.
-Die beiden Statuskreise sind bei Standardschrift 26 statt 40 Pixel groß.
-CoAP-Empfang, Gerätesteuerung und gespeicherte Einstellungen bleiben unverändert.
+**v1.02** ergänzt eine standardmäßig ausgeschaltete Lua-Automatik für Ereignisse
+und lokale Zeitpläne. Das eingebaute Beispiel schaltet Tag/Nacht; alle Aufträge
+verwenden die vorhandene Feldprüfung und bestätigte Gerätesteuerung.
 Änderungsübersicht: [CHANGELOG.md](../CHANGELOG.md). Prüfungen und verbleibende
 Umgebungsgrenzen: [VALIDATION.md](../VALIDATION.md).
 
@@ -218,6 +218,22 @@ einzeln ein- oder ausblenden. Standardmäßig sind die ersten vier eingeschaltet
 Alle Darstellungsoptionen werden nach Bestätigung sofort angewendet und gespeichert.
 Abbrechen verwirft die Auswahl. Die Vorschau speichert keine Änderungen.
 Diese Optionen verändern das Widget; die Lichttaste oben steuert das reale Gerät.
+
+## Lua-Automatik
+
+**Rechtsklick → Lua-Automatik** öffnet Editor, Aktivierung und Ladezustand. Die
+Taste **Tag/Nacht-Beispiel** setzt einen Entwurf mit Nachtmodus um 22:00 Uhr und
+Automatikmodus um 07:00 Uhr ein. Erst **Speichern und neu laden** übernimmt ihn.
+
+Lua kann auf Statusänderungen, Verbindung, Alarme, Befehlsresultate und den
+Minutentakt reagieren. Zeitpläne werden lokal ausgewertet. Ist das Widget beim
+Termin nicht aktiv, wird beim nächsten Start nur der jüngste fällige Zustand
+nachgeholt. Ein übergebener Geräteauftrag wird nicht automatisch wiederholt.
+
+Die Automatik ist nach der Installation aus. Skripte haben keinen Datei-,
+Netzwerk-, Shell- oder Prozesszugriff; Speicher und Ausführung sind begrenzt.
+Die vollständige API, Ereignistabellen, erlaubten Gerätefelder und weitere
+Beispiele stehen unter [Lua-Automatik](LUA_AUTOMATION.md).
 
 ## Update installieren
 
@@ -502,5 +518,6 @@ MIT, siehe `LICENSE`. CoAP-Code: C++-Port von
 [betaboon/aioairctrl](https://github.com/betaboon/aioairctrl), Original-Commit
 `c97640b054c14c0d02739fdfa2564cd85f8216ea`, Copyright 2020 betaboon.
 Qt, OpenSSL und nlohmann/json werden über installierte Bibliotheken eingebunden.
+Lua 5.4.9 ist mit Lizenz- und Herkunftshinweisen als Quellcode enthalten.
 Das ZIP enthält keine Qt-Binärdateien. Die Tastensymbole werden im Qt-Code gezeichnet. Für die Werte werden
 die auf deinem System installierten Schriftarten verwendet.

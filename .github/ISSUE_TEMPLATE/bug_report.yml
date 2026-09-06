@@ -1,0 +1,48 @@
+name: Fehler melden / Bug report
+description: Ein reproduzierbares Problem mit dem Desklet melden.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Danke! Keine Gerätekennungen, IP-/MAC-Adressen, privaten Pfade oder Rohmitschnitte veröffentlichen.
+        Sicherheitslücken bitte nicht hier melden; siehe SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: Version oder Commit
+      placeholder: "1.02 / Commit-SHA"
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Umgebung
+      description: Distribution, Desktop, Qt-Version, Gerätemodell und Plattform laut Diagnose (xcb/wayland).
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Schritte und tatsächliches Verhalten
+      description: Möglichst mit --demo oder Simulator reproduzieren. Was passiert und wie oft?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Erwartetes Verhalten
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Bereinigte Diagnose oder Screenshot
+      description: Nur notwendige Ausschnitte. Die Kopierfunktion anonymisiert nicht automatisch.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Prüfung
+      options:
+        - label: Ich habe private Angaben entfernt und melde keine vertrauliche Sicherheitslücke.
+          required: true

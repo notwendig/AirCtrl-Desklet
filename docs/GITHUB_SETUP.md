@@ -40,7 +40,7 @@ git diff --cached
 Prüfe die vorgemerkten Dateien. Erst danach:
 
 ```bash
-git commit -m "Prepare AirCtrl-Desklet v1.01 for public development"
+git commit -m "Prepare AirCtrl-Desklet v1.02 for public development"
 ```
 
 Git verwendet deine vorhandene Identität. Falls sie fehlt, entscheide selbst
@@ -69,10 +69,10 @@ zusätzliche README/Lizenz anlegen und dessen eigene Push-Anleitung verwenden.
 
 Empfohlene Beschreibung:
 
-> Compact Qt 6 desktop controller for Philips AC2729 air purifiers. Local CoAP, live status, diagnostics and maintenance alerts.
+> Compact Qt 6 desktop controller for Philips AC2729 air purifiers. Local CoAP, live status, Lua automation, diagnostics and maintenance alerts.
 
 Passende Topics: `qt6`, `cpp17`, `linux`, `cinnamon`, `philips`, `air-purifier`,
-`coap`, `desktop-widget`, `fedora`.
+`coap`, `lua`, `home-automation`, `desktop-widget`, `fedora`.
 
 ## 4. GitHub-Einstellungen prüfen
 
@@ -89,18 +89,18 @@ Passende Topics: `qt6`, `cpp17`, `linux`, `cinnamon`, `philips`, `air-purifier`,
 - Wenn verfügbar, Secret Scanning/Push Protection einschalten. Das ersetzt
   keine manuelle Prüfung von Gerätenummern und Screenshots.
 
-## 5. Release v1.01 als Entwurf
+## 5. Release v1.02 als Entwurf
 
 Erst nach erfolgreicher CI und lokalem Gegenprüfen:
 
 ```bash
-git tag -a v1.01 -m "AirCtrl-Desklet v1.01"
-git push origin v1.01
+git tag -a v1.02 -m "AirCtrl-Desklet v1.02"
+git push origin v1.02
 ```
 
 Der vorbereitete Release-Workflow baut und testet den Tag erneut. Er erzeugt
 einen **nicht veröffentlichten Entwurf** mit Quell-ZIP, SHA-256-Datei und den
-[Release-Notizen](releases/v1.01.md). Prüfe Dateien und Grenzen, bevor du im
+[Release-Notizen](releases/v1.02.md). Prüfe Dateien und Grenzen, bevor du im
 GitHub-Release auf „Publish release“ klickst. Bei Wiederholung wird ein
 vorhandener Release nicht überschrieben.
 

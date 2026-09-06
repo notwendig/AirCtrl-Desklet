@@ -18,20 +18,23 @@ ROOT_FILES = (
     "vorschau.png", "alarme-vorschau.png", "diagnose-vorschau.png",
     "embleme-vorschau.png", "filter-vorschau.png", "power-vorschau.png",
 )
-SOURCE_DIRS = (".github", "assets", "docs", "scripts", "src", "tests", "third_party")
+SOURCE_DIRS = (".github", "assets", "docs", "examples", "scripts", "src", "tests", "third_party")
 REQUIRED = ROOT_FILES + (
     ".github/workflows/ci.yml", ".github/workflows/release.yml",
     ".github/dependabot.yml", ".github/ISSUE_TEMPLATE/bug_report.yml",
     ".github/ISSUE_TEMPLATE/feature_request.yml", ".github/pull_request_template.md",
     "docs/DEVELOPMENT.md", "docs/GITHUB_SETUP.md", "docs/ARCHITECTURE.md",
-    "docs/USER_GUIDE.de.md", "docs/images/README.md", "docs/images/desklet-dark.png",
+    "docs/USER_GUIDE.de.md", "docs/LUA_AUTOMATION.md", "docs/images/README.md", "docs/images/desklet-dark.png",
     "docs/images/desklet-light.png", "docs/images/diagnostics-demo.png",
     "docs/images/alarms-demo.png", "src/version.hpp.in",
     "third_party/aioairctrl/LICENSE", "third_party/aioairctrl/ORIGIN.md",
+    "third_party/lua/LICENSE", "third_party/lua/ORIGIN.md", "third_party/lua/src/lua.h",
+    "examples/automation.lua", "tests/test_automation.cpp",
     "scripts/package_source.py", "tests/test_repository.py",
 )
-ALLOWED_SUFFIXES = {".md", ".cpp", ".hpp", ".in", ".py", ".sh", ".png",
+ALLOWED_SUFFIXES = {".md", ".c", ".h", ".cpp", ".hpp", ".in", ".py", ".sh", ".lua", ".png", ".html",
                     ".svg", ".qrc", ".desktop", ".yml", ".yaml", ".json"}
+ALLOWED_NAMES = {"LICENSE", "README", "Makefile"}
 IGNORED_DIRS = {"__pycache__", ".pytest_cache"}
 LINK = re.compile(r"!?\[[^\]]*\]\(([^\s)]+)(?:\s+\"[^\"]*\")?\)")
 DEVICE_ID = re.compile(r"(?:DeviceId|ProductId)[^\n]{0,40}?[\"'][0-9a-f]{32}[\"']", re.I)
@@ -70,7 +73,7 @@ def public_files(root=ROOT):
         if path.is_symlink() or not path.is_file():
             raise ValueError(f"Missing file, non-file or symlink: {relative}")
         if path.name.startswith(".env") or (relative not in ROOT_FILES
-                and path.suffix not in ALLOWED_SUFFIXES and path.name != "LICENSE"):
+                and path.suffix not in ALLOWED_SUFFIXES and path.name not in ALLOWED_NAMES):
             raise ValueError(f"Unexpected public file (check privacy): {relative}")
         result.append(path)
     return result

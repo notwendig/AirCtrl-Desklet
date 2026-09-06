@@ -1,10 +1,45 @@
-# Validierung – v1.01
+# Validierung – v1.02
 
-Datum: 2026-09-03.
+Datum: 2026-09-06.
 
-## GitHub-Fassung: erneut geprüft am 2026-09-03
+Version 1.02 ergänzt die eingebettete Lua-Automatik. Die bestehende Qt-/CoAP-
+Suite aus 1.01 läuft unverändert weiter; hinzu kommt eine getrennte
+Automatiksuite ohne Gerätezugriff.
 
-Die GitHub-Vorbereitung behält die Anwendungsversion **1.01** bei. Neu sind die
+## Lua-Prüfungen in v1.02
+
+`automation-tests`: **12 bestanden, 0 fehlgeschlagen, 0 übersprungen**.
+`desklet-tests`: **103 bestanden, 0 fehlgeschlagen, 2 umgebungsbedingt
+übersprungen**. Darin ist ein Integrationsfall enthalten, der von einem
+Statusereignis genau einen normalen Schaltauftrag auslöst, dessen bestätigte
+Rückmeldung erhält und keinen weiteren Auftrag erzeugt.
+
+| Bereich | Prüfung |
+|---|---|
+| Offizieller Quellstand | Lua meldet 5.4.9; Herkunft und SHA-256 sind dokumentiert. |
+| Sandbox | `io`, `os`, `package`, `debug`, `require`, `dofile`, `loadfile` und `load` fehlen. |
+| Tag/Nacht | Jüngster fälliger Termin, Wechsel am Folgetag und genau eine Behandlung pro Termin. |
+| Wochentage | Montag bis Sonntag, exakte Minute mit `catch_up=false`, kein Sonntagslauf einer Werktagsregel. |
+| Ereignisse | Verbindung, Trennung, Statusänderungen, Alarmstufe/-anzahl und Befehlsrückmeldung. |
+| Steuerwerte | Gemeinsame Feld-/Typ-Positivliste; unbekannte und gemischt kodierte Werte werden abgelehnt. |
+| Zeitplankonflikte | Doppelte Namen und überlappende Termine werden beim Laden abgelehnt. |
+| Laufzeitschutz | Endlosschleife endet am Instruktionslimit; übermäßige Tabellen am 8-MiB-Speicherlimit. |
+| Rückkopplung | `airctrl.set` ist aus dem `command`-Resultat nicht erlaubt. |
+
+Ein vollständiger Build mit eingebettetem Lua sowie beide CTest-Ziele waren in
+**31,64 Sekunden** erfolgreich. Die Lua-Tests senden keine UDP-Pakete und schreiben
+nicht an ein Gerät. Der reproduzierbare Quell-ZIP wurde frisch entpackt und über
+`install.sh` in einen separaten absoluten Präfix gebaut. Die installierte Anwendung
+meldet `airctrl-desklet 1.02`; das offizielle Lua-Lizenzdokument und
+`examples/automation.lua` sind installiert. Ein 287 × 142 Pixel großes Demo-PNG
+wurde ohne Gerätezugriff erzeugt und die SHA-256-Prüfsumme des Archivs bestätigt.
+Eine echte zeitgesteuerte Schaltung am physischen AC2729/10 ist noch nicht
+bestätigt; sie muss nach Prüfung des lokalen Skripts bewusst aktiviert werden.
+
+## Historischer Prüfstand der v1.01-GitHub-Fassung
+
+Die am 2026-09-03 geprüfte GitHub-Vorbereitung behielt die Anwendungsversion
+**1.01** bei. Neu waren damals die
 Projektunterlagen, CI-/Release-Vorlagen, Presets, Paketwerkzeuge und ein
 reproduzierbarer Diagnosebild-Renderer. Die Versionszeichenfolge wird jetzt aus
 CMake erzeugt; die Tests verwenden wie die Anwendung den Fusion-Stil.
@@ -49,7 +84,7 @@ Die 120-h-Vorwarnung ist eine lokale Desklet-Entscheidung, keine aus 0xC054
 abgeleitete Bitmaske oder bestätigte Philips-Firmwaregrenze. Die vorgelegte
 AC2729-Meldung mit drei Zählern auf 88 h dient als Regressionstest.
 
-## Build und Installation
+## Übernommene v1.01-Build- und Installationsprüfung
 
 - Linux x86-64, Ubuntu 24.04; GCC 13.3.0, C++17, Release.
 - Qt 6.8.3 (Core, Gui, Widgets, DBus, Test), OpenSSL 3.0.13, nlohmann/json 3.12.0.
@@ -60,7 +95,7 @@ AC2729-Meldung mit drei Zählern auf 88 h dient als Regressionstest.
 - Test-SDK, Buildverzeichnisse und Binärdateien sind nicht im Projekt-ZIP enthalten.
   Unter Fedora werden weiterhin die bereits genannten Systempakete verwendet.
 
-## Automatisierte Prüfungen
+## Übernommene v1.01-Funktionsprüfungen
 
 QtTest/CTest mit Qt-Offscreen:
 

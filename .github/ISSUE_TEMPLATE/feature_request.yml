@@ -1,0 +1,22 @@
+name: Verbesserung / Feature request
+description: Ein Ziel oder eine Verbesserung vorschlagen.
+title: "[Feature]: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Welches Problem soll gelöst werden?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Vorschlag und Alternativen
+      description: Bedienung, Nutzen und mögliche Nachteile beschreiben.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Betroffene Geräte oder Desktopumgebungen
+      description: Bekannte Modelle nennen; keine Gerätekennungen veröffentlichen.

@@ -8,6 +8,9 @@ Linux, C++17-Compiler, CMake ab 3.16, Qt ab 6.2 (Core, Gui, Widgets, DBus; zusä
 Test für Tests), OpenSSL Crypto, nlohmann/json ab 3.9 und Threads.
 Die optionalen CMake-Presets benötigen **CMake ab 3.21** und Ninja.
 Die Repository-/Paketprüfungen verwenden Python ab 3.9 und nur die Standardbibliothek.
+Lua 5.4.9 wird aus `third_party/lua` statisch gebaut; ein systemweites
+`lua-devel`/`liblua-dev` ist nicht erforderlich. Der Build benötigt deshalb
+neben dem C++- auch einen C-Compiler.
 
 Fedora:
 
@@ -61,6 +64,8 @@ GUI-Versuche `--demo` als Programmargument setzen.
 CTest startet QtTest mit `-platform offscreen`. Fake-Backend und lokaler
 UDP-Simulator ersetzen das Gerät. Der UDP-Test verwendet nur `127.0.0.1` und
 einen dynamischen Port; keine IP des echten Geräts wird getestet.
+`automation-tests` prüft die Lua-Sandbox, Zeitpläne, Wochentage, Nachholen,
+Ereignisdaten, erlaubte Steuerfelder und das Ausführungslimit ohne Gerätezugriff.
 
 Die native Fensterverwaltung, Clipboard-/Popup-Verhalten, Tray und Autostart
 müssen zusätzlich interaktiv geprüft werden. Simuliertes Wayland-Routing ist

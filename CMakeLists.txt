@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(airctrl_desklet VERSION 1.01 LANGUAGES CXX)
+project(airctrl_desklet VERSION 1.02 LANGUAGES C CXX)
 configure_file(src/version.hpp.in generated/airctrl_version.hpp @ONLY)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -14,6 +14,20 @@ find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 find_package(Threads REQUIRED)
 find_package(nlohmann_json 3.9 REQUIRED)
 
+# Lua 5.4.9 is embedded from the verified official source release. Only the
+# explicitly opened sandbox libraries are exposed to user scripts.
+set(AIRCTRL_LUA_SOURCE third_party/lua/src)
+set(AIRCTRL_LUA_FILES
+    lapi.c lcode.c lctype.c ldebug.c ldo.c ldump.c lfunc.c lgc.c llex.c
+    lmem.c lobject.c lopcodes.c lparser.c lstate.c lstring.c ltable.c ltm.c
+    lundump.c lvm.c lzio.c lauxlib.c lbaselib.c lmathlib.c lstrlib.c
+    ltablib.c lutf8lib.c)
+list(TRANSFORM AIRCTRL_LUA_FILES PREPEND "${AIRCTRL_LUA_SOURCE}/")
+add_library(airctrl_lua STATIC ${AIRCTRL_LUA_FILES})
+set_target_properties(airctrl_lua PROPERTIES AUTOMOC OFF)
+target_include_directories(airctrl_lua PUBLIC ${AIRCTRL_LUA_SOURCE})
+target_link_libraries(airctrl_lua PUBLIC ${CMAKE_DL_LIBS} m)
+
 set(AIRCTRL_SOURCE third_party/aioairctrl)
 add_library(aioairctrl STATIC ${AIRCTRL_SOURCE}/src/encryption.cpp
     ${AIRCTRL_SOURCE}/src/coap.cpp ${AIRCTRL_SOURCE}/src/client.cpp)
@@ -26,11 +40,13 @@ set_target_properties(airctrl-backend PROPERTIES AUTOMOC OFF)
 target_link_libraries(airctrl-backend PRIVATE aioairctrl)
 
 add_library(desklet_ui STATIC src/controller.cpp src/controller.hpp
+    src/controlvalues.cpp src/controlvalues.hpp
+    src/automation.cpp src/automation.hpp
     src/alerts.cpp src/alerts.hpp
     src/emblems.cpp src/emblems.hpp
     src/diagnostics.cpp src/diagnostics.hpp
     src/panel.cpp src/panel.hpp src/desklet.cpp src/desklet.hpp src/preferences.cpp src/preferences.hpp)
-target_link_libraries(desklet_ui PUBLIC Qt6::Widgets Qt6::DBus)
+target_link_libraries(desklet_ui PUBLIC Qt6::Widgets Qt6::DBus airctrl_lua)
 target_include_directories(desklet_ui PUBLIC src ${CMAKE_CURRENT_BINARY_DIR}/generated)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(desklet_ui PRIVATE -Wall -Wextra -Wpedantic)
@@ -45,9 +61,11 @@ if(BUILD_TESTING)
     add_executable(diagnostics-preview tests/render_diagnostics.cpp assets/resources.qrc)
     target_link_libraries(diagnostics-preview PRIVATE desklet_ui)
     add_executable(desklet-tests tests/test_desklet.cpp assets/resources.qrc)
+    add_executable(automation-tests tests/test_automation.cpp)
     add_executable(parent-probe tests/parent_probe.cpp)
     target_link_libraries(parent-probe PRIVATE desklet_ui)
     target_link_libraries(desklet-tests PRIVATE desklet_ui aioairctrl Qt6::Test)
+    target_link_libraries(automation-tests PRIVATE desklet_ui Qt6::Test)
     target_include_directories(desklet-tests PRIVATE ${AIRCTRL_SOURCE}/src)
     target_compile_definitions(desklet-tests PRIVATE
         FAKE_BACKEND="$<TARGET_FILE:fake-backend>"
@@ -64,10 +82,14 @@ if(BUILD_TESTING)
     else()
         add_test(NAME desklet COMMAND desklet-tests -platform offscreen)
     endif()
+    add_test(NAME automation COMMAND automation-tests)
     set_tests_properties(desklet PROPERTIES TIMEOUT 90)
+    set_tests_properties(automation PROPERTIES TIMEOUT 30)
 endif()
 
 install(TARGETS airctrl-desklet airctrl-backend RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES assets/airctrl-desklet.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
 install(FILES assets/airctrl-desklet.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
 install(FILES LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/airctrl-desklet)
+install(FILES third_party/lua/LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/airctrl-desklet RENAME LUA-LICENSE)
+install(FILES examples/automation.lua DESTINATION ${CMAKE_INSTALL_DATADIR}/airctrl-desklet/examples)

@@ -2,7 +2,9 @@
 #include "airctrl_version.hpp"
 #include "diagnostics.hpp"
 #include "udp_device.hpp"
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QSignalSpy>
@@ -134,6 +136,7 @@ private slots:
         qunsetenv("AIRCTRL_TEST_NOTIFY_GATE"); qunsetenv("AIRCTRL_TEST_TICK_MS");
         qunsetenv("AIRCTRL_TEST_EXIT_FILE");
         QSettings().clear();
+        QFile::remove(AutomationEngine::scriptPath());
     }
     void observationStreamsWithoutPolling() {
         Controller c(FAKE_BACKEND); QSignalSpy status(&c,&Controller::statusReceived), errors(&c,&Controller::failed);
@@ -173,6 +176,37 @@ private slots:
         QVERIFY(requests[1].contains("pwr=0")); QVERIFY(!requests[1].contains("-I"));
         QVERIFY(requests[2].contains("rhset=60")); QVERIFY(requests[2].contains("-I"));
         QCOMPARE(c.observationStarts(),quint64(1)); c.stop();
+    }
+    void luaStatusEventUsesConfirmedWritePathOnce() {
+        QVERIFY(QDir().mkpath(QFileInfo(AutomationEngine::scriptPath()).absolutePath()));
+        QFile script(AutomationEngine::scriptPath());
+        QVERIFY(script.open(QIODevice::WriteOnly));
+        script.write(R"lua(
+            function on_event(event)
+                if event.type == "status" and event.changed.rh then
+                    airctrl.set { func = "P" }
+                end
+            end
+        )lua");
+        script.close();
+
+        Preferences preferences;
+        preferences.automationEnabled = true;
+        Desklet widget(preferences,FAKE_BACKEND); widget.showAndPosition(); widget.start();
+        auto* controller=widget.findChild<Controller*>();
+        auto* automation=widget.findChild<AutomationEngine*>();
+        QVERIFY(automation); QVERIFY(automation->loaded());
+        QSignalSpy commandErrors(controller,&Controller::commandFailed);
+
+        QTRY_COMPARE(calls().size(),2);
+        QTRY_VERIFY(!controller->busy());
+        QTRY_VERIFY(automation->lastAction().contains("bestätigt"));
+        QTest::qWait(350);
+
+        QCOMPARE(calls().size(),2);
+        QCOMPARE(commandErrors.size(),0);
+        QCOMPARE(calls()[1].contains("func=P"),true);
+        controller->stop();
     }
     void streamKeepsButtonsEnabledAndWriteRunsOnce() {
         qputenv("AIRCTRL_TEST_WRITE_GATE",temp_.filePath("write.ready").toUtf8());

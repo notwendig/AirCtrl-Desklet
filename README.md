@@ -2,7 +2,7 @@
 
 **Dein Philips-Luftreiniger. Direkt auf dem Linux-Desktop.**
 
-C++17 · Qt 6 · lokale CoAP-Kommunikation · MIT · Version **1.01**
+C++17 · Qt 6 · Lua 5.4 · lokale CoAP-Kommunikation · MIT · Version **v1.02**
 
 [English](README.en.md) · [Bedienung](docs/USER_GUIDE.de.md) · [Entwicklung](docs/DEVELOPMENT.md) · [Änderungen](CHANGELOG.md)
 
@@ -31,6 +31,8 @@ Die Oberfläche ist derzeit deutschsprachig.
 - Filtervorwarnungen, Quittierung, Desktop-Benachrichtigungen und optionaler Ton.
 - Farben, Hintergrundtransparenz, Schrift, Fensterdekoration und Autostart im Kontextmenü.
 - Diagnose mit deutschen Feldbeschreibungen, Hexcodes und kopierbarem Gesamtbericht.
+- Sichere Lua-Automatik für Status-, Verbindungs-, Alarm- und Zeitereignisse,
+  einschließlich Tag/Nacht-Zeitplänen.
 
 ![Helle Standarddarstellung des Widgets](docs/images/desklet-light.png)
 
@@ -39,7 +41,7 @@ Ausgegraute Gerätetasten sind in der Demo absichtlich nicht bedienbar.*
 
 ## Schnellstart auf Fedora
 
-Voraussetzungen: C++17-Compiler, CMake ≥ 3.16, Qt ≥ 6.2 (Core/Gui/Widgets/DBus),
+Voraussetzungen: C- und C++17-Compiler, CMake ≥ 3.16, Qt ≥ 6.2 (Core/Gui/Widgets/DBus),
 OpenSSL Crypto, nlohmann/json ≥ 3.9 und Python 3 für den Installer.
 
 ```bash
@@ -86,6 +88,41 @@ keine zusätzlichen Power-Befehle gesendet.
 Links zählt der Kreis Sekunden seit dem letzten gültigen Datenpaket: standardmäßig
 grün unter 45 s, gelb ab 45 s und rot ab 90 s. Rechts stehen Haken oder Alarmanzahl.
 Die Kreise messen bei Standardschrift 26 px und wachsen mit der Schriftgröße.
+
+## Lua-Automatik
+
+Unter **Rechtsklick → Lua-Automatik** öffnet sich der integrierte Skripteditor.
+Die Automatik ist nach Installation zunächst ausgeschaltet. Das mitgelieferte
+Beispiel schaltet täglich um 22:00 Uhr auf Nacht und um 07:00 Uhr auf Tag:
+
+```lua
+airctrl.schedule {
+    name = "nacht", at = "22:00",
+    days = {1, 2, 3, 4, 5, 6, 7},
+    set = { mode = "S", om = "s", uil = "0" }
+}
+
+airctrl.schedule {
+    name = "tag", at = "07:00",
+    set = { mode = "P", uil = "1" }
+}
+```
+
+`on_event(event)` erhält `startup`, `time`, `connected`, `disconnected`,
+`status`, `alarm` und `command`. Statusereignisse enthalten den vollständigen
+bestätigten Zustand in `event.status` sowie Änderungen in `event.changed`.
+`airctrl.set { ... }` verwendet dieselbe Positivliste und Bestätigungslogik wie
+die Gerätetasten. Pro Zeitplantermin gibt es höchstens einen Schaltversuch;
+bereits passende Zustände erzeugen keinen Netzwerkbefehl.
+
+Lua 5.4.9 wird aus dem geprüften offiziellen Quellstand eingebettet. Die Sandbox
+stellt nur Basis-, Tabellen-, String-, Mathematik- und UTF-8-Funktionen bereit:
+keine API für beliebige Datei-, Netzwerk- oder Prozesszugriffe und kein `io`,
+`os`, `package`, `debug`, `dofile`, `loadfile` oder `load`. Nur `airctrl.set`
+darf erlaubte Werte an das konfigurierte Gerät senden. Zusätzlich gelten 8 MiB
+Speicher und 200.000 VM-Instruktionen je Aufruf. Das schützt vor vielen Fehlern,
+macht fremde Skripte aber nicht automatisch vertrauenswürdig.
+[Lua-API und Beispiele](docs/LUA_AUTOMATION.md)
 
 ### Wartung
 
@@ -149,7 +186,7 @@ Presets benötigen CMake ≥ 3.21 und Ninja. Klassischer Build ohne Presets:
 | Beteiligter | Rolle |
 |---|---|
 | **Jürgen Sievers** | Projektinitiator, Product Owner und Maintainer; Anforderungen, Bedienkonzept, Prioritäten, Gerätetests und Freigaben |
-| **OpenAI Codex** | KI-Entwicklungspartner; gemeinsame C++-/Qt-Implementierung, Protokollanalyse, Fehlersuche, Tests und Dokumentation |
+| **OpenAI Codex** | KI-Entwicklungspartner; gemeinsame C++-/Qt-/Lua-Implementierung, Protokollanalyse, Fehlersuche, Tests und Dokumentation |
 | **betaboon** | Autor des Python-Projekts `aioairctrl`, Grundlage des mitgelieferten C++-Backends |
 
 Entstanden im gemeinsamen, iterativen Entwickeln — vom ersten funktionierenden

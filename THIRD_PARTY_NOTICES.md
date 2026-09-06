@@ -10,6 +10,10 @@ The original upstream copyright notice is retained.
   See its [license](third_party/aioairctrl/LICENSE) and
   [provenance record](third_party/aioairctrl/ORIGIN.md), including the upstream
   commit. This port is not represented as an official upstream C++ release.
+- **Lua 5.4.9 / Lua.org, PUC-Rio** — MIT. The verified official release source is
+  embedded under `third_party/lua`; only the libraries required by the sandbox
+  are built. See its [license](third_party/lua/LICENSE) and
+  [provenance](third_party/lua/ORIGIN.md).
 
 ## System dependencies (not bundled in the source archive)
 

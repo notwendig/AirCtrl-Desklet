@@ -5,7 +5,7 @@
 Sicherheitskorrekturen sind für den aktuellen `main`-Stand und die jeweils neueste
 1.x-Veröffentlichung vorgesehen. Das ist ein gemeinschaftlich gepflegtes Projekt,
 kein Produkt mit garantierter Reaktionszeit. Alte ZIP-Versionen erhalten keine
-zugesicherte Rückportierung. Der aktuelle vorbereitete Anwendungsstand ist 1.01.
+zugesicherte Rückportierung. Der aktuelle vorbereitete Anwendungsstand ist 1.02.
 
 ## Vertraulich melden
 
@@ -40,6 +40,11 @@ gegebenenfalls ein Korrekturvorschlag. Keine Versuche an fremden Geräten.
 - Die vorbereitete CI enthält keine Gerätezugänge und verwendet keine
   Produktionsgeheimnisse. Actions sind auf vollständige Commit-SHAs festgelegt.
   Release-Schreibrechte sind auf den Release-Job beschränkt.
+- Die Lua-Automatik ist standardmäßig aus. Ihre Sandbox öffnet keine Datei-,
+  Betriebssystem-, Paket- oder Debug-Bibliothek und begrenzt Speicher sowie
+  Instruktionen. Sie ist dennoch keine Garantie für unvertrauenswürdige Skripte:
+  nur selbst geprüften Code aktivieren. Lua-Aufträge können das reale Gerät
+  schalten und gehören deshalb wie manuelle Befehle in ein kontrolliertes Netz.
 
 Filter- und Datenalteralarme sind Komfortfunktionen, keine sicherheitskritische
 Überwachung. Herstellerhinweise und die Anzeige des tatsächlichen Geräts haben

@@ -12,8 +12,11 @@ JavaScript-Erweiterung. Die Oberfläche bleibt deutsch; C++-Bezeichner sind engl
 | `src/alerts.*` | Datenalter, Warnungsidentitäten, Quittierung und Benachrichtigung |
 | `src/diagnostics.*` | Rohwert-Erklärungen, Hexcodes und Kopierbericht |
 | `src/preferences.*` | Benutzereinstellungen und Autostart |
+| `src/automation.*` | Eingebettete Lua-Sandbox, Ereignisse, Zeitpläne und Skriptprotokoll |
+| `src/controlvalues.*` | Gemeinsame Positivliste und Kodierung erlaubter Steuerwerte |
 | `src/controller.*` | Beobachtungsprozess, Schreibprozess, Fristen und Wiederverbindung |
 | `third_party/aioairctrl` | Separates CLI und C++-Implementierung des Philips-CoAP-Protokolls |
+| `third_party/lua` | Verifizierter offizieller Lua-5.4.9-Quellstand |
 | `tests/` | Qt-Oberflächen-/Controllerprüfungen, Fake-Backend, lokaler UDP-Simulator |
 
 ## Empfang und Schalten
@@ -27,6 +30,13 @@ Ein Benutzerbefehl läuft in einem separaten Schreibprozess. Die Annahme eines
 Schreibbefehls ist nicht mit einer bestätigten Zustandsänderung gleichzusetzen:
 erst die nächste passende Statusmeldung bestätigt die Änderung. Die Beobachtung
 läuft währenddessen weiter. Es gibt keine automatische Schreibwiederholung.
+
+Lua läuft im GUI-Prozess und erhält nur kopierte JSON-/Ereignisdaten. Ein
+`airctrl.set`-Auftrag geht durch dieselbe Feldprüfung, Ein-Befehl-Sperre und
+Statusbestätigung wie ein Klick. Zeitpläne speichern ihre ausgeführte
+Terminidentität; nach einem Neustart wird nur der jüngste fällige Tag-/Nacht-
+Zustand berücksichtigt. Datei-, Betriebssystem-, Paket- und Debug-Bibliotheken
+werden weder geöffnet noch als API angeboten.
 
 Die Power-Taste bleibt bedienbar, startet aber keinen zweiten bereits laufenden
 Schreibauftrag. Ein Schreibfehler ist ein anderer Zustand als ein ausgefallener
@@ -56,4 +66,5 @@ Interaktive Tests auf einem echten Desktop bleiben notwendig.
 
 Keine Cloud-Anmeldung, keine Telemetrie, kein automatisches Zurücksetzen von
 Gerätewartung, kein Firmware-Update und keine automatischen Eingriffe aufgrund
-einer Warnung. Das Projekt ist keine universelle Philips-Geräteintegration.
+einer Warnung ohne eine ausdrücklich aktivierte lokale Lua-Regel. Das Projekt
+ist keine universelle Philips-Geräteintegration.

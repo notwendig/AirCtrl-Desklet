@@ -12,6 +12,7 @@ struct Preferences {
     int ageStaleSeconds = 90;
     bool desktopAlarms = true;
     bool alarmSound = false;
+    bool automationEnabled = false;
     bool desktop = true;
     bool hideDecoration = true;
     bool locked = false;

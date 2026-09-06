@@ -2,7 +2,7 @@
 
 **Your Philips air purifier, right on your Linux desktop.**
 
-C++17 · Qt 6 · local CoAP communication · MIT · **1.01**
+C++17 · Qt 6 · Lua 5.4 · local CoAP communication · MIT · **v1.02**
 
 [Deutsch](README.md) · [Development](docs/DEVELOPMENT.md) · [Changelog](CHANGELOG.md)
 
@@ -24,6 +24,8 @@ It is a standalone Qt application, **not a Cinnamon JavaScript desklet**.
 - Per-filter warnings, acknowledgement, desktop notifications and optional sound.
 - Configurable colours, background transparency, fonts, window decoration and autostart.
 - Diagnostics with raw JSON, hexadecimal codes and a full copyable report.
+- Sandboxed Lua automation for status, connection, alarm and time events,
+  including day/night schedules.
 
 ![Light theme rendered by the actual Qt application in demo mode](docs/images/desklet-light.png)
 
@@ -48,8 +50,9 @@ to this invocation. The historical v1.01 default remains for compatibility,
 not as automatic discovery. Installation is per-user under `~/.local`.
 Python is used by the installer; the GUI and backend are C++ programs.
 
-Dependencies: C++17, CMake ≥ 3.16, Qt ≥ 6.2 (Core/Gui/Widgets/DBus), OpenSSL Crypto,
-nlohmann/json ≥ 3.9. Presets additionally require CMake ≥ 3.21 and Ninja.
+Dependencies: C and C++17 compilers, CMake ≥ 3.16, Qt ≥ 6.2
+(Core/Gui/Widgets/DBus), OpenSSL Crypto, nlohmann/json ≥ 3.9. Presets
+additionally require CMake ≥ 3.21 and Ninja.
 [Build instructions and other distributions](docs/DEVELOPMENT.md)
 
 ## Controls and warnings
@@ -60,6 +63,22 @@ Power stays clickable: orange when disconnected, white when off, green when on.
 
 Data age defaults to green below 45 s, yellow from 45 s, red from 90 s.
 The alarm circle is independent of data freshness. Both are 26 px at the default font.
+
+## Lua automation
+
+Open **right-click → Lua-Automatik** to edit and enable the local script. It is
+disabled by default. The supplied example schedules night mode at 22:00 and
+automatic day mode at 07:00. `on_event(event)` receives `startup`, `time`,
+`connected`, `disconnected`, `status`, `alarm` and `command`; status events expose
+both `event.status` and `event.changed`. `airctrl.set { ... }` uses the same field
+allow-list and confirmed-state command path as the UI.
+
+The verified official Lua 5.4.9 sources are embedded. The sandbox exposes no API
+for arbitrary file, network, process, shell, package or debug access and applies
+memory/instruction limits. Only `airctrl.set` can send allow-listed values to the
+configured device. Scheduled commands are attempted at most once per occurrence;
+an already-confirmed target state sends no command.
+[API and examples](docs/LUA_AUTOMATION.md)
 
 A3 means HEPA replacement, C7 carbon-filter replacement, F1 wick replacement.
 F0 is cleaning. For AC2729, the widget warns at 1–120 remaining operating hours
@@ -98,7 +117,7 @@ python3 scripts/check_repository.py
 | Contributor | Role |
 |---|---|
 | **Jürgen Sievers** | Project initiator, product owner and maintainer; requirements, UX direction, priorities, physical-device testing and release decisions |
-| **OpenAI Codex** | AI development partner; collaborative C++/Qt implementation, protocol analysis, debugging, tests and documentation |
+| **OpenAI Codex** | AI development partner; collaborative C++/Qt/Lua implementation, protocol analysis, debugging, tests and documentation |
 | **betaboon** | Author of upstream Python `aioairctrl`, underlying the C++ backend |
 
 Codex is credited as AI assistance, not a human maintainer or independent support

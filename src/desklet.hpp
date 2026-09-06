@@ -4,6 +4,7 @@
 #include "panel.hpp"
 #include "emblems.hpp"
 #include "alerts.hpp"
+#include "automation.hpp"
 #include <QElapsedTimer>
 #include <QDateTime>
 #include <QLabel>
@@ -21,6 +22,7 @@ public:
     void showDetails();
     void showAlarms();
     void showAlarmSettings();
+    void showAutomationSettings();
     void acknowledgeAlarms();
     qint64 dataAgeSeconds() const;
     void applyStatus(const QJsonObject& status);
@@ -53,13 +55,16 @@ private:
     void showPositionDialog();
     void openControl(int index);
     void sendValues(const QJsonObject& values);
+    void sendAutomationValues(const QJsonObject& values, const QString& source, const QString& occurrenceKey);
     void rememberPosition();
     Preferences preferences_;
     Controller controller_;
+    AutomationEngine automation_;
     bool demo_ = false;
     bool waylandSession_ = false;
     bool connected_ = false;
     bool awaitingConfirmation_ = false;
+    bool pendingAutomation_ = false;
     bool leftPressed_ = false;
     bool rightPressed_ = false;
     bool mouseMoved_ = false;
@@ -73,6 +78,7 @@ private:
     qint64 lastDataAt_=-1;
     bool receptionFailed_=false, alarmsPaused_=false, notificationFailureLogged_=false;
     QString activeCommandError_;
+    QString automationProblem_, pendingAutomationSource_, pendingOccurrenceKey_;
     quint64 commandFailureId_=0;
     AlertLatch alarmLatch_;
     QList<Alert> activeAlerts_;
