@@ -40,6 +40,12 @@ class RepositoryTests(unittest.TestCase):
             package_source(self.root, self.area / "invalid.zip")
         self.assertFalse((self.area / "invalid.zip").exists())
 
+    def test_capture_formats_are_git_ignored(self):
+        patterns = set((self.root / ".gitignore").read_text().splitlines())
+        for pattern in ("*.pcap", "*.pcapng", "*.pcap.*", "*.pcapng.*", "*.lz4"):
+            with self.subTest(pattern=pattern):
+                self.assertIn(pattern, patterns)
+
     def test_device_identifier_is_rejected(self):
         # Deliberately generated synthetic 32-hex identifier, never a real device ID.
         with (self.root / "docs" / "private.md").open("w") as stream:

@@ -15,6 +15,7 @@ ROOT_FILES = (
     "CHANGELOG.md", "CMakeLists.txt", "CMakePresets.json", "CODE_OF_CONDUCT.md",
     "CONTRIBUTING.md", "LICENSE", "README.md", "README.en.md", "SECURITY.md",
     "THIRD_PARTY_NOTICES.md", "VALIDATION.md", "install.sh", "uninstall.sh",
+    "einspielen-v1.04.sh",
     "vorschau.png", "alarme-vorschau.png", "diagnose-vorschau.png",
     "embleme-vorschau.png", "filter-vorschau.png", "power-vorschau.png",
 )
@@ -24,7 +25,9 @@ REQUIRED = ROOT_FILES + (
     ".github/dependabot.yml", ".github/ISSUE_TEMPLATE/bug_report.yml",
     ".github/ISSUE_TEMPLATE/feature_request.yml", ".github/pull_request_template.md",
     "docs/DEVELOPMENT.md", "docs/GITHUB_SETUP.md", "docs/ARCHITECTURE.md",
-    "docs/USER_GUIDE.de.md", "docs/LUA_AUTOMATION.md", "docs/images/README.md", "docs/images/desklet-dark.png",
+    "docs/USER_GUIDE.de.md", "docs/LUA_AUTOMATION.md",
+    "docs/PROTOCOL_VALIDATION_2026-09-08.md",
+    "docs/images/README.md", "docs/images/desklet-dark.png",
     "docs/images/desklet-light.png", "docs/images/diagnostics-demo.png",
     "docs/images/alarms-demo.png", "src/version.hpp.in", "src/automation_example.hpp.in",
     "third_party/aioairctrl/LICENSE", "third_party/aioairctrl/ORIGIN.md",

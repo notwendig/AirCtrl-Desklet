@@ -1,24 +1,54 @@
-# Validierung – v1.03
+# Validierung – v1.04
 
-Datum: 2026-09-06.
+Stand: 2026-09-08.
 
-Version 1.03 kennzeichnet die Geräteadresse als IP-Adresse oder Hostname und
-erweitert die Lua-Vorlage zur vollständigen kommentierten Referenz.
+Version 1.04 führt Statusbeobachtung und Schaltbefehle in genau einer dauerhaften
+UDP-I/O-Sitzung zusammen. Ein Status-Timeout schließt und erneuert Socket und
+synchronisierten Protokollzustand; ein Schaltfehler allein tut dies nicht.
 
-## Prüfungen in v1.03
+## Bestätigung am physischen AC2729/10 – 2026-09-08
 
-- `desklet-tests`: **104 bestanden, 0 fehlgeschlagen, 2 umgebungsbedingt
+Zwei vom Maintainer aufgezeichnete PCAPNG-Dateien wurden offline auf Verkehr
+zwischen genau einem Client und dem Gerät an UDP-Port 5683 begrenzt analysiert.
+Die Mitschnitte selbst, Gerätekennungen und anderer Netzverkehr gehören weder
+zum Repository noch zum Quell-ZIP. Die Zeitbereiche überlappen sich nicht;
+zwischen ihnen fehlen 564,7 Sekunden.
+
+| Befund | Ergebnis |
+|---|---|
+| Status | 148 verschlüsselte Statusmeldungen erfolgreich geprüft und entschlüsselt; Sequenz und CoAP-Observe jeweils lückenlos um eins erhöht; überall `err=0` |
+| Schalten | 17 Befehle, 17 `status=success` nach 5,7–13,4 ms; jeder Zielwert durch den unmittelbar nächsten Status nach 44,5–97,0 ms bestätigt |
+| Ein Socket | Sync, Observe-Abmeldung, Control und Observe-Neuanmeldung verwenden durchgehend Clientport `38577` |
+| Kein Resync beim Schalten | Kein `/sys/dev/sync`; Control-Zähler lückenlos `0x36A2D909` bis `0x36A2D919` |
+| Status-Timeout | Letzter Status auf Port `34482`, nach 89,9999 s Observe-Abmeldung; nach 9,684 s neuer Port `38577` und `/sys/dev/sync` |
+| Neue Daten | Erste Meldung 36,429 s nach neuer Observe-Anmeldung; gesamte beobachtete Datenpause 136,117 s |
+| Pause unter 90 s | 65,774 s bei ausgeschaltetem Gerät; kein Socketwechsel und kein Sync |
+| Aufnahmequalität | Keine gekürzten Pakete, keine vom Capture gemeldeten Drops, keine ICMP-Fehler und keine Decoderfehler im relevanten Verkehr |
+| Gerätetimer | Nach `dt=6` meldet das Gerät `dtrs=360`, etwa 60 s später `359`; dies stützt Restminuten als Bedeutung, bleibt aber eine empirische Deutung |
+
+Diese Aufzeichnung bestätigt genau das in v1.04 beabsichtigte Close/Open nach
+Status-Timeout und die gemeinsame Socket-Nutzung beim Schalten. Sie beweist
+nicht den tatsächlichen Systemaufruf `close(2)`; der Portwechsel und die neue
+Synchronisierung sind dessen Netzwerkfolgen. Die Ursache der langen Sendepause
+ist nicht bestimmt. CoAP Observe verspricht keinen periodischen Herzschlag.
+Vollständige Paketnummern und Zeitpunkte stehen in
+[docs/PROTOCOL_VALIDATION_2026-09-08.md](docs/PROTOCOL_VALIDATION_2026-09-08.md).
+
+## Prüfungen in v1.04
+
+- `desklet-tests`: **106 bestanden, 0 fehlgeschlagen, 2 umgebungsbedingt
   übersprungen**. IPv4 `192.0.2.10`, DNS/mDNS `luftreiniger.local` und die
   geklammerte IPv6-Adresse `[2001:db8::5]` erreichen das Fake-Backend exakt als
-  `-H`-Argument; umgebende Leerzeichen werden entfernt.
+  `-H`-Argument; umgebende Leerzeichen werden entfernt. Ein eigener Test sichert
+  `AC2729-10` als Standardwert in Einstellungen und Controller.
 - `automation-tests`: **12 bestanden, 0 fehlgeschlagen, 0 übersprungen**. Die
   vom Build eingebettete Editorvorlage ist bytegleich mit
   `examples/automation.lua`; alle sieben Ereignisse und neun steuerbaren Felder
   werden in ihrer Kommentarreferenz geprüft.
-- Beide CTest-Ziele: **100 % bestanden**, 31,88 Sekunden. Vollständiger
+- Beide CTest-Ziele: **100 % bestanden**, rund 32 Sekunden. Vollständiger
   Release-Build mit GCC 13.3.0, Qt 6.8.3 und eingebettetem Lua 5.4.9.
 - Der Quell-ZIP wurde frisch entpackt und über `install.sh` in einen separaten
-  absoluten Präfix installiert. Die Binärdatei meldet `airctrl-desklet 1.03`,
+  absoluten Präfix installiert. Die Binärdatei meldet `airctrl-desklet 1.04`,
   `--help` nennt Hostname oder IP-Adresse, und die installierte Lua-Referenz ist
   bytegleich mit der Quelldatei.
 - Das Backend verwendet weiterhin `getaddrinfo(AF_UNSPEC)` und akzeptiert damit
@@ -154,7 +184,7 @@ Es wurde kein alternativer Zugriff auf eine echte Benutzersitzung versucht.
 | Rohdatenschutz | Hexdarstellung in eigener Spalte und Kopierbericht, unveränderte empfangene Werte/JSON; keine Umdeutung von Messwerten oder Filterstunden |
 | Datenalter | Kein Empfang = — s; grün bei 0/44 s, gelb bei 45/89 s, rot bei 90 s; genaue Grenzübergänge |
 | Zeitbasis | Injizierbare monotone Testuhr; Produktionsuhr unter Linux CLOCK_BOOTTIME; realer Sekundentakt im 19-s-Pausentest |
-| Empfang während Schreiben | Jedes gültige Paket setzt den Zähler zurück, ohne den unbestätigten Schaltzustand zu übernehmen |
+| Empfang während Schreiben | Observe wird kurz abgemeldet; erst die Neuanmeldung auf demselben Socket liefert die Statusbestätigung |
 | Ungültige Daten / ACKs | Ungültiges JSON und reine Schreibannahme setzen das Datenalter nicht zurück |
 | Alarm-Latch | Einmalige Warnung, Verschärfung zu Fehler, Quittierung, keine Timeout-Flut, Wiederauftreten nach Behebung |
 | Gerätewarnungen | Filter-/Wasserwarnungen gemeinsam, anhaltend und wiederkehrend; 49236 allein löst keinen Alarm aus |
@@ -167,13 +197,13 @@ Es wurde kein alternativer Zugriff auf eine echte Benutzersitzung versucht.
 | Emblem-Funktionen | Luftreinigung / 2-in-1, Kindersicherung, Timer, PM2.5 / IAI und unbekannte Anzeigecodes |
 | Alarmgrenzen | AC2729-Modellprüfung, bekannte Codes, lokale Filtervorwarnung und abgelaufene Zähler; 49236 und Typkennungen A3/C7 allein erzeugen keinen Alarm |
 | Ungültige Daten | Fehlende/null/bools/falsche Strings/negative/gebrochene Zähler lösen keine Warnsymbole aus |
-| Bestätigte Embleme | Power-Klick lässt die Anzeige bis zur tatsächlichen Rückmeldung unverändert; nur ein Beobachtungsprozess |
+| Bestätigte Embleme | Power-Klick lässt die Anzeige bis zur tatsächlichen Rückmeldung unverändert; nur ein I/O-Prozess |
 | Offline-Embleme | Letzte Symbole abgeblendet, WLAN orange/durchgestrichen, Tooltips markieren veralteten Status |
 | Emblem-Layout | 287 × 142 Pixel mit zwei Statuskreisen, bis zu neun Symbolen in zwei Reihen; Schriftgrößen 10/24/48, Transparenz und Vordergrundfarbe |
-| Emblem-Bedienung | Linksklick/Rechtsklick öffnet genau ein Menü; Ziehen verschiebt ohne Menü oder Geräteschreibzugriff |
+| Emblem-Bedienung | Nur Rechtsklick öffnet das Kontextmenü; Linksklick auf einen Kreis öffnet Alarmdetails, Ziehen verschiebt ohne Menü oder Geräteschreibzugriff |
 | Dauerbeobachtung | Mehrere Meldungen aus genau einem Prozess; keine periodischen Einzelabfragen |
 | Reale Zeitspanne | 19 Sekunden zwischen Meldungen; nach 11 Sekunden weiterhin online; kein Neustart |
-| Startparameter | status-observe -J --timeout 60 --idle-timeout 90 |
+| Startparameter | session -J --timeout 60 --control-timeout 10 --idle-timeout 90 |
 | Streamingparser | Aufgeteilte JSON-Zeile und mehrere Zeilen in einem Ausgabeblock |
 | Eingabeschutz | Ungültiges JSON und übergroße unvollständige Statuszeile führen zum kontrollierten Fehler |
 | Wiederverbindung | Unerwartetes Prozessende, ausbleibende erste Meldung, späterer Datenstillstand |
@@ -185,7 +215,7 @@ Es wurde kein alternativer Zugriff auf eine echte Benutzersitzung versucht.
 | Schreibfehler | Kein falscher Offline-Wechsel bei weiterhin gültiger Beobachtung |
 | Schreib-Watchdog | Genau ein Versuch; keine automatische Wiederholung |
 | Bestätigungsfrist | Ausbleibende Statusbestätigung gibt Bedienung wieder frei; keine Wiederholung |
-| Gleichzeitige Wiederverbindung | Laufender Schreibauftrag wird bei Beobachtungsneustart nicht erneut gesendet |
+| Sitzungsverlust beim Schreiben | Laufender Auftrag wird als unbekannter Ausgang gemeldet und beim Neustart nicht erneut gesendet |
 | Echter CoAP-Transport | GUI-Controller und echtes CLI gegen lokalen UDP-Gerätesimulator |
 | Elternprozessschutz | Hart beendetes Hilfs-Widget führt nachweislich zu SIGTERM und Ende seines Empfängers |
 | Bestehende Funktionen | Panelbefehle/Datentypen, Menüs, Schriftgrößen, Transparenz, Werte, Position, Einstellungen und Autostart |
@@ -200,14 +230,15 @@ das tatsächlich gebaute airctrl-backend über den GUI-Controller.
 
 Der Simulator beantwortet Synchronisierung und Beobachtungsanmeldung, sendet
 verschlüsselte CoAP-Statusmeldungen mit wiederverwendeter Message-ID und
-verarbeitet einen Power-Schreibbefehl auf einem separaten Socket. Geprüft werden:
+verarbeitet einen Power-Schreibbefehl. Geprüft werden:
 
-- genau eine Beobachtungsanmeldung;
-- eine Synchronisierung für den Empfänger und eine für den Schreibprozess;
+- genau ein UDP-Quellport für Synchronisierung, Status, Control und erneutes Observe;
+- genau eine initiale Synchronisierung und keine weitere beim Schreibbefehl;
 - genau ein Schreibauftrag;
-- unverändert bestehende Beobachtung während des Schreibens;
+- eine Observe-Abmeldung vor und Neuanmeldung nach dem Schreiben;
 - neue Statusmeldung bestätigt pwr="0";
-- keine Abmeldung bis zum ausdrücklichen Stopp; danach genau eine Abmeldung.
+- beim Ausbleiben weiterer Statusmeldungen: Prozessende, neuer UDP-Quellport und
+  zweite Synchronisierung, danach wieder gültiger Empfang.
 
 Dieser Test prüft die Integration mit dem echten Transport, nicht jede Eigenheit
 der Philips-Firmware. Die Verschlüsselungsroutine ist in diesem Simulator dieselbe

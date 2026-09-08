@@ -1,9 +1,46 @@
 # Änderungsübersicht
 
+## v1.04 – 2026-09-07
+
+Dokumentationsnachtrag vom **2026-09-08**, Anwendungsversion weiterhin 1.04:
+
+- Zwei Gerätemitschnitte ausgewertet: 148 gültige Statusmeldungen, 17/17
+  Schaltbefehle durch den jeweils nächsten Status nach 45–97 ms bestätigt.
+- Timeout-Erneuerung dokumentiert: Abmeldung nach 90 s, neuer Port und Sync
+  nach weiteren 9,7 s, insgesamt 136,1 s bis zu frischen Daten.
+- Fortlaufende Sendezähler ohne Resync beim Schalten belegt. Der Begriff
+  Session-Key wird präzisiert: synchronisierte Richtungszähler; AES-Schlüssel
+  und IV werden aus dem jeweiligen Nachrichtenpräfix abgeleitet.
+- `dtrs` in Lua-Beispiel, Benutzerhandbuch und Diagnose als beobachtete
+  verbleibende Timer-Minuten erläutert (`dt=6`, `360 → 359` nach etwa 60 s).
+  Keine zusätzliche Schreibmöglichkeit und keine Änderung der Rohwerte.
+- READMEs, Architektur, Prüfbericht und Release-Anleitung abgeglichen;
+  Rohmitschnitte und Gerätekennungen werden nicht ins Quellpaket aufgenommen.
+
+- Statusbeobachtung und Schaltbefehle verwenden genau einen dauerhaften
+  Backend-Prozess, UDP-Socket und synchronisierten Protokollzustand.
+- Vor einem Schaltbefehl wird Observe abgemeldet; Control und anschließende
+  Observe-Neuanmeldung laufen nacheinander auf demselben Socket.
+- Ein ausbleibender erster oder späterer Status beendet die I/O-Sitzung. Bei der
+  Wiederverbindung wird der Socket geschlossen/geöffnet und einmal neu synchronisiert.
+- Ein Schaltfehler erneuert weder Socket noch Synchronisierung und wird nicht automatisch
+  wiederholt; der bestätigte Gerätestatus bleibt maßgeblich.
+- Reale UDP-Integrationstests prüfen denselben Quellport und nur einen Sync beim
+  Schalten sowie neuen Port und neuen Sync nach einem Status-Timeout.
+
 ## v1.03 – 2026-09-06
 
 - Verbindungseinstellung und Kommandozeilenhilfe nennen IPv4, IPv6 und
   DNS-/mDNS-Hostnamen ausdrücklich; die Übergabe an das Backend ist getestet.
+- Der voreingestellte Host lautet `AC2729-10`.
+- Bereits gespeicherte Varianten `AC2729/10` und `AC2729_10` werden automatisch
+  auf den gültigen Hostnamen `AC2729-10` korrigiert; gespeicherte IP-Adressen bleiben erhalten.
+- Das Einstellungsfeld heißt sichtbar „IP oder Host“; per Maus öffnet nur die
+  rechte Taste das Kontextmenü.
+- `install.sh` führt einen sauberen Neubau aus, damit keine ältere Oberfläche
+  aus einem vorhandenen Build-Verzeichnis weiterverwendet wird.
+- Die konfigurierte Hintergrundfarbe und Transparenz füllen die gesamte
+  Desklet-Fläche einschließlich aller Ecken aus.
 - IPv6-Adressen erscheinen in Diagnose-Endpunkten eindeutig in eckigen Klammern.
 - `examples/automation.lua` dokumentiert als Kommentar alle sieben Ereignisse,
   ihre Felder, alle erlaubten Steuerwerte und die bekannten AC2729-Statusfelder

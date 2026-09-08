@@ -5,7 +5,7 @@
 Sicherheitskorrekturen sind für den aktuellen `main`-Stand und die jeweils neueste
 1.x-Veröffentlichung vorgesehen. Das ist ein gemeinschaftlich gepflegtes Projekt,
 kein Produkt mit garantierter Reaktionszeit. Alte ZIP-Versionen erhalten keine
-zugesicherte Rückportierung. Der aktuelle vorbereitete Anwendungsstand ist 1.03.
+zugesicherte Rückportierung. Der aktuelle vorbereitete Anwendungsstand ist 1.04.
 
 ## Vertraulich melden
 
@@ -29,7 +29,10 @@ gegebenenfalls ein Korrekturvorschlag. Keine Versuche an fremden Geräten.
   Port 5683). Stelle diesen Port nicht durch Routerfreigaben ins Internet.
 - Die implementierte Philips-Protokollverschlüsselung ist kein Nachweis einer
   modernen, gegenseitig authentifizierten Vertrauensbeziehung. Betreibe Gerät und
-  Client in einem kontrollierten lokalen Netz.
+  Client in einem kontrollierten lokalen Netz. Die `/sys/dev/sync`-Antwort
+  initialisiert einen Richtungszähler; Schlüssel und IV werden pro Nachricht aus
+  deren sichtbarem Hex-Präfix abgeleitet. Der häufig verwendete Begriff
+  „Session-Key“ darf nicht als dauerhaft geheimer AES-Schlüssel verstanden werden.
 - Diagnoseberichte können Gerätekennungen, Hostadressen, lokale Programmpfade,
   Status und Nutzungsinformationen enthalten. Die Kopierfunktion anonymisiert
   sie **nicht automatisch**. Vor einer Veröffentlichung manuell prüfen.

@@ -45,6 +45,9 @@ bewusste Entscheidung der testenden Person.
   Timeout-Verhalten. Rückwärtskompatibilität gehört in die Beschreibung.
 - Neue Oberflächenzustände bitte mit synthetischen Daten abbilden. Keine privaten
   Screenshots oder Netzwerkaufzeichnungen einchecken.
+- Erkenntnisse aus privaten Mitschnitten nur anonymisiert mit Paketart, relativer
+  Zeit, Zählerverlauf und Interpretationsgrenzen dokumentieren. Keine PCAP-/LZ4-
+  Datei oder Gerätekennung in Repository, Release-Anhang oder Testfixture übernehmen.
 - Nutze C++17, bestehende Qt-Konventionen und vier Leerzeichen. Formatiere keine
   unbeteiligten Dateien neu. Keine neuen Abhängigkeiten ohne Begründung.
 - Prüfe Warnungen und dokumentiere übersprungene Tests sowie nicht getestete

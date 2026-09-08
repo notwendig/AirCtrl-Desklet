@@ -76,6 +76,11 @@ Die native Fensterverwaltung, Clipboard-/Popup-Verhalten, Tray und Autostart
 müssen zusätzlich interaktiv geprüft werden. Simuliertes Wayland-Routing ist
 kein Test unter einem echten Compositor. Ausgelassene Tests sind kein Erfolg.
 Der konkrete geprüfte Stand steht in [VALIDATION.md](../VALIDATION.md).
+Die reale v1.04-Paketprüfung ist getrennt unter
+[PROTOCOL_VALIDATION_2026-09-08.md](PROTOCOL_VALIDATION_2026-09-08.md)
+dokumentiert. Sie ist ein externer Hardwarebefund und ersetzt weder den
+Loopback-Test noch eine reproduzierbare Gerätesimulation. Rohmitschnitte bleiben
+privat und werden vom Repositoryprüfer als öffentliche Quelldatei abgelehnt.
 
 Optional kann der D-Bus-Test in einer isolierten Testsitzung laufen:
 
@@ -103,6 +108,12 @@ Builds, Git-Metadaten, SDKs, Einstellungen und Mitschnitte werden nicht verpackt
 Bereits vorhandene Ausgabedateien werden nicht überschrieben. Für einen erneuten
 Versuch einen anderen Ausgabepfad mit `--output /absoluter/pfad/datei.zip` wählen.
 Die reproduzierbare ZIP-Struktur ersetzt keine signierte Herkunftsbestätigung.
+Das Übergabe-ZIP kann zusätzlich `einspielen-v1.04.sh` enthalten. Dieses Skript
+prüft ein sauberes vorhandenes Git-Arbeitsverzeichnis, kopiert nur die durch die
+Repository-Positivliste freigegebenen Dateien, baut und testet, installiert
+unter `~/.local` und erstellt danach Commit und annotierten Tag. Der abschließende
+Push erfolgt atomar über den ausdrücklich gesetzten SSH-Remote und niemals mit
+`--force`. Das Skript ist kein CI-Ersatz; der GitHub-Lauf beginnt erst nach dem Push.
 
 ## Vorschauen ohne Gerät
 

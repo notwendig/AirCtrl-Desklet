@@ -110,7 +110,11 @@
 -- ddp          ausgewählte Anzeige; 0=IAI, 1=PM2,5, 2=Gas in Referenzen;
 --              weitere Werte sind nicht gesichert
 -- rddp         zusätzliches Anzeigefeld; Zuordnung nicht gesichert
--- dtrs         zusätzliches Statusfeld; Bedeutung/Einheit nicht gesichert
+-- dtrs         vermutlich verbleibende Minuten des Geräte-Abschalttimers:
+--              AC2729/10, Mitschnitt 2026-09-08: dt=6 -> dtrs=360,
+--              etwa 60 s später 359. Beobachtung, keine Philips-Spezifikation.
+--              Nur lesen; fehlt das Feld, ist es nil. dt bleibt Stunden.
+--              Unabhängig von lokalen Tag/Nacht-Regeln (airctrl.schedule).
 -- otacheck     vermutlich interne Firmware-Update-Prüfung
 -- wifilog      vermutlich interne WLAN-Protokollierung
 --

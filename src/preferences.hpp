@@ -5,7 +5,7 @@
 #include <QFont>
 #include <QStringList>
 struct Preferences {
-    QString host = "192.168.77.5";
+    QString host = "AC2729-10";
     int port = 5683;
     int interval = 10;
     int ageWarningSeconds = 45;

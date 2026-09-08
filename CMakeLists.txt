@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(airctrl_desklet VERSION 1.03 LANGUAGES C CXX)
+project(airctrl_desklet VERSION 1.04 LANGUAGES C CXX)
 configure_file(src/version.hpp.in generated/airctrl_version.hpp @ONLY)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/examples/automation.lua" AIRCTRL_AUTOMATION_EXAMPLE)
 configure_file(src/automation_example.hpp.in generated/airctrl_automation_example.hpp @ONLY)

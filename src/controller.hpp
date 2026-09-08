@@ -46,23 +46,22 @@ private:
     void abortObserver(const QString& reason);
     void observerFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void observationFailed(const QString& reason);
-    void launchWrite(const QStringList& tail);
-    void writeFinished(int exitCode, QProcess::ExitStatus exitStatus);
+    void launchWrite(const QJsonObject& values);
     void failCommand(const QString& reason);
     void setBusy(bool busy);
     QString addressError() const;
-    QString executable_, host_ = "192.168.77.5";
+    QString executable_, host_ = "AC2729-10";
     int port_ = 5683, reconnectMs_ = 10000;
     int startupMs_ = 125000; // 60 s sync + 60 s first status + startup reserve
     int idleMs_ = 95000;    // backend has a 90 s observation idle timeout
     int writeMs_ = 25000, confirmationMs_ = 90000;
     bool active_ = false, busy_ = false, hasStatus_ = false;
-    bool observerStopping_ = false, restartObserver_ = false, writerStopping_ = false;
+    bool observerStopping_ = false, restartObserver_ = false;
     bool awaitingConfirmation_ = false;
     quint64 statusCount_ = 0, observationStarts_ = 0;
-    QString progress_, observerProblem_, writerProblem_;
-    QProcess observer_, writer_;
+    quint64 nextCommandId_ = 1, pendingCommandId_ = 0;
+    QString progress_, observerProblem_;
+    QProcess observer_;
     QTimer reconnect_, observationWatchdog_, observerStopWatchdog_, writeWatchdog_, confirmation_;
-    QByteArray stream_, observerError_, writerError_;
-    qsizetype writerBytes_ = 0;
+    QByteArray stream_, observerError_;
 };

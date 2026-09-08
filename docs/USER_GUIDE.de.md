@@ -1,12 +1,14 @@
-# Philips AirControl – Qt6-Gerätepanel v1.03
+# Philips AirControl – Qt6-Gerätepanel v1.04
 
 Kompaktes C++/Qt6-Desktopwidget für den Philips AC2729/10 unter
 Cinnamon. Als Geräteadresse sind IPv4, IPv6 oder ein DNS-/mDNS-Hostname möglich;
-voreingestellt ist **192.168.77.5**, UDP-Port **5683**.
+voreingestellt ist **AC2729-10**, UDP-Port **5683**.
 Der bereits am Gerät funktionierende C++-CoAP-Code ist vollständig enthalten.
 
-**v1.03** kennzeichnet die Hosteingabe ausdrücklich und ergänzt die vollständige
-kommentierte Lua-Referenz. Die seit v1.02 vorhandene, standardmäßig ausgeschaltete
+**v1.04** verwendet genau einen dauerhaften UDP-I/O-Socket samt synchronisiertem
+Protokollzustand für Status und Schaltbefehle. Erst ein Status-Timeout schließt diese Sitzung und öffnet
+nach der Wiederverbindung einen neuen Socket mit neuer Synchronisierung. Die seit
+v1.02 vorhandene, standardmäßig ausgeschaltete
 Lua-Automatik verarbeitet Ereignisse und lokale Zeitpläne. Das Beispiel schaltet Tag/Nacht; alle Aufträge
 verwenden die vorhandene Feldprüfung und bestätigte Gerätesteuerung.
 Änderungsübersicht: [CHANGELOG.md](../CHANGELOG.md). Prüfungen und verbleibende
@@ -26,7 +28,8 @@ Buttonleiste und Messwerten. Symbole, Schrift und Farben bleiben skalierbar;
 die erprobte Dauerbeobachtung und Gerätesteuerung sind unverändert.
 
 Seit Version 0.3.5 ersetzen wir wiederholte Einzelabfragen durch eine dauerhafte
-CoAP-Beobachtung (`status-observe`). Schaltbefehle beenden diese Beobachtung nicht.
+CoAP-Beobachtung. Seit v1.04 wird sie für einen Schaltbefehl nur kurz abgemeldet
+und danach auf demselben UDP-Socket wieder angemeldet.
 Die im Mitschnitt beobachteten 18–19 Sekunden zwischen Meldungen lösen keinen
 Offline-Wechsel mehr aus. Power bleibt wie in 0.3.4 immer anklickbar:
 orange ohne Verbindung, weiß bei „aus“, grün bei „an“.
@@ -174,15 +177,15 @@ Die Bedeutung der Filterwechsel- und Reinigungshinweise beschreibt auch
 
 Das Statusfeld behält beim Statuswechsel seine Höhe. Embleme folgen Schriftgröße und
 Vordergrundfarbe; Wartungshinweise bleiben orange. Ihre Tooltips erklären den
-Zustand und das auslösende Statusfeld. Linksklick oder Rechtsklick öffnet das
+Zustand und das auslösende Statusfeld. Nur ein Rechtsklick öffnet das
 Kontextmenü; Ziehen verschiebt das Widget wie bisher. Es gibt keine zusätzlichen
 Geräteabfragen und keine neuen Schaltbefehle.
 
 ## Kontextmenü und Darstellung
 
-**Kurzer Linksklick auf einen Messwert oder Rechtsklick auf das Widget** öffnet
-das Kontextmenü. Seit Version 0.3.1 werden die Maustasten direkt verarbeitet, auch über
-Wertefeldern und Gerätetasten. Ziehen und kurzer Klick werden unterschieden.
+**Nur ein Rechtsklick auf das Widget** öffnet das Kontextmenü. Die linke
+Maustaste bedient die Gerätetasten, öffnet die Alarmdetails über den Statuskreis
+oder verschiebt das Widget beim Ziehen; sie öffnet niemals das Kontextmenü.
 Im Tray-Menü gibt es zusätzlich „Menü / Darstellung …“.
 
 **Rechtsklick → Fensterdekoration ausblenden:**
@@ -299,7 +302,6 @@ dort gibt es zusätzlich „Position festlegen …“ für X/Y-Koordinaten.
 
 **Rechtsklick:** Darstellung, angezeigte Werte, Aktualisieren, Verbindung/Autostart,
 Diagnose, Position sperren und Beenden. Im Menü steht auch der Verbindungsstatus.
-Ein kurzer Linksklick auf einen Wert öffnet dasselbe Menü.
 Bei aktivem Widget funktioniert auch die Menütaste oder **Umschalt+F10**.
 **F5:** Statusverbindung ausdrücklich neu starten. **F1:** Diagnose öffnen.
 **Diagnose:** Der erste Reiter zeigt für jeden empfangenen Geräte-Tag den
@@ -336,7 +338,13 @@ Timer, Wasserstatus, Filterzähler, Firmware, WLAN und Gerätekennungen. Die
 Filterzähler werden als Restbetriebsstunden beschrieben, wie sie auch von
 [py-air-control](https://github.com/rgerganov/py-air-control#usage-in-the-local-network)
 interpretiert werden. Das Programm rundet sie nicht in Kalenderfristen um.
-Unbekannte oder nicht zuverlässig dokumentierte Felder wie `dtrs`, `rddp`,
+`dtrs` deutet im AC2729/10-Mitschnitt vom 2026-09-08 auf verbleibende Minuten
+des Geräte-Abschalttimers: nach `dt=6` folgten `dtrs=360` und etwa 60 Sekunden
+später `359`. Das ist ein Gerätebefund, keine bestätigte Philips-Spezifikation.
+`dt` bleibt die eingestellte Stundenzahl; `dtrs` wird weder geschrieben noch für
+Alarme verwendet.
+
+Andere unbekannte oder nicht zuverlässig dokumentierte Felder wie `rddp`,
 `aqit_ext` und fremde künftige Tags werden entsprechend gekennzeichnet. Der
 Rohwert bleibt erhalten; insbesondere aus einem unbekannten `err`-Code wird kein
 gesicherter Wartungsalarm abgeleitet. Die bekannten Grundzuordnungen folgen der
@@ -366,10 +374,11 @@ werden bis zu dessen Rückmeldung ignoriert. Es werden keine Doppelbefehle vorge
 
 ## Verbindung und Rückmeldungen
 
-Ein langlebiger Empfänger ruft einmal `status-observe -J` auf. Jede vollständige
-JSON-Zeile wird sofort verarbeitet, auch wenn Zeilen über mehrere Prozessausgaben
-verteilt sind oder mehrere Meldungen zusammen eintreffen. Es gibt keinen
-periodischen Neustart des Empfängers und keine zyklische Neusynchronisierung.
+Ein langlebiger Backend-Prozess ruft `session -J` auf und besitzt genau einen
+UDP-Socket sowie einen synchronisierten Protokollzustand. Jede getypte JSON-Zeile wird
+sofort verarbeitet, auch wenn Zeilen über mehrere Prozessausgaben verteilt sind
+oder mehrere Meldungen zusammen eintreffen. Es gibt keinen periodischen Neustart
+und keine zyklische Neusynchronisierung.
 
 | Grenze | Einstellung seit 0.3.5 |
 |---|---|
@@ -377,19 +386,33 @@ periodischen Neustart des Empfängers und keine zyklische Neusynchronisierung.
 | Gesamter Anlauf-Watchdog | 125 s einschließlich Startreserve |
 | Keine weiteren Statusmeldungen | Backend beendet nach 90 s; zusätzlicher GUI-Watchdog nach 95 s |
 | Wiederverbindung nach Fehler | Standard 10 s; unter Einstellungen 5–300 s |
-| Schaltanfrage | 10 s je Anfrage, Prozess-Watchdog 25 s |
+| Schaltanfrage | 10 s je Anfrage, GUI-Watchdog 25 s |
 | Statusbestätigung nach angenommener Änderung | Bis zu 90 s |
 
 Der bisher gespeicherte Intervallwert wird jetzt als **Wiederverbindungspause**
 verwendet; er bestimmt nicht mehr, wie oft neue Messwerte empfangen werden.
-Die Meldungsrate bestimmt das Gerät. F5 startet die Beobachtung nur auf ausdrücklichen
-Benutzerwunsch neu. Ein gesunder Empfänger bleibt ansonsten bestehen.
+Die Meldungsrate bestimmt das Gerät. F5 startet die I/O-Sitzung nur auf ausdrücklichen
+Benutzerwunsch neu. Eine gesunde Sitzung bleibt ansonsten bestehen.
 
-Zum Schalten läuft höchstens ein zusätzlicher Backend-Prozess auf einem eigenen
-UDP-Socket. Die Beobachtung bleibt dabei erhalten. Während der Schreibanfrage
-empfangene Meldungen können die Änderung noch nicht bestätigen. Erst eine neue
-Statusmeldung nach der Schreibannahme wird zur Rückmeldung verwendet.
+Zum Schalten wird die Observe-Anfrage sauber abgemeldet. Der Control-Aufruf läuft
+danach über denselben Backend-Prozess, UDP-Socket und Sendezähler. Anschließend
+wird Observe auf demselben Socket wieder angemeldet. Erst eine neue Statusmeldung
+nach der Schreibannahme wird zur Rückmeldung verwendet.
 Der angezeigte Gerätezustand wird nie optimistisch umgeschaltet.
+
+Bleibt eine erste oder spätere Statusmeldung bis zum Timeout aus, endet der
+Backend-Prozess: der alte Socket wird geschlossen. Nach der eingestellten
+Wiederverbindungspause öffnet der Ersatzprozess einen neuen Socket und führt
+genau eine neue `/sys/dev/sync`-Synchronisierung aus. Ein fehlgeschlagener
+Schaltbefehl allein erneuert Socket und Schlüssel nicht; die Beobachtung wird
+auf derselben Sitzung fortgesetzt.
+
+Die 90-Sekunden-Frist ist der Zeitpunkt, an dem eine ausgebliebene weitere
+Statusmeldung als Fehler behandelt wird. Wiederverbindungspause und erneuter
+Anlauf folgen danach. Im realen v1.04-Mitschnitt entstanden dadurch insgesamt
+136,1 Sekunden zwischen dem letzten Status der alten und dem ersten Status der
+neuen Sitzung: 90,0 s bis zur Abmeldung, 9,7 s bis zum neuen Sync und 36,4 s
+von der neuen Anmeldung bis zum Status.
 
 Weitere Klicks während eines laufenden Befehls werden nicht gesammelt.
 Schreibbefehle werden **nie automatisch wiederholt**, auch nicht nach einem
@@ -398,15 +421,15 @@ Offline-Power-Klick, der einmal `pwr=1` versucht, ohne die erste Statusmeldung
 abwarten oder die Beobachtung abbrechen zu müssen.
 
 Ein abgelehnter oder nicht bestätigter Schaltbefehl ist getrennt vom Zustand der
-Beobachtung: Ein weiterhin gültiger Empfang bleibt online. Verbindungsfehler
+I/O-Sitzung: Ein anschließend wieder gültiger Empfang bleibt online. Verbindungsfehler
 setzen das Widget offline; letzte Werte bleiben abgeblendet sichtbar. Die Diagnose
-zeigt Empfangsphase, Zahl der Statusmeldungen, Beobachtungsstarts, Wartefristen
-und den letzten Schaltfehler. So lässt sich prüfen, ob der Empfänger wirklich
-dauerhaft läuft (normalerweise ein Beobachtungsstart).
+zeigt Empfangsphase, Zahl der Statusmeldungen, Sitzungsstarts, Wartefristen
+und den letzten Schaltfehler. So lässt sich prüfen, ob die Sitzung wirklich
+dauerhaft läuft (normalerweise ein Start).
 
-Unter Linux bekommen die Backend-Kinder ein Beendigungssignal, wenn das Widget
+Unter Linux bekommt der Backend-Prozess ein Beendigungssignal, wenn das Widget
 beendet oder hart abgebrochen wird. Somit bleibt auch nach `pkill` kein dauerhafter
-Empfänger zurück. Ein normaler Stopp beendet die Beobachtung zunächst über SIGTERM;
+Empfänger zurück. Ein normaler Stopp beendet die Sitzung zunächst über SIGTERM;
 antwortet der Prozess nicht, wird er nach einer Sekunde beendet.
 
 ### Grundlage aus dem Gerätemitschnitt
@@ -425,8 +448,25 @@ von 0.3.5 bestätigt am echten Gerät eine 6 Minuten 25 Sekunden lange Beobachtu
 39 gültige Statusmeldungen und 13 erfolgreich zurückgemeldete Schaltbefehle ohne
 Neuanmeldung. Die Emblemzeile von 0.3.6 wurde hier mit Qt-Offscreen getestet;
 physische Wartungsalarme konnten nicht ausgelöst oder überprüft werden.
-Der CoAP-Protokollcode selbst ist unverändert. AT-SPI-Meldungen der
+AT-SPI-Meldungen der
 Desktop-Bedienungshilfen sind nicht Gegenstand dieses Updates.
+
+### v1.04-Gerätemitschnitte vom 2026-09-08
+
+Die beiden späteren Aufzeichnungen bestätigen 148 gültige Statusmeldungen und
+17/17 angenommene Schaltbefehle. Jeder Zielwert steht bereits im unmittelbar
+nächsten Status, 45–97 ms nach dem Senden. Sämtliche Schaltungen verwenden den
+Clientport `38577`; vor und nach dem Control wird nur Observe ab- und neu
+angemeldet. Der Control-Zähler läuft von `0x36A2D909` bis `0x36A2D919` ohne
+Lücke und ohne `/sys/dev/sync`.
+
+Der Timeout-Fall wechselt dagegen von Port `34482` auf `38577` und enthält eine
+neue Synchronisierung. Eine getrennte 65,8-s-Pause beim ausgeschalteten Gerät
+bleibt unter der 90-s-Frist und erneuert die Sitzung nicht. Die Aufzeichnungen
+enthalten keine relevanten ICMP-Fehler und melden keine verworfenen Pakete.
+Die Ursache der 90-s-Sendepause ist nicht bekannt; zwischen den Dateien liegt
+außerdem ein nicht aufgezeichneter Zeitraum. Einzelheiten:
+[Protokollvalidierung](PROTOCOL_VALIDATION_2026-09-08.md).
 
 ## Desktop und Autostart
 

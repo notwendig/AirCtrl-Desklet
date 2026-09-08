@@ -22,6 +22,9 @@ public:
 struct ClientOptions {
     std::uint16_t port = 5683;
     std::chrono::milliseconds timeout{10000};
+    // Control requests can use a shorter deadline than the first Observe
+    // response while both operations share one transport/session.
+    std::chrono::milliseconds control_timeout{10000};
     // Zero: wait indefinitely between notifications. First response uses timeout.
     std::chrono::milliseconds observe_idle_timeout{0};
     std::function<void(const std::string&)> log;
@@ -57,7 +60,7 @@ public:
     std::future<void> observe_status_async(StatusCallback callback,
                                            StopPredicate stop = {});
     // One operation per client at a time; concurrent calls fail with logic_error.
-    // Use separate Client instances for observation and concurrent controls.
+    // Sequential Observe/control operations reuse the same UDP transport and key.
 private:
     struct Impl;
     std::shared_ptr<Impl> impl_;

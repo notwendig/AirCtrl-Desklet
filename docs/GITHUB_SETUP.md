@@ -3,6 +3,28 @@
 Das öffentliche Repository ist `notwendig/AirCtrl-Desklet`. Jürgen führt als
 Maintainer Commits, Tags und Veröffentlichungen nach seiner Prüfung selbst aus.
 
+## Direkte Aktualisierung des vorhandenen Originals
+
+Das v1.04-Übergabe-ZIP enthält `AirCtrl-Desklet/einspielen-v1.04.sh`. Das Skript
+arbeitet standardmäßig ausschließlich auf `~/Projects/Qt/AirCtrl-Desklet`. Es
+verlangt einen sauberen Git-Arbeitsbaum, kopiert anhand der öffentlichen
+Positivliste, prüft Repository, Build und Tests, installiert anschließend unter
+`~/.local`, erstellt den Commit und den annotierten Tag `v1.04` und pusht Branch
+plus Tag atomar.
+
+```bash
+cd ~/Downloads
+unzip -o AirCtrl-Desklet-1.04-dokumentiert.zip
+bash AirCtrl-Desklet/einspielen-v1.04.sh
+```
+
+Das Remote wird ausdrücklich auf SSH gesetzt:
+`git@github.com:notwendig/AirCtrl-Desklet.git`. Das Skript verwendet weder HTTPS
+noch Force-Push. Bei ungesicherten Änderungen, vorhandenem abweichendem Tag,
+fehlender Git-Identität, fehlgeschlagenen Tests oder Pushfehler bricht es ab.
+Mitschnitte werden weder kopiert noch eingecheckt. Für ein bewusst abweichendes
+Projektverzeichnis kann `AIRCTRL_PROJECT_DIR` gesetzt werden.
+
 ## 1. Lokal prüfen
 
 Entpacke den ZIP in ein neues Verzeichnis; mische ihn nicht ungeprüft mit einer
@@ -20,8 +42,8 @@ Installationsabhängigkeiten: [DEVELOPMENT.md](DEVELOPMENT.md).
 Prüfe README-Bilder, Rollen, Lizenz, Quellcode und Dateien vor der Freigabe.
 Insbesondere keine echten Diagnoseberichte, Gerätekennungen, Mitschnitte,
 Zugangsdaten oder Buildverzeichnisse veröffentlichen. `.gitignore` allein entfernt
-keine bereits versionierten Dateien. Der historische Standardhost im Quellcode
-ist aus Kompatibilitätsgründen erhalten; er ist keine automatische Geräteerkennung.
+keine bereits versionierten Dateien. Der Standardhost `AC2729-10` ist keine
+automatische Geräteerkennung und muss im lokalen Namensdienst auflösbar sein.
 
 ## 2. Neues Repository lokal initialisieren
 
@@ -39,7 +61,7 @@ git diff --cached
 Prüfe die vorgemerkten Dateien. Erst danach:
 
 ```bash
-git commit -m "Prepare AirCtrl-Desklet v1.03"
+git commit -m "v1.04: document real-device I/O validation"
 ```
 
 Git verwendet deine vorhandene Identität. Falls sie fehlt, entscheide selbst
@@ -80,18 +102,18 @@ Passende Topics: `qt6`, `cpp17`, `linux`, `cinnamon`, `philips`, `air-purifier`,
 - Wenn verfügbar, Secret Scanning/Push Protection einschalten. Das ersetzt
   keine manuelle Prüfung von Gerätenummern und Screenshots.
 
-## 5. Release v1.03 als Entwurf
+## 5. Release v1.04 als Entwurf
 
 Erst nach erfolgreicher CI und lokalem Gegenprüfen:
 
 ```bash
-git tag -a v1.03 -m "AirCtrl-Desklet v1.03"
-git push origin v1.03
+git tag -a v1.04 -m "AirCtrl-Desklet v1.04"
+git push origin v1.04
 ```
 
 Der vorbereitete Release-Workflow baut und testet den Tag erneut. Er erzeugt
 einen **nicht veröffentlichten Entwurf** mit Quell-ZIP, SHA-256-Datei und den
-[Release-Notizen](releases/v1.03.md). Prüfe Dateien und Grenzen, bevor du im
+[Release-Notizen](releases/v1.04.md). Prüfe Dateien und Grenzen, bevor du im
 GitHub-Release auf „Publish release“ klickst. Bei Wiederholung wird ein
 vorhandener Release nicht überschrieben.
 

@@ -190,9 +190,8 @@ Desklet::Desklet(Preferences preferences, QString backend, bool demo)
 }
 void Desklet::paintEvent(QPaintEvent*) {
     QPainter p(this); p.setCompositionMode(QPainter::CompositionMode_Source);
-    p.fillRect(rect(),Qt::transparent); p.setRenderHint(QPainter::Antialiasing);
     auto color=preferences_.background; color.setAlphaF((100-preferences_.transparency)/100.0);
-    p.setPen(Qt::NoPen); p.setBrush(color); p.drawRoundedRect(rect(),5,5);
+    p.fillRect(rect(),color);
 }
 void Desklet::resizeToContent() {
     layout()->invalidate(); layout()->activate();
@@ -375,7 +374,7 @@ void Desklet::updateFooter() {
     }
     const auto connection=demo_ ? QString("Vorschau – keine Gerätesteuerung") : connected_ ? QString("Verbunden") : QString("Keine Verbindung");
     const auto detail=connection+"\n"+preferences_.host+"\n"+age+"\n"+notice_+
-        "\nKlick auf Wert oder Rechtsklick: Menü · Ziehen: Verschieben · F1: Diagnose";
+        "\nRechtsklick: Menü · Ziehen: Verschieben · F1: Diagnose";
     setToolTip(detail); setAccessibleDescription(detail);
     for(auto* value:values_) {
         value->setToolTip(detail); value->setAccessibleDescription(detail);
@@ -603,8 +602,8 @@ bool Desklet::eventFilter(QObject* watched, QEvent* event) {
     if (event->type() == QEvent::MouseButtonPress) {
         const auto* mouse=static_cast<QMouseEvent*>(event);
         if (mouse->button()==Qt::RightButton) { rightPressed_=true; return true; }
-        // Device buttons keep their left-click action. Only values and free
-        // space provide click-to-menu and drag-to-move.
+        // Device buttons keep their left-click action. Values and free space
+        // use the left button only for moving; menus are right-click only.
         if (mouse->button()==Qt::LeftButton && !qobject_cast<QAbstractButton*>(watched)) {
             leftPressed_=true; mouseMoved_=false;
             pressPosition_=mouse->globalPosition().toPoint(); dragOffset_=pressPosition_-pos();
@@ -632,7 +631,6 @@ bool Desklet::eventFilter(QObject* watched, QEvent* event) {
             if (mouseMoved_) {
                 if (!preferences_.locked && (preferences_.desktop || preferences_.hideDecoration)) rememberPosition();
             } else if(watched==monitorBar_) QTimer::singleShot(0,this,&Desklet::showAlarms);
-            else requestMenu(mouse->globalPosition().toPoint());
             return true;
         }
     }
@@ -756,7 +754,7 @@ void Desklet::showSettings() {
     QDialog dialog(this); dialog.setWindowTitle("AirControl – Einstellungen");
     auto* layout = new QVBoxLayout(&dialog); auto* form = new QFormLayout;
     QLineEdit host(preferences_.host); host.setObjectName("deviceHost"); host.setMinimumWidth(240);
-    host.setPlaceholderText("192.168.77.5 oder luftreiniger.local");
+    host.setPlaceholderText("AC2729-10");
     host.setToolTip("IPv4-, IPv6-Adresse oder DNS-/mDNS-Hostname; ohne http:// und ohne Port.");
     QSpinBox port; port.setRange(1,65535); port.setValue(preferences_.port);
     QSpinBox interval; interval.setRange(5,300); interval.setSuffix(" Sekunden"); interval.setValue(preferences_.interval);
@@ -764,7 +762,7 @@ void Desklet::showSettings() {
     desktop.setToolTip("Die Fensterdekoration wird separat im Kontextmenü ein- oder ausgeblendet.");
     QCheckBox autostart("Bei der Anmeldung starten"); autostart.setChecked(QFileInfo::exists(autostartPath()));
     interval.setToolTip("Pause vor einem neuen Verbindungsversuch nach einem Fehler. Statusmeldungen kommen automatisch vom Gerät.");
-    form->addRow("IP-Adresse oder Hostname", &host); form->addRow("UDP-Port", &port); form->addRow("Wiederverbindung nach Fehler", &interval);
+    form->addRow("IP oder Host", &host); form->addRow("UDP-Port", &port); form->addRow("Wiederverbindung nach Fehler", &interval);
     layout->addLayout(form); layout->addWidget(&desktop); layout->addWidget(&autostart);
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel);
     buttons->button(QDialogButtonBox::Save)->setText("Speichern"); buttons->button(QDialogButtonBox::Cancel)->setText("Abbrechen");
@@ -798,7 +796,7 @@ void Desklet::showDetails() {
     auto* layout = new QVBoxLayout(&dialog);
     auto* tabs = new QTabWidget(&dialog); tabs->setObjectName("diagnosticTabs");
     const auto heading = QString("AirControl %1\nGerät: %2\nPlattform: %3\nBackend: %4\n"
-                                 "Empfang: dauerhafte CoAP-Beobachtung (status-observe)\n"
+                                 "Empfang: dauerhafte CoAP-I/O-Sitzung (ein UDP-Socket)\n"
                                  "Anlauf: 60 s je Anfrage · Datenpause: 90 s · Schaltanfrage: 10 s\nLetzter Empfang: %5\n\n")
         .arg(QCoreApplication::applicationVersion(),endpointText(preferences_.host,preferences_.port),
             QGuiApplication::platformName(),controller_.backendPath(),
@@ -850,10 +848,10 @@ void Desklet::showDetails() {
         {"Desktopsitzung",qEnvironmentVariable("XDG_SESSION_TYPE","unbekannt"),"Vom Desktop gemeldeter Sitzungstyp. Er kann vom Qt-Fenster-Backend abweichen."},
         {"Wayland-Behandlung",waylandSession_ ? "ja" : "nein","Ob das Widget seine Wayland-spezifische Fensterbehandlung verwendet."},
         {"Backend",controller_.backendPath(),"Pfad des separaten C++-Programms für die verschlüsselte CoAP-Kommunikation."},
-        {"Empfangsmodus","Dauerhafte Beobachtung","Ein langlebiger status-observe-Prozess empfängt neue Meldungen ohne regelmäßige Einzelabfragen."},
-        {"Empfangsphase",controller_.observationProgress(),"Fortschritt des Empfängers; der Hintergrundempfang sperrt keine Bedienelemente."},
+        {"Empfangsmodus","Eine dauerhafte I/O-Sitzung","Ein Backend-Prozess verwendet denselben UDP-Socket und synchronisierten Protokollzustand nacheinander für Statusbeobachtung und Schaltbefehle."},
+        {"Empfangsphase",controller_.observationProgress(),"Fortschritt der I/O-Sitzung; der Hintergrundempfang sperrt keine Bedienelemente."},
         {"Statusmeldungen",QString::number(controller_.statusCount()),"Anzahl gültiger Statuszeilen seit Programmstart."},
-        {"Datenalter",dataAgeSeconds()<0 ? "noch kein Status" : QString::number(dataAgeSeconds())+" s","Seit dem letzten gültigen Statuspaket; auch Pakete während eines Schreibbefehls zählen. Keine Rücksetzung durch Fehler oder Schalt-ACKs."},
+        {"Datenalter",dataAgeSeconds()<0 ? "noch kein Status" : QString::number(dataAgeSeconds())+" s","Seit dem letzten gültigen Statuspaket. Schalt-ACKs und Fehler setzen den Zähler nicht zurück."},
         {"Letztes Statuspaket",packetReceivedAt_.isValid() ? packetReceivedAt_.toString(Qt::ISODate) : "noch keines","Empfangszeit des letzten gültigen Pakets, unabhängig von der Bestätigung eines Schaltbefehls."},
         {"Datenalter-Grenzen",QString("Gelb ab %1 s; Rot ab %2 s").arg(preferences_.ageWarningSeconds).arg(preferences_.ageStaleSeconds),"Lokale Alarmgrenzen. Verbindungsfehler sind sofort rot. Der CoAP-Timeout wird dadurch nicht verändert."},
         {"Filter-Vorwarngrenze",QString::number(FilterWarningHours)+" Betriebsstunden","Lokale Desklet-Grenze für AC2729: A3, C7 und F1 einzeln gelb bei 1–120 h, rot bei 0 h. Keine gesichert dokumentierte Philips-Frühwarnschwelle; keine Bitmasken-Deutung von err."},
@@ -864,13 +862,13 @@ void Desklet::showDetails() {
         {"Letztes Lua-Ereignis",automation_.lastEvent().isEmpty() ? "—" : automation_.lastEvent(),"Zuletzt an on_event übergebenes Ereignis."},
         {"Letzte Lua-Aktion",automation_.lastAction().isEmpty() ? "—" : automation_.lastAction(),"Letzter von Lua angeforderter bzw. bestätigter Steuerauftrag."},
         {"Aktive Alarme",alertReport(activeAlerts_),"Warnungen aus bekannten Gerätestatusfeldern sowie Fehler beim Empfang oder Schalten. Unbekannte err-Codes werden nicht geraten."},
-        {"Beobachtungsstarts",QString::number(controller_.observationStarts()),"Ein Start im Normalbetrieb; weitere Starts nur nach Fehler, F5 oder geänderten Einstellungen."},
+        {"Beobachtungsstarts",QString::number(controller_.observationStarts()),"Ein Start der I/O-Sitzung im Normalbetrieb; weitere Starts nach Status-Timeout, Fehler, F5 oder geänderten Einstellungen."},
         {"CoAP-Anlauf","60 Sekunden je Anfrage","Synchronisierung und erste Statusantwort erhalten jeweils bis zu 60 Sekunden. Der Prozess-Watchdog erlaubt insgesamt 125 Sekunden."},
-        {"Maximale Datenpause","90 Sekunden","Erst nach längerem Ausbleiben von Statusmeldungen wird neu verbunden. Die beobachteten 18–19 Sekunden sind normale Pausen."},
-        {"Schaltbefehl","10 Sekunden je Anfrage","Separater Schreibprozess; maximal 25 Sekunden einschließlich Synchronisierung. Keine automatische Wiederholung."},
-        {"Statusbestätigung","90 Sekunden","Nach der Schreibannahme wird auf eine neue Meldung der laufenden Beobachtung gewartet."},
+        {"Maximale Datenpause","90 Sekunden","Erst nach längerem Ausbleiben von Statusmeldungen wird der I/O-Socket geschlossen und mit neuer Synchronisierung geöffnet. Die beobachteten 18–19 Sekunden sind normale Pausen."},
+        {"Schaltbefehl","10 Sekunden je Anfrage","Observe wird kurz abgemeldet; der Befehl nutzt denselben Socket und fortlaufenden Sendezähler. Keine automatische Wiederholung oder Neusynchronisierung bei einem Schaltfehler."},
+        {"Statusbestätigung","90 Sekunden","Nach der Schreibannahme wird Observe auf demselben Socket wieder angemeldet und die nächste Statusmeldung als Rückmeldung verwendet."},
         {"Wiederverbindung",QString::number(preferences_.interval)+" Sekunden","Pause vor einem neuen Empfangsversuch nach einem Fehler; kein Abfrageintervall."},
-        {"Letzter Empfang",updated_.isValid() ? updated_.toString(Qt::ISODate) : "noch keiner","Zeitpunkt des letzten in Werte und Embleme übernommenen Status; während eines Schreibbefehls kann ein jüngeres Paket vorliegen."}
+        {"Letzter Empfang",updated_.isValid() ? updated_.toString(Qt::ISODate) : "noch keiner","Zeitpunkt des letzten in Werte und Embleme übernommenen Status. Ein Schalt-ACK allein verändert ihn nicht."}
     };
     if(!error_.isEmpty()) connectionFields.append({"Letzter Fehler",error_,"Unveränderte letzte Fehlermeldung des Backends bzw. der Verbindungssteuerung."});
     if(!commandError_.isEmpty()) connectionFields.append({"Letzter Schaltfehler",commandError_,"Ein Schaltfehler bedeutet nicht automatisch, dass die weiterhin aktive Beobachtung offline ist."});

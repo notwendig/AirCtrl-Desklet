@@ -2,7 +2,7 @@
 
 **Dein Philips-Luftreiniger. Direkt auf dem Linux-Desktop.**
 
-C++17 · Qt 6 · Lua 5.4 · lokale CoAP-Kommunikation · MIT · Version **v1.03**
+C++17 · Qt 6 · Lua 5.4 · lokale CoAP-Kommunikation · MIT · Version **v1.04**
 
 [English](README.en.md) · [Bedienung](docs/USER_GUIDE.de.md) · [Entwicklung](docs/DEVELOPMENT.md) · [Änderungen](CHANGELOG.md)
 
@@ -26,7 +26,8 @@ Die Oberfläche ist derzeit deutschsprachig.
   Luftreinigung/2-in-1 und Abschalttimer.
 - Feuchte, Zielfeuchte, Temperatur, PM2,5 und IAI einzeln einblendbar.
 - Aktive Modus- und Wartungssymbole aus bestätigten Statusmeldungen.
-- Dauerhafte CoAP-Beobachtung statt zyklischer Einzelabfragen.
+- Ein dauerhafter UDP-Socket mit einmal synchronisiertem Protokollzustand für
+  Beobachtung und Schaltbefehle; automatische Erneuerung bei Status-Timeout.
 - Datenalter in Sekunden und separate Alarmglocke.
 - Filtervorwarnungen, Quittierung, Desktop-Benachrichtigungen und optionaler Ton.
 - Farben, Hintergrundtransparenz, Schrift, Fensterdekoration und Autostart im Kontextmenü.
@@ -64,8 +65,8 @@ Geräts verwenden:
 
 `192.0.2.10` und `luftreiniger.local` sind **nur Dokumentationsbeispiele**. Die tatsächliche Adresse
 anschließend unter **Rechtsklick → Verbindung und Autostart** dauerhaft speichern.
-`--host` gilt zunächst für diesen Start. Der historische Standard in v1.01 bleibt
-aus Kompatibilitätsgründen erhalten; er ist keine automatische Geräteerkennung.
+`--host` gilt zunächst für diesen Start. Voreingestellt ist `AC2729-10`; dies ist
+keine automatische Geräteerkennung und muss im lokalen Netz auflösbar sein.
 
 Installation unter `~/.local`, ohne `sudo` für das Installationsskript.
 Menüeintrag: **Philips AirControl**. Bestehende Einstellungen bleiben erhalten.
@@ -76,7 +77,7 @@ Update und Entfernen: [Bedienungsanleitung](docs/USER_GUIDE.de.md).
 
 | Aktion | Bedienung |
 |---|---|
-| Kontextmenü | Rechtsklick; alternativ Menütaste oder Umschalt+F10 |
+| Kontextmenü | Per Maus ausschließlich Rechtsklick; alternativ Menütaste oder Umschalt+F10 |
 | Verschieben | An Messwerten, Statussymbolen oder Kreisen ziehen; Positionssperre vorher lösen |
 | Fensterrahmen | Kontextmenü → Fensterdekoration ausblenden |
 | Diagnose | F1 oder Kontextmenü → Diagnose / Gerätedaten |
@@ -160,9 +161,23 @@ Vor dem Teilen Gerätekennungen, Namen, Netzwerkadressen und lokale Pfade entfer
 
 ## Kompatibilität und Testgrenzen
 
+Die beiden Gerätemitschnitte vom **8. September 2026** bestätigen den v1.04-
+Ablauf: **148 gültige Statusmeldungen**, **17 von 17 angenommene Schaltbefehle**
+mit passender nächster Statusmeldung nach **45–97 ms** und kein neuer UDP-Port
+oder Sync beim Schalten. Nach **90 s** ohne Status wird die alte Beobachtung
+abgemeldet; knapp 10 s später beginnt eine neue Sitzung. Im beobachteten Fall
+treffen nach insgesamt **136,1 s** wieder Daten ein. 90 s ist die Fehlerfrist,
+keine Zusage, dass dann bereits neue Daten vorliegen.
+
+Observe wird beim Schalten kurz ab- und wieder angemeldet, während der Socket
+bestehen bleibt. Eine 65,8-s-Pause bei ausgeschaltetem Gerät führt zu keinem
+Neustart. Zwischen den beiden Aufzeichnungen fehlen knapp neun Minuten; die
+Ursache der langen Sendepause ist nicht geklärt.
+[Paketbelege, Zähler und Grenzen](docs/PROTOCOL_VALIDATION_2026-09-08.md)
+
 | Umgebung | Stand |
 |---|---|
-| Philips AC2729/10 | Empfang und Steuerung am Gerät von Jürgen erprobt |
+| Philips AC2729/10 | v1.04: gemeinsamer UDP-Port, 17 Schaltungen und Wiederanlauf nach Status-Timeout im Gerätemitschnitt bestätigt |
 | Fedora 44 / Cinnamon / X11 (`xcb`) | Vom Nutzer bestätigt, einschließlich Diagnoseexport von v1.01 |
 | Wayland | Angepasste Fensterbehandlung vorhanden; kein vollständiger nativer Desktop-Test bestätigt |
 | Andere Philips-Modelle | Nicht freigegeben; Modellzuordnungen und Befehle können abweichen |

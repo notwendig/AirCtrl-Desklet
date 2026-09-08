@@ -145,10 +145,25 @@ private slots:
         QVERIFY(!c.busy()); QVERIFY(c.observing()); QCOMPARE(c.observationStarts(),quint64(1));
         QCOMPARE(calls().size(),1); QCOMPARE(errors.count(),0);
         const auto args=calls().first();
-        QVERIFY(args.contains("status-observe")); QVERIFY(!args.contains("status")); QVERIFY(!args.contains("set"));
+        QVERIFY(args.contains("session")); QVERIFY(!args.contains("status")); QVERIFY(!args.contains("set"));
         QCOMPARE(args[args.toVariantList().indexOf("--timeout")+1].toString(),QString("60"));
+        QCOMPARE(args[args.toVariantList().indexOf("--control-timeout")+1].toString(),QString("10"));
         QCOMPARE(args[args.toVariantList().indexOf("--idle-timeout")+1].toString(),QString("90"));
         c.stop();
+    }
+    void defaultHostIsAc2729Dash10() {
+        QCOMPARE(Preferences{}.host, QString("AC2729-10"));
+        QCOMPARE(Preferences::load().host, QString("AC2729-10"));
+        QSettings settings;
+        settings.setValue("device/host", "ac2729/10");
+        QCOMPARE(Preferences::load().host, QString("AC2729-10"));
+        QCOMPARE(settings.value("device/host").toString(), QString("AC2729-10"));
+        settings.setValue("device/host", "AC2729_10");
+        QCOMPARE(Preferences::load().host, QString("AC2729-10"));
+        settings.setValue("device/host", "192.168.77.5");
+        QCOMPARE(Preferences::load().host, QString("192.168.77.5"));
+        Controller controller(FAKE_BACKEND);
+        QCOMPARE(controller.host(), QString("AC2729-10"));
     }
     void realisticNineteenSecondPauseStaysOnline() {
         qputenv("AIRCTRL_TEST_TICK_MS","19000");
@@ -240,7 +255,7 @@ private slots:
         for(auto* button:buttons) QCOMPARE(button->isEnabled(),button==power);
         QTRY_COMPARE(calls().size(),2); QTest::qWait(250);
         QCOMPARE(status.count(),previous); QCOMPARE(accepted.count(),0); QVERIFY(c->busy());
-        QVERIFY(c->statusCount()>quint64(previous)); // old notifications arrived but cannot confirm
+        QCOMPARE(c->statusCount(),quint64(previous)); // one socket pauses Observe while control is pending
         QFile gate(temp_.filePath("write.ready")); QVERIFY(gate.open(QIODevice::WriteOnly)); gate.close();
         QTRY_COMPARE(accepted.count(),1); QTRY_VERIFY(!c->busy());
         QCOMPARE(power->toolTip(),QString("Gerät aus · Einschalten"));
@@ -269,7 +284,7 @@ private slots:
         c.stop(); QTest::qWait(150); QCOMPARE(status.count(),0); QCOMPARE(accepted.count(),0); QVERIFY(!c.busy());
         qunsetenv("AIRCTRL_TEST_READ_GATE"); qunsetenv("AIRCTRL_TEST_WRITE_GATE");
         c.start(); QTRY_VERIFY(!status.isEmpty());
-        QCOMPARE(calls().size(),3); QVERIFY(calls()[2].contains("status-observe"));
+        QCOMPARE(calls().size(),3); QVERIFY(calls()[2].contains("session"));
         QCOMPARE(status.last()[0].toJsonObject()["pwr"].toString(),QString("1")); c.stop();
     }
     void stopThenStartDuringStartup() {
@@ -304,20 +319,22 @@ private slots:
         QCOMPARE(calls().size(),2); c.stop();
     }
     void writeFailureDoesNotDropHealthyConnection() {
+        qputenv("AIRCTRL_TEST_MODE","write-failure");
         Desklet widget(Preferences{},FAKE_BACKEND); widget.showAndPosition(); widget.start();
         auto* c=widget.findChild<Controller*>();
         auto* power=static_cast<PanelButton*>(widget.findChild<QPushButton*>("power"));
         QSignalSpy errors(c,&Controller::failed), commandErrors(c,&Controller::commandFailed);
-        QTRY_VERIFY(c->observing()); qputenv("AIRCTRL_TEST_MODE","write-failure");
+        QTRY_VERIFY(c->observing());
         power->click(); QTRY_COMPARE(commandErrors.count(),1);
         QVERIFY(!c->busy()); QVERIFY(power->isEnabled()); QCOMPARE(power->statusColor(),QColor("#2ecc71"));
         QTest::qWait(350); QCOMPARE(calls().size(),2); QCOMPARE(errors.count(),0);
         power->click(); QTRY_COMPARE(commandErrors.count(),2); QCOMPARE(calls().size(),3); c->stop();
     }
     void writeWatchdogNoRetry() {
+        qputenv("AIRCTRL_TEST_MODE","write-timeout");
         Controller c(FAKE_BACKEND); c.setWatchdogInterval(200);
         QSignalSpy errors(&c,&Controller::failed), commandErrors(&c,&Controller::commandFailed);
-        c.start(); QTRY_VERIFY(c.observing()); qputenv("AIRCTRL_TEST_MODE","write-timeout");
+        c.start(); QTRY_VERIFY(c.observing());
         c.setPower(false); QTRY_COMPARE(commandErrors.count(),1);
         QVERIFY(!c.busy()); QVERIFY(c.observing()); QTest::qWait(300);
         QCOMPARE(calls().size(),2); QCOMPARE(errors.count(),0); c.stop();
@@ -330,22 +347,21 @@ private slots:
         QTRY_COMPARE(commandErrors.count(),1); QVERIFY(!c.busy()); QVERIFY(c.observing());
         QTest::qWait(250); QCOMPARE(calls().size(),2); QCOMPARE(errors.count(),0); c.stop();
     }
-    void pendingWriteSurvivesObserverReconnectWithoutReplay() {
+    void pendingWriteFailsWhenIoSessionReconnectsWithoutReplay() {
         qputenv("AIRCTRL_TEST_MODE","exit-stream");
         qputenv("AIRCTRL_TEST_WRITE_GATE",temp_.filePath("write.ready").toUtf8());
         Controller c(FAKE_BACKEND); c.setReconnectDelay(200);
-        QSignalSpy errors(&c,&Controller::failed), accepted(&c,&Controller::controlAccepted), status(&c,&Controller::statusReceived);
+        QSignalSpy errors(&c,&Controller::failed), commandErrors(&c,&Controller::commandFailed),
+            accepted(&c,&Controller::controlAccepted), status(&c,&Controller::statusReceived);
         c.start(); QTRY_VERIFY(c.observing()); c.setPower(false);
-        QTRY_COMPARE(errors.count(),1); QVERIFY(c.busy());
+        QTRY_COMPARE(errors.count(),1); QTRY_COMPARE(commandErrors.count(),1); QVERIFY(!c.busy());
         qputenv("AIRCTRL_TEST_MODE",""); QTRY_COMPARE(c.observationStarts(),quint64(2));
-        QTRY_VERIFY(c.observing()); QVERIFY(c.busy());
-        QFile gate(temp_.filePath("write.ready")); QVERIFY(gate.open(QIODevice::WriteOnly)); gate.close();
-        QTRY_COMPARE(accepted.count(),1); QTRY_VERIFY(!c.busy());
-        QCOMPARE(status.last()[0].toJsonObject()["pwr"].toString(),QString("0"));
+        QTRY_VERIFY(c.observing()); QVERIFY(!c.busy()); QCOMPARE(accepted.count(),0);
+        QCOMPARE(status.last()[0].toJsonObject()["pwr"].toString(),QString("1"));
         int writes=0; for(const auto& request:calls()) if(request.contains("set")) ++writes;
         QCOMPARE(writes,1); c.stop();
     }
-    void realUdpObservationAndControlUseSeparateSockets() {
+    void realUdpObservationAndControlUseOneSocketAndSessionKey() {
         UdpDevice device;
         Controller c(REAL_BACKEND); c.configure("127.0.0.1",device.port,5);
         QSignalSpy status(&c,&Controller::statusReceived), errors(&c,&Controller::failed);
@@ -354,9 +370,27 @@ private slots:
         QCOMPARE(device.subscriptions.load(),1); QCOMPARE(device.syncs.load(),1); QCOMPARE(device.controls.load(),0);
         c.setPower(false); QTRY_COMPARE(accepted.count(),1); QTRY_VERIFY(!c.busy());
         QCOMPARE(status.last()[0].toJsonObject()["pwr"].toString(),QString("0"));
-        QCOMPARE(device.subscriptions.load(),1); QCOMPARE(device.syncs.load(),2); QCOMPARE(device.controls.load(),1);
-        QCOMPARE(device.cancellations.load(),0); QCOMPARE(errors.count(),0); QCOMPARE(commandErrors.count(),0);
-        c.stop(); QTRY_COMPARE(device.cancellations.load(),1); QVERIFY(!device.failed.load());
+        QCOMPARE(device.subscriptions.load(),2); QCOMPARE(device.syncs.load(),1); QCOMPARE(device.controls.load(),1);
+        QCOMPARE(device.cancellations.load(),1); QCOMPARE(device.changedClientPorts.load(),0);
+        QCOMPARE(errors.count(),0); QCOMPARE(commandErrors.count(),0);
+        c.stop(); QTRY_COMPARE(device.cancellations.load(),2);
+        QCOMPARE(device.changedClientPorts.load(),0); QVERIFY(!device.failed.load());
+    }
+    void realUdpStatusTimeoutRenewsSocketAndSessionKey() {
+        UdpDevice device;
+        Controller c(REAL_BACKEND); c.configure("127.0.0.1",device.port,5);
+        c.setObservationWatchdogs(1000,250); c.setReconnectDelay(100);
+        QSignalSpy status(&c,&Controller::statusReceived), errors(&c,&Controller::failed);
+        c.start(); QTRY_VERIFY(status.count()>=1);
+        QCOMPARE(device.syncs.load(),1); QCOMPARE(device.changedClientPorts.load(),0);
+        device.notificationsEnabled=false;
+        QTRY_COMPARE(errors.count(),1);
+        QTRY_COMPARE(device.syncs.load(),2); // new Client: close/open plus /sync
+        QVERIFY(device.changedClientPorts.load()>0);
+        device.notificationsEnabled=true;
+        QTRY_VERIFY(status.count()>=2); QTRY_VERIFY(c.observing());
+        QCOMPARE(c.observationStarts(),quint64(2));
+        c.stop(); QVERIFY(!device.failed.load());
     }
     void backendExitsWhenWidgetParentIsKilled() {
 #ifdef Q_OS_LINUX
@@ -513,17 +547,22 @@ private slots:
         QCOMPARE(bar->ageText(),QString("0 s")); QCOMPARE(bar->alarmText(),QString("Keine Alarme"));
         widget.advance(45); QCOMPARE(raised.count(),3); QCOMPARE(widget.deliveries,3);
     }
-    void validPacketsResetAgeWhileWriteIsPending() {
+    void controlDoesNotResetAgeAndFollowingStatusDoes() {
         qputenv("AIRCTRL_TEST_WRITE_GATE",temp_.filePath("write.ready").toUtf8());
         MonitoringProbe widget(Preferences{},FAKE_BACKEND); widget.start();
         auto* c=widget.findChild<Controller*>(); QSignalSpy packets(c,&Controller::statusPacketReceived);
         QSignalSpy status(c,&Controller::statusReceived);
         QTRY_VERIFY(!status.isEmpty()); widget.findChild<QPushButton*>("power")->click();
         const auto published=status.count(); widget.advance(50);
-        const auto before=packets.count(); QTRY_VERIFY(packets.count()>before);
-        QCOMPARE(widget.dataAgeSeconds(),qint64(0)); QCOMPARE(status.count(),published); QVERIFY(c->busy());
-        QCOMPARE(widget.findChild<MonitorBar*>()->freshness(),DataFreshness::Fresh);
+        const auto before=packets.count(); QTest::qWait(250);
+        QCOMPARE(packets.count(),before); QCOMPARE(widget.dataAgeSeconds(),qint64(50));
+        QCOMPARE(status.count(),published); QVERIFY(c->busy());
+        QCOMPARE(widget.findChild<MonitorBar*>()->freshness(),DataFreshness::Aging);
         QCOMPARE(widget.findChild<Emblem*>("emblem_mode")->icon(),EmblemIcon::Auto);
+        QFile gate(temp_.filePath("write.ready")); QVERIFY(gate.open(QIODevice::WriteOnly)); gate.close();
+        QTRY_VERIFY(packets.count()>before); QTRY_COMPARE(status.count(),published+1);
+        QCOMPARE(widget.dataAgeSeconds(),qint64(0)); QTRY_VERIFY(!c->busy());
+        QCOMPARE(widget.findChild<MonitorBar*>()->freshness(),DataFreshness::Fresh);
         c->stop();
     }
     void commandAckAndInvalidJsonDoNotResetAge() {
@@ -1182,8 +1221,12 @@ private slots:
             widget.applyStatus({{"rh",55},{"rhset",50},{"temp",24},{"pm25",1}});
             widget.showAndPosition(); QCoreApplication::processEvents();
             const auto image=widget.grab().toImage();
-            const auto pixel=image.pixelColor(image.width()/2,image.height()-3);
-            QVERIFY(qAbs(pixel.alpha()-qRound((100-transparency)*2.55))<=1);
+            const int expectedAlpha=qRound((100-transparency)*2.55);
+            const QList<QPoint> backgroundPoints{{0,0},{image.width()-1,0},
+                {0,image.height()-1},{image.width()-1,image.height()-1},
+                {image.width()/2,image.height()-3}};
+            for(const auto& point:backgroundPoints)
+                QVERIFY(qAbs(image.pixelColor(point).alpha()-expectedAlpha)<=1);
             auto* value=widget.findChild<QLabel*>("value_rh");
             QCOMPARE(value->palette().color(QPalette::WindowText),p.foreground);
             int opaquePixels=0;
@@ -1235,13 +1278,15 @@ private slots:
         QCOMPARE(clickMenus(widget.findChild<QPushButton*>("humidityTarget"),Qt::RightButton),1);
         QVERIFY(!QFile::exists(log_));
     }
-    void leftClickWorksEvenWhenPositionLocked() {
-        Preferences p; p.locked=true;
-        Desklet widget(p,FAKE_BACKEND); widget.showAndPosition();
-        const auto position=widget.pos();
-        QCOMPARE(clickMenus(widget.findChild<QLabel*>("value_rh"),Qt::LeftButton),1);
-        QCOMPARE(clickMenus(widget.findChild<Emblem*>("emblem_wifi"),Qt::LeftButton),1);
-        QCOMPARE(widget.pos(),position); QVERIFY(!QFile::exists(log_));
+    void leftClickNeverOpensContextMenu() {
+        for(const bool locked:{false,true}) {
+            Preferences p; p.locked=locked;
+            Desklet widget(p,FAKE_BACKEND); widget.showAndPosition();
+            const auto position=widget.pos();
+            QCOMPARE(clickMenus(widget.findChild<QLabel*>("value_rh"),Qt::LeftButton),0);
+            QCOMPARE(clickMenus(widget.findChild<Emblem*>("emblem_wifi"),Qt::LeftButton),0);
+            QCOMPARE(widget.pos(),position); QVERIFY(!QFile::exists(log_));
+        }
     }
     void draggingMovesAndSavesWithoutOpeningMenu_data() {
         QTest::addColumn<QString>("surface");
@@ -1292,7 +1337,7 @@ private slots:
             }
             menu->close();
         });
-        QTest::mouseClick(widget.findChild<QLabel*>("value_rh"),Qt::LeftButton);
+        QTest::mouseClick(widget.findChild<QLabel*>("value_rh"),Qt::RightButton);
         QTRY_VERIFY(changed);
         QCOMPARE(widget.pos(),QPoint(70,95)); QCOMPARE(Preferences::load().position,QPoint(70,95));
         QVERIFY(!QFile::exists(log_));
@@ -1332,6 +1377,8 @@ private slots:
         QTest::qWait(90);
         QCOMPARE(widget.moveRequests,1); QCOMPARE(widget.pos(),oldPosition); QCOMPARE(menus,0);
         QTest::mouseClick(value,Qt::LeftButton); QTest::qWait(90);
+        QCOMPARE(menus,0);
+        QTest::mouseClick(value,Qt::RightButton); QTest::qWait(90);
         QCOMPARE(menus,1); QVERIFY(!offeredPosition); QVERIFY(Preferences::load().locked);
         QCOMPARE(Preferences::load().position,p.position);
         QTest::mousePress(value,Qt::LeftButton,Qt::NoModifier,local);

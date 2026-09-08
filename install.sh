@@ -8,7 +8,7 @@ if [[ "$install_prefix" != /* ]]; then
 fi
 cmake -S "$project_dir" -B "$project_dir/build" \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$install_prefix" -DBUILD_TESTING=OFF
-cmake --build "$project_dir/build" --parallel
+cmake --build "$project_dir/build" --parallel --clean-first
 cmake --install "$project_dir/build"
 # Absolute launcher works even when ~/.local/bin is not in Cinnamon's PATH.
 python3 - "$install_prefix" <<'PY'

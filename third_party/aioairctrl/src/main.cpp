@@ -1,9 +1,14 @@
 #include <aioairctrl/client.hpp>
 #include <charconv>
 #include <csignal>
+#include <cerrno>
+#include <deque>
+#include <fcntl.h>
 #include <iostream>
 #include <limits>
+#include <stdexcept>
 #include <string_view>
+#include <unistd.h>
 #include <vector>
 
 namespace {
@@ -17,6 +22,7 @@ void help() {
     std::cout <<
         "Usage: aioairctrl -H HOST [options] status [-J]\n"
         "       aioairctrl -H HOST [options] status-observe [-J]\n"
+        "       aioairctrl -H HOST [options] session [-J]\n"
         "       aioairctrl -H HOST [options] set [-I] KEY=VALUE [KEY=VALUE ...]\n\n"
         "  -H, --host HOST       Hostname, IPv4 or IPv6 address\n"
         "  -P, --port PORT       UDP port (default: 5683)\n"
@@ -24,6 +30,7 @@ void help() {
         "  -J, --json            Compact JSON, one line per status\n"
         "  -I, --int             Encode set values as integers\n"
         "  --timeout SECONDS     Request timeout (default: 10)\n"
+        "  --control-timeout SEC Control timeout in session mode (default: 10)\n"
         "  --idle-timeout SEC    Observe inactivity timeout (default: 0 = unlimited)\n"
         "  --retries COUNT       Retries after control rejection (default: 5)\n"
         "  --no-resync           Do not synchronize after control rejection\n"
@@ -31,7 +38,8 @@ void help() {
         "  --version             Show version\n\n"
         "Values are strings by default; true/false become JSON booleans.\n"
         "With -I, true/false become 1/0, as in the Python original.\n"
-        "Stop status-observe with Ctrl+C.\n";
+        "Session reads JSON control commands from stdin and emits JSON envelopes.\n"
+        "Stop status-observe/session with Ctrl+C.\n";
 }
 long long integer(std::string_view value, const std::string& name) {
     // Python int accepts a leading plus; from_chars does not.
@@ -46,6 +54,100 @@ long long range(std::string_view value, const std::string& name, long long low, 
     const auto result = integer(value, name);
     if (result < low || result > high) throw UsageError(name + " out of range");
     return result;
+}
+
+struct SessionCommand {
+    std::uint64_t id = 0;
+    aioairctrl::Json values;
+};
+
+class SessionInput {
+public:
+    SessionInput() {
+        const int flags = ::fcntl(STDIN_FILENO, F_GETFL, 0);
+        if (flags < 0 || ::fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK) < 0)
+            throw std::runtime_error("Could not configure session input");
+    }
+    void pump() {
+        char chunk[4096];
+        for (;;) {
+            const auto size = ::read(STDIN_FILENO, chunk, sizeof(chunk));
+            if (size > 0) {
+                buffer_.append(chunk, static_cast<std::size_t>(size));
+                if (buffer_.size() > 1024 * 1024)
+                    throw std::runtime_error("Session input exceeds 1 MiB");
+                parse_lines();
+                continue;
+            }
+            if (size == 0) { eof_ = true; return; }
+            if (errno == EINTR) continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) return;
+            throw std::runtime_error("Could not read session input");
+        }
+    }
+    bool eof() const { return eof_; }
+    bool empty() const { return commands_.empty(); }
+    SessionCommand pop() {
+        auto command = std::move(commands_.front());
+        commands_.pop_front();
+        return command;
+    }
+private:
+    void parse_lines() {
+        for (;;) {
+            const auto newline = buffer_.find('\n');
+            if (newline == std::string::npos) return;
+            auto line = buffer_.substr(0, newline);
+            buffer_.erase(0, newline + 1);
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            if (line.empty()) continue;
+            const auto object = aioairctrl::Json::parse(line);
+            if (!object.is_object() || !object.contains("id") || !object["id"].is_number_unsigned() ||
+                !object.contains("values") || !object["values"].is_object() || object["values"].empty())
+                throw std::runtime_error("Invalid session control command");
+            commands_.push_back({object["id"].get<std::uint64_t>(), object["values"]});
+        }
+    }
+    std::string buffer_;
+    std::deque<SessionCommand> commands_;
+    bool eof_ = false;
+};
+
+void write_envelope(const aioairctrl::Json& object) {
+    std::cout << object.dump() << std::endl;
+    if (!std::cout) throw std::runtime_error("Could not write session output");
+}
+
+void run_session(aioairctrl::Client& client) {
+    SessionInput input;
+    while (!stopped && !input.eof()) {
+        client.observe_status(
+            [&](const aioairctrl::Json& status) {
+                write_envelope({{"_airctrl", "status"}, {"data", status}});
+                input.pump();
+                return !stopped && !input.eof() && input.empty();
+            },
+            [&] {
+                input.pump();
+                return stopped || input.eof() || !input.empty();
+            });
+        if (stopped || input.eof()) break;
+        while (!input.empty() && !stopped) {
+            auto command = input.pop();
+            try {
+                const bool accepted = client.set_control_values(command.values, 0, false);
+                if (accepted) write_envelope({{"_airctrl", "control"}, {"id", command.id}, {"ok", true}});
+                else write_envelope({{"_airctrl", "control"}, {"id", command.id}, {"ok", false},
+                                     {"error", "Device rejected control values"}});
+            } catch (const std::exception& error) {
+                // A control failure does not replace the transport. Observation
+                // resumes on the same socket; only a later status timeout ends
+                // this process and lets the controller create a fresh session.
+                write_envelope({{"_airctrl", "control"}, {"id", command.id}, {"ok", false},
+                                {"error", error.what()}});
+            }
+        }
+    }
 }
 } // namespace
 
@@ -73,14 +175,16 @@ int main(int argc, char** argv) {
             else if (arg == "--no-resync") resync = false;
             else if (arg == "--retries") retries = static_cast<int>(range(next(), arg, 0, 1000));
             else if (arg == "--timeout") options.timeout = std::chrono::seconds(range(next(), arg, 1, 86400));
+            else if (arg == "--control-timeout") options.control_timeout = std::chrono::seconds(range(next(), arg, 1, 86400));
             else if (arg == "--idle-timeout") options.observe_idle_timeout = std::chrono::seconds(range(next(), arg, 0, 86400));
-            else if (command.empty() && (arg == "status" || arg == "status-observe" || arg == "set")) command = arg;
+            else if (command.empty() && (arg == "status" || arg == "status-observe" || arg == "session" || arg == "set")) command = arg;
             else if (command == "set" && arg.find('=') != std::string::npos && arg.front() != '-') pairs.push_back(arg);
             else throw UsageError("Unknown argument: " + arg);
         }
         if (host.empty() || command.empty()) throw UsageError("--host and a command are required; use --help");
         if (as_int && command != "set") throw UsageError("--int is only valid for set");
-        if (compact && command == "set") throw UsageError("--json is only valid for status/status-observe");
+        if (compact && command == "set") throw UsageError("--json is only valid for status/status-observe/session");
+        if (command == "set") options.control_timeout = options.timeout;
         aioairctrl::Json data = aioairctrl::Json::object();
         if (command == "set") {
             if (pairs.empty()) throw UsageError("set requires KEY=VALUE");
@@ -105,6 +209,10 @@ int main(int argc, char** argv) {
             std::signal(SIGINT, stop_handler);
             std::signal(SIGTERM, stop_handler);
             client.observe_status(output, [] { return stopped != 0; });
+        } else if (command == "session") {
+            std::signal(SIGINT, stop_handler);
+            std::signal(SIGTERM, stop_handler);
+            run_session(client);
         } else if (!client.set_control_values(data, retries, resync)) {
             std::cerr << "Device rejected control values after all attempts\n";
             return 1;

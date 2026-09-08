@@ -2,7 +2,7 @@
 
 **Your Philips air purifier, right on your Linux desktop.**
 
-C++17 · Qt 6 · Lua 5.4 · local CoAP communication · MIT · **v1.03**
+C++17 · Qt 6 · Lua 5.4 · local CoAP communication · MIT · **v1.04**
 
 [Deutsch](README.md) · [Development](docs/DEVELOPMENT.md) · [Changelog](CHANGELOG.md)
 
@@ -19,7 +19,8 @@ It is a standalone Qt application, **not a Cinnamon JavaScript desklet**.
 
 - Eight controls: power, child lock, automatic mode, fan speed, humidity target,
   lighting, purification/2-in-1 and shutdown timer.
-- Persistent CoAP observation; commands do not interrupt the observer.
+- One persistent UDP socket with synchronized protocol state for observation
+  and controls; a status timeout closes/reopens it and synchronizes again.
 - Confirmed-state emblems, seconds-since-reception indicator and separate alarm circle.
 - Per-filter warnings, acknowledgement, desktop notifications and optional sound.
 - Configurable colours, background transparency, fonts, window decoration and autostart.
@@ -48,8 +49,8 @@ Close the demo and start with your device's IP address or hostname:
 
 Replace the documentation-only example address. Save the real address in
 **right-click → Verbindung und Autostart** for future starts; `--host` initially applies
-to this invocation. The historical v1.01 default remains for compatibility,
-not as automatic discovery. Installation is per-user under `~/.local`.
+to this invocation. `AC2729-10` is the default but is not automatic discovery;
+it must resolve on the local network. Installation is per-user under `~/.local`.
 Python is used by the installer; the GUI and backend are C++ programs.
 
 Dependencies: C and C++17 compilers, CMake ≥ 3.16, Qt ≥ 6.2
@@ -99,6 +100,22 @@ or Ctrl+Shift+V in a terminal. PRIMARY/middle-click is also supported when avail
 Redact identifiers, device names, addresses and local paths before sharing reports.
 
 ## Validation
+
+Two device captures from **8 September 2026** contain **148 valid status
+messages** and **17/17 accepted controls**, each confirmed by the next status
+within **45–97 ms**. Controls reuse the same UDP port without another sync;
+Observe is briefly cancelled and registered again on that socket.
+
+The captured recovery starts after **90 s** without status, opens a new session
+after another 9.7 s, and receives its first status 36.4 s after registration:
+**136.1 s** without fresh data in total. A separate 65.8-s pause while powered
+off does not restart the session. The cause of the longer silence is unknown;
+the captures also leave a gap of almost nine minutes.
+[Packet evidence and interpretation limits](docs/PROTOCOL_VALIDATION_2026-09-08.md)
+
+On this AC2729/10, `dt=6` is followed by `dtrs=360`, then `359` about a minute
+later. This supports interpreting `dtrs` as remaining timer minutes, but is
+an observation, not a Philips specification. The raw field remains read-only.
 
 Real-device reception/control and Fedora 44 + Cinnamon + X11 are confirmed by
 Jürgen. Wayland-aware handling exists, but full native Wayland verification is

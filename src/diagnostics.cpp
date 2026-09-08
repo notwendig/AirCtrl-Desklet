@@ -24,7 +24,7 @@ const QHash<QString,QString> descriptions{
     {"aqil", "Helligkeit des Luftqualitäts-Lichtrings, 0 bis 100; 0 = aus, 100 = volle Helligkeit."},
     {"uil", "Beleuchtung der Geräteanzeige: \"0\" = aus, \"1\" = ein."},
     {"dt", "Eingestellter Abschalttimer in Stunden; 0 = kein Abschalttimer."},
-    {"dtrs", "Zusätzliches Philips-Statusfeld. Genaue Bedeutung und Einheit sind nicht gesichert."},
+    {"dtrs", "Vermutlich verbleibende Minuten des Geräte-Abschalttimers. AC2729/10-Mitschnitt vom 2026-09-08: nach dt=6 zunächst 360, etwa 60 Sekunden später 359. Beobachtung, keine bestätigte Philips-Spezifikation. dt bleibt die eingestellte Stundenzahl; der Rohwert wird nicht verändert."},
     {"ddp", "Ausgewählte Geräteanzeige. In der Referenz: 0 = IAI, 1 = PM2,5, 2 = Gas. Weitere Codes, darunter 3, sind hier nicht gesichert zugeordnet."},
     {"rddp", "Zusätzliches Anzeigefeld von Philips. Genaue Bedeutung und Codezuordnung sind nicht gesichert."},
     {"aqit", "Interner Luftqualitätsindex. Seine Skala ist für dieses Modell nicht gesichert dokumentiert."},

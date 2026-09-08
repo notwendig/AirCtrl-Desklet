@@ -12,10 +12,10 @@
 Controller::Controller(QString executable, QObject* parent)
     : QObject(parent), executable_(std::move(executable)) {
 #ifdef Q_OS_LINUX
-    // A persistent observer must not survive pkill/crash of the widget. This
+    // The persistent I/O session must not survive pkill/crash of the widget. This
     // also covers termination before Qt can run Controller's destructor.
     const auto parentPid=::getpid();
-    for(auto* process : {&observer_, &writer_}) process->setChildProcessModifier([parentPid] {
+    observer_.setChildProcessModifier([parentPid] {
         if(::prctl(PR_SET_PDEATHSIG,SIGTERM)<0 || ::getppid()!=parentPid) ::_exit(127);
     });
 #endif
@@ -28,8 +28,7 @@ Controller::Controller(QString executable, QObject* parent)
     });
     connect(&observerStopWatchdog_, &QTimer::timeout, &observer_, &QProcess::kill);
     connect(&writeWatchdog_, &QTimer::timeout, this, [this] {
-        writerProblem_="Keine Antwort auf den Schaltbefehl · Ausgang unbekannt; keine automatische Wiederholung.";
-        writer_.kill();
+        failCommand("Keine Antwort auf den Schaltbefehl · Ausgang unbekannt; keine automatische Wiederholung.");
     });
     connect(&confirmation_, &QTimer::timeout, this, [this] {
         failCommand("Keine neue Statusbestätigung nach dem Schaltbefehl · keine automatische Wiederholung.");
@@ -46,28 +45,11 @@ Controller::Controller(QString executable, QObject* parent)
             if(active_) observationFailed("Statusprogramm konnte nicht gestartet werden: "+observer_.errorString());
         }
     });
-    connect(&writer_, &QProcess::readyReadStandardOutput, this, [this] {
-        writerBytes_+=writer_.readAllStandardOutput().size();
-        if(writerBytes_>1024*1024) { writerProblem_="Schreibantwort ist zu groß."; writer_.kill(); }
-    });
-    connect(&writer_, &QProcess::readyReadStandardError, this, [this] {
-        writerError_=(writerError_+writer_.readAllStandardError()).right(64*1024);
-    });
-    connect(&writer_, &QProcess::finished, this, &Controller::writeFinished);
-    connect(&writer_, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
-        if(error==QProcess::FailedToStart) {
-            writeWatchdog_.stop();
-            if(active_ && !writerStopping_) failCommand("Schaltprogramm konnte nicht gestartet werden: "+writer_.errorString());
-            writerStopping_=false;
-        }
-    });
 }
 Controller::~Controller() {
     stop();
-    for(auto* process : {&observer_, &writer_}) {
-        process->disconnect(this);
-        if(process->state()!=QProcess::NotRunning) { process->kill(); process->waitForFinished(1000); }
-    }
+    observer_.disconnect(this);
+    if(observer_.state()!=QProcess::NotRunning) { observer_.kill(); observer_.waitForFinished(1000); }
 }
 void Controller::configure(QString host, int port, int reconnectSeconds) {
     host_=host.trimmed(); port_=port; reconnectMs_=qBound(5,reconnectSeconds,300)*1000;
@@ -94,14 +76,13 @@ void Controller::stopObserver() {
     observationWatchdog_.stop(); hasStatus_=false;
     if(observer_.state()==QProcess::NotRunning) return;
     observerStopping_=true;
-    observer_.terminate(); // SIGTERM lets status-observe unsubscribe and exit
+    observer_.terminate(); // SIGTERM lets the session unsubscribe and close its sole socket
     observerStopWatchdog_.start(1000);
 }
 void Controller::stop() {
     active_=false; restartObserver_=false;
     reconnect_.stop(); confirmation_.stop(); writeWatchdog_.stop();
-    awaitingConfirmation_=false; stopObserver();
-    if(writer_.state()!=QProcess::NotRunning) { writerStopping_=true; writer_.kill(); }
+    awaitingConfirmation_=false; pendingCommandId_=0; stopObserver();
     setBusy(false);
 }
 void Controller::refresh() {
@@ -117,10 +98,10 @@ void Controller::launchObserver() {
     stream_.clear(); observerError_.clear(); observerProblem_.clear();
     const auto error=addressError();
     if(!error.isEmpty()) { observationFailed(error); return; }
-    progress_="Dauerbeobachtung wird gestartet"; ++observationStarts_;
+    progress_="Dauerhafte I/O-Sitzung wird gestartet"; ++observationStarts_;
     observer_.start(executable_, {"-H",host_,"-P",QString::number(port_),"-D",
-        "--timeout",QString::number(ObserveRequestSeconds),"--idle-timeout",QString::number(ObserveIdleSeconds),
-        "status-observe","-J"});
+        "--timeout",QString::number(ObserveRequestSeconds),"--control-timeout","10",
+        "--idle-timeout",QString::number(ObserveIdleSeconds),"session","-J"});
     observationWatchdog_.start(startupMs_);
 }
 void Controller::abortObserver(const QString& reason) {
@@ -144,14 +125,33 @@ void Controller::readObserver() {
         if(error.error!=QJsonParseError::NoError || !document.isObject() || document.object().isEmpty()) {
             abortObserver("Ungültige Statusmeldung: kein gültiges JSON-Objekt."); return;
         }
-        hasStatus_=true; ++statusCount_; progress_="Dauerbeobachtung aktiv";
+        const auto envelope=document.object();
+        const auto kind=envelope.value("_airctrl").toString();
+        if(kind=="control") {
+            const auto id=envelope.value("id").toVariant().toULongLong();
+            if(!busy_ || id==0 || id!=pendingCommandId_) continue; // late/foreign reply
+            writeWatchdog_.stop(); pendingCommandId_=0;
+            if(!envelope.value("ok").toBool()) {
+                auto reason=envelope.value("error").toString().trimmed();
+                failCommand(reason.isEmpty() ? "Schaltbefehl abgelehnt oder nicht bestätigt." : reason);
+                continue;
+            }
+            awaitingConfirmation_=true; confirmation_.start(confirmationMs_);
+            emit controlAccepted();
+            continue;
+        }
+        if(kind!="status" || !envelope.value("data").isObject() || envelope.value("data").toObject().isEmpty()) {
+            abortObserver("Ungültige Meldung der I/O-Sitzung."); return;
+        }
+        const auto status=envelope.value("data").toObject();
+        hasStatus_=true; ++statusCount_; progress_="Dauerhafte I/O-Sitzung aktiv";
         observationWatchdog_.start(idleMs_);
         emit statusPacketReceived();
         if(!active_ || observerStopping_) return;
-        // Notifications received before the write ACK cannot confirm that write.
+        // Status received before the control ACK cannot confirm that command.
         if(busy_ && !awaitingConfirmation_) continue;
         if(awaitingConfirmation_) { awaitingConfirmation_=false; confirmation_.stop(); setBusy(false); }
-        emit statusReceived(document.object());
+        emit statusReceived(status);
         if(!active_ || observerStopping_) return;
     }
     if(stream_.size()>1024*1024) abortObserver("Unvollständige Statuszeile ist zu groß.");
@@ -165,11 +165,12 @@ void Controller::observerFinished(int code, QProcess::ExitStatus exitStatus) {
         if(active_ && restartObserver_) launchObserver();
         return;
     }
+    if(busy_) failCommand("I/O-Sitzung wurde während des Schaltbefehls beendet · Ausgang unbekannt; keine automatische Wiederholung.");
     auto reason=observerProblem_;
     if(reason.isEmpty()) {
         const auto detail=QString::fromUtf8(observerError_).trimmed().right(1500);
-        reason=(code==0 && exitStatus==QProcess::NormalExit) ? "Statusbeobachtung wurde unerwartet beendet." :
-            detail.isEmpty() ? "Statusbeobachtung fehlgeschlagen." : detail;
+        reason=(code==0 && exitStatus==QProcess::NormalExit) ? "I/O-Sitzung wurde unerwartet beendet." :
+            detail.isEmpty() ? "I/O-Sitzung fehlgeschlagen." : detail;
         if(!stream_.trimmed().isEmpty()) reason+="\nUnvollständige letzte Statuszeile.";
     }
     stream_.clear(); observationFailed(reason);
@@ -179,42 +180,28 @@ void Controller::observationFailed(const QString& reason) {
     emit failed(reason);
     if(active_) reconnect_.start(reconnectMs_);
 }
-void Controller::setPower(bool on) { launchWrite({"set",on ? "pwr=1" : "pwr=0"}); }
+void Controller::setPower(bool on) { setPanelValues({{"pwr",on ? "1" : "0"}}); }
 void Controller::setHumidity(int percent) { setPanelValues({{"rhset",percent}}); }
 void Controller::setPanelValues(const QJsonObject& values) {
     if(busy_ || values.isEmpty()) return;
-    QString problem; const auto args=controlValueArguments(values,&problem);
+    const auto problem=controlValuesError(values);
     if(!problem.isEmpty()) { failCommand(problem); return; }
-    launchWrite(args);
+    launchWrite(values);
 }
-void Controller::launchWrite(const QStringList& tail) {
+void Controller::launchWrite(const QJsonObject& values) {
     if(busy_) return;
-    if(writer_.state()!=QProcess::NotRunning) { failCommand("Vorheriger Schaltprozess wird noch beendet."); return; }
     const auto error=addressError();
     if(!error.isEmpty()) { failCommand(error); return; }
     if(!active_) { failCommand("Verbindungssteuerung ist nicht gestartet."); return; }
-    awaitingConfirmation_=false; writerStopping_=false;
-    writerError_.clear(); writerProblem_.clear(); writerBytes_=0;
-    QStringList args{"-H",host_,"-P",QString::number(port_),"-D","--timeout","10","--retries","0","--no-resync"};
-    args+=tail; setBusy(true);
-    writer_.start(executable_,args); writeWatchdog_.start(writeMs_);
-}
-void Controller::writeFinished(int code, QProcess::ExitStatus exitStatus) {
-    writeWatchdog_.stop();
-    writerError_=(writerError_+writer_.readAllStandardError()).right(64*1024);
-    writer_.readAllStandardOutput();
-    if(!active_ || writerStopping_) { writerStopping_=false; return; }
-    // Drain already-buffered notifications while they still cannot confirm.
-    readObserver();
-    if(!writerProblem_.isEmpty()) { failCommand(writerProblem_); return; }
-    if(code!=0 || exitStatus!=QProcess::NormalExit) {
-        const auto detail=QString::fromUtf8(writerError_).trimmed().right(1500);
-        failCommand(detail.isEmpty() ? "Schaltbefehl abgelehnt oder nicht bestätigt." : detail); return;
-    }
-    awaitingConfirmation_=true; confirmation_.start(confirmationMs_);
-    emit controlAccepted();
+    if(observer_.state()==QProcess::NotRunning) { failCommand("Keine aktive I/O-Sitzung zum Gerät."); return; }
+    awaitingConfirmation_=false; pendingCommandId_=nextCommandId_++;
+    const QJsonObject command{{"id",static_cast<qint64>(pendingCommandId_)},{"values",values}};
+    const auto line=QJsonDocument(command).toJson(QJsonDocument::Compact)+'\n';
+    setBusy(true);
+    if(observer_.write(line)<0) { failCommand("Schaltbefehl konnte nicht an die I/O-Sitzung übergeben werden."); return; }
+    writeWatchdog_.start(writeMs_);
 }
 void Controller::failCommand(const QString& reason) {
-    awaitingConfirmation_=false; confirmation_.stop(); setBusy(false);
+    pendingCommandId_=0; awaitingConfirmation_=false; writeWatchdog_.stop(); confirmation_.stop(); setBusy(false);
     emit commandFailed(reason);
 }

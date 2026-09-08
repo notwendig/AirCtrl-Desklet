@@ -182,7 +182,7 @@ void Emblem::configure(const EmblemState& state, const QColor& foreground, const
     if(stale_) description="Letzter bestätigter Zustand · derzeit offline\n"+description;
     if(disconnected_ && !hasStatus) description+=" · noch kein Status empfangen";
     setAccessibleName(description); setAccessibleDescription(description);
-    setToolTip(description+"\nKlick / Rechtsklick: Menü · Ziehen: Verschieben");
+    setToolTip(description+"\nRechtsklick: Menü · Ziehen: Verschieben");
     update();
 }
 void Emblem::paintEvent(QPaintEvent*) {

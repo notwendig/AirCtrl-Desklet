@@ -15,7 +15,8 @@ struct Client::Impl {
 
     Impl(const std::string& host, ClientOptions opts)
         : options(std::move(opts)), transport(host, options.port, closed) {
-        if (options.timeout.count() <= 0 || options.observe_idle_timeout.count() < 0)
+        if (options.timeout.count() <= 0 || options.control_timeout.count() <= 0 ||
+            options.observe_idle_timeout.count() < 0)
             throw std::invalid_argument("Invalid timeout");
         sync_unlocked();
     }
@@ -86,7 +87,7 @@ struct Client::Impl {
             if (closed.load()) throw CancelledError();
             log("Setting /sys/dev/control");
             const auto request = transport.request(2, "/sys/dev/control", encryption.encrypt(payload));
-            const auto response = transport.receive(request, options.timeout);
+            const auto response = transport.receive(request, options.control_timeout);
             const auto result = Json::parse(response->payload);
             if (!result.is_object()) throw std::runtime_error("Invalid control response: expected JSON object");
             if (result.contains("status") && result["status"] == "success") return true;

@@ -13,6 +13,9 @@ __pycache__/
 *.log
 *.pcap
 *.pcapng
+*.pcap.*
+*.pcapng.*
+*.lz4
 *.core
 core
 .env

@@ -26,6 +26,8 @@ public:
     ~UdpDevice() { stopped_=true; thread_.join(); ::close(fd_); }
     unsigned short port=0;
     std::atomic<int> syncs{0}, subscriptions{0}, controls{0}, cancellations{0};
+    std::atomic<int> firstClientPort{0}, changedClientPorts{0};
+    std::atomic<bool> notificationsEnabled{true};
     std::atomic<bool> failed{false};
 private:
     void send(const aioairctrl::detail::Message& message,const sockaddr_in& peer) {
@@ -45,6 +47,10 @@ private:
                     detail::Bytes bytes(65536); sockaddr_in peer{}; socklen_t size=sizeof(peer);
                     const auto count=::recvfrom(fd_,bytes.data(),bytes.size(),0,reinterpret_cast<sockaddr*>(&peer),&size);
                     if(count<0) throw std::runtime_error("test receive failed");
+                    const int sourcePort=ntohs(peer.sin_port);
+                    int expected=0;
+                    if(!firstClientPort.compare_exchange_strong(expected,sourcePort) && expected!=sourcePort)
+                        ++changedClientPorts;
                     bytes.resize(count); const auto request=detail::decode(bytes);
                     if(!request.code) continue;
                     std::string path;
@@ -65,7 +71,7 @@ private:
                         send({1,68,request.mid,request.token,{},R"({"status":"success"})"},peer);
                     } else throw std::runtime_error("unexpected test request");
                 }
-                if(!token.empty() && steady_clock::now()>=next) {
+                if(notificationsEnabled.load() && !token.empty() && steady_clock::now()>=next) {
                     detail::Message response{1,69,77,token,{{6,{static_cast<unsigned char>(sequence++%256)}}},{}};
                     response.payload=cipher_.encrypt(Json{{"state",{{"reported",{{"pwr",power},{"rh",50}}}}}}.dump());
                     send(response,subscriber); next=steady_clock::now()+milliseconds(150);

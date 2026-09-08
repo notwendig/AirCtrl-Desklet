@@ -10,7 +10,12 @@
 Preferences Preferences::load() {
     QSettings s;
     Preferences p;
-    p.host = s.value("device/host", p.host).toString();
+    p.host = s.value("device/host", p.host).toString().trimmed();
+    if (p.host.compare("AC2729/10", Qt::CaseInsensitive) == 0 ||
+        p.host.compare("AC2729_10", Qt::CaseInsensitive) == 0) {
+        p.host = "AC2729-10";
+        s.setValue("device/host", p.host);
+    }
     p.port = s.value("device/port", p.port).toInt();
     if (p.port < 1 || p.port > 65535) p.port = 5683;
     p.interval = qBound(5, s.value("device/interval", p.interval).toInt(), 300);
