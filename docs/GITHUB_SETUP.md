@@ -5,17 +5,17 @@ Maintainer Commits, Tags und Veröffentlichungen nach seiner Prüfung selbst aus
 
 ## Direkte Aktualisierung des vorhandenen Originals
 
-Das v1.04-Übergabe-ZIP enthält `AirCtrl-Desklet/einspielen-v1.04.sh`. Das Skript
+Das v1.05-Übergabe-ZIP enthält `AirCtrl-Desklet/einspielen-v1.05.sh`. Das Skript
 arbeitet standardmäßig ausschließlich auf `~/Projects/Qt/AirCtrl-Desklet`. Es
 verlangt einen sauberen Git-Arbeitsbaum, kopiert anhand der öffentlichen
 Positivliste, prüft Repository, Build und Tests, installiert anschließend unter
-`~/.local`, erstellt den Commit und den annotierten Tag `v1.04` und pusht Branch
+`~/.local`, erstellt den Commit und den annotierten Tag `v1.05` und pusht Branch
 plus Tag atomar.
 
 ```bash
 cd ~/Downloads
-unzip -o AirCtrl-Desklet-1.04-dokumentiert.zip
-bash AirCtrl-Desklet/einspielen-v1.04.sh
+unzip -o AirCtrl-Desklet-1.05.zip
+bash AirCtrl-Desklet/einspielen-v1.05.sh
 ```
 
 Das Remote wird ausdrücklich auf SSH gesetzt:
@@ -50,7 +50,7 @@ automatische Geräteerkennung und muss im lokalen Namensdienst auflösbar sein.
 Nur für den frisch entpackten Ordner **ohne vorhandenes `.git`**:
 
 ```bash
-git init -b main
+git init -b master
 git status --short
 git add .
 git diff --cached --stat
@@ -61,7 +61,7 @@ git diff --cached
 Prüfe die vorgemerkten Dateien. Erst danach:
 
 ```bash
-git commit -m "v1.04: document real-device I/O validation"
+git commit -m "v1.05: central AirControl server and local clients"
 ```
 
 Git verwendet deine vorhandene Identität. Falls sie fehlt, entscheide selbst
@@ -82,7 +82,7 @@ Keinen Force-Push verwenden. Vor dem Push Arbeitsbaum und Remote prüfen.
 
 Empfohlene Beschreibung:
 
-> Compact Qt 6 desktop controller for Philips AC2729 air purifiers. Local CoAP, live status, Lua automation, diagnostics and maintenance alerts.
+> Qt 6 desktop controller with one local Philips AC2729 server, multiple Unix-socket clients, live status, Lua automation and diagnostics.
 
 Passende Topics: `qt6`, `cpp17`, `linux`, `cinnamon`, `philips`, `air-purifier`,
 `coap`, `lua`, `home-automation`, `desktop-widget`, `fedora`.
@@ -91,7 +91,8 @@ Passende Topics: `qt6`, `cpp17`, `linux`, `cinnamon`, `philips`, `air-purifier`,
 
 - Ersten CI-Lauf abwarten und Logs lesen; dieses Paket behauptet keinen vorherigen
   grünen GitHub-Lauf. Branch-Schutz erst an tatsächliche Check-Namen binden.
-- `main` vor versehentlichem Löschen und Force-Push schützen. Pull Requests und
+- Den veröffentlichten Standardbranch (derzeit `master`) vor versehentlichem
+  Löschen und Force-Push schützen. Pull Requests und
   erfolgreiche Build-Checks vor dem Zusammenführen empfehlen; Solo-Maintainer
   brauchen keine unerfüllbare zweite Freigabe.
 - Unter Security die private Schwachstellenmeldung aktivieren und prüfen, ob
@@ -102,18 +103,19 @@ Passende Topics: `qt6`, `cpp17`, `linux`, `cinnamon`, `philips`, `air-purifier`,
 - Wenn verfügbar, Secret Scanning/Push Protection einschalten. Das ersetzt
   keine manuelle Prüfung von Gerätenummern und Screenshots.
 
-## 5. Release v1.04 als Entwurf
+## 5. Release v1.05 als Entwurf
 
-Erst nach erfolgreicher CI und lokalem Gegenprüfen:
+Das Einspielskript erstellt und pusht `v1.05` bereits. Die folgenden Befehle sind
+nur die manuelle Alternative, wenn das Skript bewusst nicht verwendet wurde:
 
 ```bash
-git tag -a v1.04 -m "AirCtrl-Desklet v1.04"
-git push origin v1.04
+git tag -a v1.05 -m "AirCtrl-Desklet v1.05"
+git push origin v1.05
 ```
 
 Der vorbereitete Release-Workflow baut und testet den Tag erneut. Er erzeugt
 einen **nicht veröffentlichten Entwurf** mit Quell-ZIP, SHA-256-Datei und den
-[Release-Notizen](releases/v1.04.md). Prüfe Dateien und Grenzen, bevor du im
+[Release-Notizen](releases/v1.05.md). Prüfe Dateien und Grenzen, bevor du im
 GitHub-Release auf „Publish release“ klickst. Bei Wiederholung wird ein
 vorhandener Release nicht überschrieben.
 

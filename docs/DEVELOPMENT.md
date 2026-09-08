@@ -4,7 +4,7 @@
 
 ## Voraussetzungen
 
-Linux, C++17-Compiler, CMake ab 3.16, Qt ab 6.2 (Core, Gui, Widgets, DBus; zusätzlich
+Linux, C++17-Compiler, CMake ab 3.16, Qt ab 6.2 (Core, Gui, Widgets, DBus, Network; zusätzlich
 Test für Tests), OpenSSL Crypto, nlohmann/json ab 3.9 und Threads.
 Die optionalen CMake-Presets benötigen **CMake ab 3.21** und Ninja.
 Die Repository-/Paketprüfungen verwenden Python ab 3.9 und nur die Standardbibliothek.
@@ -46,7 +46,8 @@ ctest --preset dev
 Tests. Die Buildverzeichnisse sind voneinander getrennt. Lokale SDK-Pfade gehören
 in ein nicht eingechecktes `CMakeUserPresets.json` oder in `-DCMAKE_PREFIX_PATH=…`.
 Die Versionsnummer des Widgets stammt aus `project(... VERSION ...)` in der
-obersten CMake-Datei. Das eigenständig versionierte CLI-Backend bleibt bei 0.1.0.
+obersten CMake-Datei. `airctrl-server` ist der einzige installierte Nutzer der
+internen Philips-CoAP-Bibliothek; `airctrl-client` und das Desklet sprechen IPC.
 Die Editorvorlage wird beim Konfigurieren aus `examples/automation.lua` in den
 generierten Header `airctrl_automation_example.hpp` übernommen; diese generierte
 Datei nicht manuell bearbeiten.
@@ -64,13 +65,22 @@ GUI-Versuche `--demo` als Programmargument setzen.
 
 ## Testgrenzen
 
-CTest startet QtTest mit `-platform offscreen`. Fake-Backend und lokaler
+CTest startet QtTest mit `-platform offscreen`. Fake-Server und lokaler
 UDP-Simulator ersetzen das Gerät. Der UDP-Test verwendet nur `127.0.0.1` und
 einen dynamischen Port; keine IP des echten Geräts wird getestet.
 `automation-tests` prüft die Lua-Sandbox, die bytegleiche Beispielvorlage,
 Zeitpläne, Wochentage, Nachholen, Ereignisdaten, erlaubte Steuerfelder und das
 Ausführungslimit ohne Gerätezugriff. Die Desklet-Suite prüft zusätzlich, dass
-IPv4, IPv6 und Hostnamen unverändert als Hostargument beim Backend ankommen.
+zwei Clients denselben Server, UDP-Port und Statusstrom verwenden und IPv4,
+IPv6 sowie Hostnamen unverändert beim Server ankommen. Kann die isolierte
+Umgebung keine Unix-Sockets anlegen, wird diese Suite ausdrücklich übersprungen;
+das ist kein bestandener nativer IPC-Test. Für die vollständige Desklet-/Server-
+Suite gilt ein CTest-Limit von 300 Sekunden, weil sie absichtlich einen
+19-Sekunden-Datenpausentest und zahlreiche getrennte Serverstarts enthält.
+Abgekoppelte Testserver leiten ihre Ausgabe nicht in CTest und beenden sich im
+Testmodus auch ohne erste Clientverbindung. Synthetische Alarmfälle erreichen
+nur bei der ausdrücklich privaten D-Bus-Prüfung einen Benachrichtigungsdienst,
+niemals die normale Desktopsitzung des Entwicklers.
 
 Die native Fensterverwaltung, Clipboard-/Popup-Verhalten, Tray und Autostart
 müssen zusätzlich interaktiv geprüft werden. Simuliertes Wayland-Routing ist
@@ -108,12 +118,26 @@ Builds, Git-Metadaten, SDKs, Einstellungen und Mitschnitte werden nicht verpackt
 Bereits vorhandene Ausgabedateien werden nicht überschrieben. Für einen erneuten
 Versuch einen anderen Ausgabepfad mit `--output /absoluter/pfad/datei.zip` wählen.
 Die reproduzierbare ZIP-Struktur ersetzt keine signierte Herkunftsbestätigung.
-Das Übergabe-ZIP kann zusätzlich `einspielen-v1.04.sh` enthalten. Dieses Skript
+Das Übergabe-ZIP kann zusätzlich ein versionsbezogenes Einspielskript enthalten. Dieses Skript
 prüft ein sauberes vorhandenes Git-Arbeitsverzeichnis, kopiert nur die durch die
 Repository-Positivliste freigegebenen Dateien, baut und testet, installiert
 unter `~/.local` und erstellt danach Commit und annotierten Tag. Der abschließende
 Push erfolgt atomar über den ausdrücklich gesetzten SSH-Remote und niemals mit
 `--force`. Das Skript ist kein CI-Ersatz; der GitHub-Lauf beginnt erst nach dem Push.
+
+## Server und Clients lokal prüfen
+
+```bash
+./build/dev/airctrl-server
+./build/dev/airctrl-client server-status
+./build/dev/airctrl-client status
+./build/dev/airctrl-client watch
+./build/dev/airctrl-client set pwr=1
+```
+
+`airctrl-server` bleibt beim Schließen eines Clients aktiv. `airctrl-client refresh`
+erneuert nur den Geräteclient samt UDP-Socket; der Unix-Socket bleibt bestehen.
+Das Nachrichtenformat steht in [IPC_PROTOCOL.md](IPC_PROTOCOL.md).
 
 ## Vorschauen ohne Gerät
 

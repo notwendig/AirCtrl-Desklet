@@ -49,8 +49,8 @@ int main(int argc, char** argv) {
             "Über das Symbol in der Leiste kannst du das Widget anzeigen.");
         return 0;
     }
-    const auto backend = QCoreApplication::applicationDirPath() + "/airctrl-backend";
-    Desklet widget(preferences, backend, demo);
+    const auto server = QCoreApplication::applicationDirPath() + "/airctrl-server";
+    Desklet widget(preferences, server, demo);
     if (demo) {
         // Measurements from the user's confirmed AC2729 status; no identifying IDs.
         widget.applyStatus({{"name","Wohnzimmer"},{"modelid","AC2729/10"},

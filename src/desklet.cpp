@@ -433,6 +433,11 @@ void Desklet::updateMonitoring() {
     }
 }
 void Desklet::deliverAlarm(const QString& message, bool critical) {
+    // Integration tests deliberately trigger connection and command alarms.
+    // Never forward those synthetic alarms into the user's real desktop
+    // notification session.
+    if(qEnvironmentVariableIntValue("AIRCTRL_TEST_SUPPRESS_DESKTOP_ALARMS")==1 &&
+       qEnvironmentVariable("AIRCTRL_TEST_PRIVATE_DBUS")!="1") return;
     if(preferences_.alarmSound) QApplication::beep();
     if(!preferences_.desktopAlarms) return;
     const auto request=alarmNotification(message,critical);
@@ -795,11 +800,11 @@ void Desklet::showDetails() {
     dialog.setMinimumSize(640,420);
     auto* layout = new QVBoxLayout(&dialog);
     auto* tabs = new QTabWidget(&dialog); tabs->setObjectName("diagnosticTabs");
-    const auto heading = QString("AirControl %1\nGerät: %2\nPlattform: %3\nBackend: %4\n"
-                                 "Empfang: dauerhafte CoAP-I/O-Sitzung (ein UDP-Socket)\n"
-                                 "Anlauf: 60 s je Anfrage · Datenpause: 90 s · Schaltanfrage: 10 s\nLetzter Empfang: %5\n\n")
+    const auto heading = QString("AirControl %1\nGerät: %2\nPlattform: %3\nServer: %4\n"
+                                 "IPC: %5\nEmpfang: zentraler Server mit einer CoAP-I/O-Sitzung\n"
+                                 "Anlauf: 60 s je Anfrage · Datenpause: 90 s · Schaltanfrage: 10 s\nLetzter Empfang: %6\n\n")
         .arg(QCoreApplication::applicationVersion(),endpointText(preferences_.host,preferences_.port),
-            QGuiApplication::platformName(),controller_.backendPath(),
+            QGuiApplication::platformName(),controller_.backendPath(),controller_.socketPath(),
             updated_.isValid() ? updated_.toString(Qt::ISODate) : "noch keiner");
     const auto session=QString("Desktopsitzung: %1\nWayland-Behandlung: %2\n\n")
         .arg(qEnvironmentVariable("XDG_SESSION_TYPE","unbekannt"),waylandSession_ ? "ja" : "nein");
@@ -847,9 +852,10 @@ void Desklet::showDetails() {
         {"Plattform",QGuiApplication::platformName(),"Tatsächlich von Qt verwendetes Fenster-Backend, z.B. xcb oder wayland."},
         {"Desktopsitzung",qEnvironmentVariable("XDG_SESSION_TYPE","unbekannt"),"Vom Desktop gemeldeter Sitzungstyp. Er kann vom Qt-Fenster-Backend abweichen."},
         {"Wayland-Behandlung",waylandSession_ ? "ja" : "nein","Ob das Widget seine Wayland-spezifische Fensterbehandlung verwendet."},
-        {"Backend",controller_.backendPath(),"Pfad des separaten C++-Programms für die verschlüsselte CoAP-Kommunikation."},
-        {"Empfangsmodus","Eine dauerhafte I/O-Sitzung","Ein Backend-Prozess verwendet denselben UDP-Socket und synchronisierten Protokollzustand nacheinander für Statusbeobachtung und Schaltbefehle."},
-        {"Empfangsphase",controller_.observationProgress(),"Fortschritt der I/O-Sitzung; der Hintergrundempfang sperrt keine Bedienelemente."},
+        {"Server",controller_.backendPath(),"Pfad des einzigen Prozesses, der mit dem AC2729 kommuniziert."},
+        {"IPC-Socket",controller_.socketPath(),"Geschützter Unix-Socket für Desklet, Lua und Kommandozeilen-Clients."},
+        {"Empfangsmodus","Zentraler Server mit einer I/O-Sitzung","Alle Clients erhalten denselben Statusstrom; nur airctrl-server besitzt UDP-Socket und Protokollzustand."},
+        {"Empfangsphase",controller_.observationProgress(),"Vom Server gemeldeter Fortschritt der Geräte-I/O; das Desklet bleibt ein reiner IPC-Client."},
         {"Statusmeldungen",QString::number(controller_.statusCount()),"Anzahl gültiger Statuszeilen seit Programmstart."},
         {"Datenalter",dataAgeSeconds()<0 ? "noch kein Status" : QString::number(dataAgeSeconds())+" s","Seit dem letzten gültigen Statuspaket. Schalt-ACKs und Fehler setzen den Zähler nicht zurück."},
         {"Letztes Statuspaket",packetReceivedAt_.isValid() ? packetReceivedAt_.toString(Qt::ISODate) : "noch keines","Empfangszeit des letzten gültigen Pakets, unabhängig von der Bestätigung eines Schaltbefehls."},
@@ -862,15 +868,15 @@ void Desklet::showDetails() {
         {"Letztes Lua-Ereignis",automation_.lastEvent().isEmpty() ? "—" : automation_.lastEvent(),"Zuletzt an on_event übergebenes Ereignis."},
         {"Letzte Lua-Aktion",automation_.lastAction().isEmpty() ? "—" : automation_.lastAction(),"Letzter von Lua angeforderter bzw. bestätigter Steuerauftrag."},
         {"Aktive Alarme",alertReport(activeAlerts_),"Warnungen aus bekannten Gerätestatusfeldern sowie Fehler beim Empfang oder Schalten. Unbekannte err-Codes werden nicht geraten."},
-        {"Beobachtungsstarts",QString::number(controller_.observationStarts()),"Ein Start der I/O-Sitzung im Normalbetrieb; weitere Starts nach Status-Timeout, Fehler, F5 oder geänderten Einstellungen."},
-        {"CoAP-Anlauf","60 Sekunden je Anfrage","Synchronisierung und erste Statusantwort erhalten jeweils bis zu 60 Sekunden. Der Prozess-Watchdog erlaubt insgesamt 125 Sekunden."},
+        {"Beobachtungsstarts",QString::number(controller_.observationStarts()),"Serverweite Starts der Geräte-I/O-Sitzung; Clientfenster erzeugen keine zusätzlichen UDP-Sitzungen."},
+        {"CoAP-Anlauf","60 Sekunden je Anfrage","Synchronisierung und erste Statusantwort erhalten jeweils bis zu 60 Sekunden; die Frist wird allein im Server überwacht."},
         {"Maximale Datenpause","90 Sekunden","Erst nach längerem Ausbleiben von Statusmeldungen wird der I/O-Socket geschlossen und mit neuer Synchronisierung geöffnet. Die beobachteten 18–19 Sekunden sind normale Pausen."},
         {"Schaltbefehl","10 Sekunden je Anfrage","Observe wird kurz abgemeldet; der Befehl nutzt denselben Socket und fortlaufenden Sendezähler. Keine automatische Wiederholung oder Neusynchronisierung bei einem Schaltfehler."},
         {"Statusbestätigung","90 Sekunden","Nach der Schreibannahme wird Observe auf demselben Socket wieder angemeldet und die nächste Statusmeldung als Rückmeldung verwendet."},
         {"Wiederverbindung",QString::number(preferences_.interval)+" Sekunden","Pause vor einem neuen Empfangsversuch nach einem Fehler; kein Abfrageintervall."},
         {"Letzter Empfang",updated_.isValid() ? updated_.toString(Qt::ISODate) : "noch keiner","Zeitpunkt des letzten in Werte und Embleme übernommenen Status. Ein Schalt-ACK allein verändert ihn nicht."}
     };
-    if(!error_.isEmpty()) connectionFields.append({"Letzter Fehler",error_,"Unveränderte letzte Fehlermeldung des Backends bzw. der Verbindungssteuerung."});
+    if(!error_.isEmpty()) connectionFields.append({"Letzter Fehler",error_,"Unveränderte letzte Fehlermeldung des Servers bzw. der IPC-Verbindung."});
     if(!commandError_.isEmpty()) connectionFields.append({"Letzter Schaltfehler",commandError_,"Ein Schaltfehler bedeutet nicht automatisch, dass die weiterhin aktive Beobachtung offline ist."});
     tabs->addTab(table(connectionFields,"connectionFields"),"Verbindung erklärt");
     auto* raw = new QPlainTextEdit(&dialog); raw->setObjectName("rawDiagnostics"); raw->setReadOnly(true);

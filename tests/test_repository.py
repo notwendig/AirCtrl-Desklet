@@ -1,8 +1,10 @@
 """Offline tests for repository checks and deterministic, source-only releases."""
 
 import hashlib
+import json
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -11,6 +13,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 from check_repository import check_repository, project_version, public_files  # noqa: E402
+from check_v105_resume import verify_resume  # noqa: E402
 from package_source import package_source  # noqa: E402
 
 
@@ -46,6 +49,86 @@ class RepositoryTests(unittest.TestCase):
             with self.subTest(pattern=pattern):
                 self.assertIn(pattern, patterns)
 
+    def test_server_client_install_contract(self):
+        cmake = (self.root / "CMakeLists.txt").read_text()
+        install_line = next(line for line in cmake.splitlines()
+                            if line.startswith("install(TARGETS airctrl-desklet"))
+        self.assertIn("airctrl-server", install_line)
+        self.assertIn("airctrl-client", install_line)
+        self.assertNotIn("airctrl-backend", install_line)
+        self.assertIn("src/server.cpp", cmake)
+        self.assertIn("src/client_main.cpp", cmake)
+
+    def test_desklet_suite_has_slow_machine_timeout(self):
+        cmake = (self.root / "CMakeLists.txt").read_text()
+        self.assertIn(
+            "set_tests_properties(desklet PROPERTIES TIMEOUT 300)", cmake)
+        self.assertNotIn(
+            "set_tests_properties(desklet PROPERTIES TIMEOUT 90)", cmake)
+
+    def test_local_socket_watchdog_is_armed_before_connect(self):
+        controller = (self.root / "src" / "controller.cpp").read_text()
+        start = controller.index("void Controller::connectServer()")
+        end = controller.index("void Controller::launchServer()", start)
+        connect_body = controller[start:end]
+        self.assertLess(connect_body.index("connectWatchdog_.start(3000);"),
+                        connect_body.index("socket_.connectToServer("))
+        fake = (self.root / "tests" / "fake_backend.cpp").read_text()
+        self.assertIn("std::optional<IpcCommand> pending_", fake)
+        self.assertIn("if(pending_) return", fake)
+
+    def test_detached_servers_do_not_keep_ctest_pipes_open(self):
+        controller = (self.root / "src" / "controller.cpp").read_text()
+        self.assertIn("server.setStandardOutputFile(QProcess::nullDevice())", controller)
+        self.assertIn("server.setStandardErrorFile(QProcess::nullDevice())", controller)
+
+    def test_synthetic_alarms_do_not_reach_real_desktop(self):
+        desklet = (self.root / "src" / "desklet.cpp").read_text()
+        tests = (self.root / "tests" / "test_desklet.cpp").read_text()
+        self.assertIn("AIRCTRL_TEST_SUPPRESS_DESKTOP_ALARMS", desklet)
+        self.assertIn('qputenv("AIRCTRL_TEST_SUPPRESS_DESKTOP_ALARMS","1")', tests)
+
+    def test_update_script_uses_original_ssh_and_atomic_push(self):
+        script = (self.root / "einspielen-v1.05.sh").read_text()
+        self.assertIn('${HOME}/Projects/Qt/AirCtrl-Desklet', script)
+        self.assertIn('git@github.com:notwendig/AirCtrl-Desklet.git', script)
+        self.assertIn('push --atomic', script)
+        self.assertIn('public_files', script)
+        self.assertIn('check_v105_resume.py', script)
+        self.assertIn('rev-list --left-right --count', script)
+        self.assertIn('commit --amend -m "$commit_message"', script)
+        self.assertIn('v1.05: central AirControl server and and local clients', script)
+        self.assertIn('local_parent', script)
+        self.assertIn('cmake -E remove_directory "$test_build"', script)
+        self.assertLess(script.index('cmake -E remove_directory "$test_build"'),
+                        script.index('cmake -S "$project_dir" -B "$test_build"'))
+        self.assertNotIn('push --force', script)
+
+    def test_interrupted_update_resume_accepts_only_known_bytes(self):
+        source = self.area / "resume-source"
+        target = self.area / "resume-target"
+        source.mkdir()
+        target.mkdir()
+        subprocess.run(["git", "init", "-q", str(target)], check=True)
+        subprocess.run(["git", "-C", str(target), "config", "user.name", "Test"], check=True)
+        subprocess.run(["git", "-C", str(target), "config", "user.email", "test@example.invalid"], check=True)
+        tracked = target / "sample.txt"
+        tracked.write_text("v1.04\n")
+        subprocess.run(["git", "-C", str(target), "add", "sample.txt"], check=True)
+        subprocess.run(["git", "-C", str(target), "commit", "-qm", "baseline"], check=True)
+
+        known = b"first v1.05 attempt\n"
+        current = b"v1.05 with timeout fix\n"
+        tracked.write_bytes(known)
+        (source / "sample.txt").write_bytes(current)
+        manifest = source / "resume.json"
+        manifest.write_text(json.dumps({"version": 1, "files": {
+            "sample.txt": hashlib.sha256(known).hexdigest()}, "deleted": []}))
+        self.assertEqual(1, verify_resume(source, target, manifest))
+        tracked.write_text("user edit\n")
+        with self.assertRaises(ValueError):
+            verify_resume(source, target, manifest)
+
     def test_device_identifier_is_rejected(self):
         # Deliberately generated synthetic 32-hex identifier, never a real device ID.
         with (self.root / "docs" / "private.md").open("w") as stream:
@@ -76,7 +159,10 @@ class RepositoryTests(unittest.TestCase):
             names = archive.namelist()
             self.assertIn("AirCtrl-Desklet/.github/workflows/ci.yml", names)
             self.assertIn("AirCtrl-Desklet/docs/images/desklet-dark.png", names)
+            self.assertIn("AirCtrl-Desklet/docs/IPC_PROTOCOL.md", names)
+            self.assertIn("AirCtrl-Desklet/einspielen-v1.05.sh", names)
             self.assertFalse(any("secret.log" in name or name.endswith("/.env") for name in names))
+            self.assertFalse(any(name.lower().endswith((".pcap", ".pcapng", ".lz4")) for name in names))
             self.assertTrue(all(name.startswith("AirCtrl-Desklet/") and ".." not in Path(name).parts
                                 for name in names))
             archive.extractall(self.area / "unpacked")

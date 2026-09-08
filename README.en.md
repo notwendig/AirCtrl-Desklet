@@ -2,7 +2,7 @@
 
 **Your Philips air purifier, right on your Linux desktop.**
 
-C++17 · Qt 6 · Lua 5.4 · local CoAP communication · MIT · **v1.04**
+C++17 · Qt 6 · Lua 5.4 · local server/clients · MIT · **v1.05**
 
 [Deutsch](README.md) · [Development](docs/DEVELOPMENT.md) · [Changelog](CHANGELOG.md)
 
@@ -19,8 +19,10 @@ It is a standalone Qt application, **not a Cinnamon JavaScript desklet**.
 
 - Eight controls: power, child lock, automatic mode, fan speed, humidity target,
   lighting, purification/2-in-1 and shutdown timer.
-- One persistent UDP socket with synchronized protocol state for observation
-  and controls; a status timeout closes/reopens it and synchronizes again.
+- One persistent `airctrl-server` is the only process that contacts the AC2729.
+  The desklet, Lua and `airctrl-client` use only its protected Unix socket.
+- One UDP I/O session is shared by all clients. Only the server renews it after
+  a 90-second status timeout.
 - Confirmed-state emblems, seconds-since-reception indicator and separate alarm circle.
 - Per-filter warnings, acknowledgement, desktop notifications and optional sound.
 - Configurable colours, background transparency, fonts, window decoration and autostart.
@@ -51,10 +53,23 @@ Replace the documentation-only example address. Save the real address in
 **right-click → Verbindung und Autostart** for future starts; `--host` initially applies
 to this invocation. `AC2729-10` is the default but is not automatic discovery;
 it must resolve on the local network. Installation is per-user under `~/.local`.
-Python is used by the installer; the GUI and backend are C++ programs.
+Python is used by the installer; GUI, server and command-line client are C++ programs.
+
+The installer enables the per-user `airctrl-server.service`. Useful client calls:
+
+```bash
+airctrl-client status
+airctrl-client watch
+airctrl-client set pwr=1
+airctrl-client set mode=S om=s uil=0
+airctrl-client refresh
+```
+
+Clients use `$XDG_RUNTIME_DIR/airctrl-desklet/server.sock`; its directory and
+socket are accessible only to the logged-in user.
 
 Dependencies: C and C++17 compilers, CMake ≥ 3.16, Qt ≥ 6.2
-(Core/Gui/Widgets/DBus), OpenSSL Crypto, nlohmann/json ≥ 3.9. Presets
+(Core/Gui/Widgets/DBus/Network), OpenSSL Crypto, nlohmann/json ≥ 3.9. Presets
 additionally require CMake ≥ 3.21 and Ninja.
 [Build instructions and other distributions](docs/DEVELOPMENT.md)
 
@@ -75,7 +90,7 @@ automatic day mode at 07:00. Its comments also form a complete event, status-fie
 and control-value reference. `on_event(event)` receives `startup`, `time`,
 `connected`, `disconnected`, `status`, `alarm` and `command`; status events expose
 both `event.status` and `event.changed`. `airctrl.set { ... }` uses the same field
-allow-list and confirmed-state command path as the UI.
+allow-list, local IPC connection and confirmed-state command path as the UI.
 
 The verified official Lua 5.4.9 sources are embedded. The sandbox exposes no API
 for arbitrary file, network, process, shell, package or debug access and applies
@@ -119,7 +134,10 @@ an observation, not a Philips specification. The raw field remains read-only.
 
 Real-device reception/control and Fedora 44 + Cinnamon + X11 are confirmed by
 Jürgen. Wayland-aware handling exists, but full native Wayland verification is
-outstanding. Other Philips models are not claimed compatible.
+outstanding. The v1.05 server/client build and installation are locally verified;
+native multi-client IPC and the real-device run still need confirmation on Fedora,
+because the isolated validation environment cannot open an AF_UNIX listening socket.
+Other Philips models are not claimed compatible.
 [Local results and limitations](VALIDATION.md). The prepared GitHub workflow is
 not a claim of an already successful CI run.
 
@@ -138,7 +156,7 @@ python3 scripts/check_repository.py
 |---|---|
 | **Jürgen Sievers** | Project initiator, product owner and maintainer; requirements, UX direction, priorities, physical-device testing and release decisions |
 | **OpenAI Codex** | AI development partner; collaborative C++/Qt/Lua implementation, protocol analysis, debugging, tests and documentation |
-| **betaboon** | Author of upstream Python `aioairctrl`, underlying the C++ backend |
+| **betaboon** | Author of upstream Python `aioairctrl`, underlying the server's internal C++ device transport |
 
 Codex is credited as AI assistance, not a human maintainer or independent support
 contact. Jürgen owns project decisions and publication. [Credits](AUTHORS.md)

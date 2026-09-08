@@ -2,10 +2,10 @@
 
 ## Unterstützter Stand
 
-Sicherheitskorrekturen sind für den aktuellen `main`-Stand und die jeweils neueste
+Sicherheitskorrekturen sind für den aktuellen Standardbranch und die jeweils neueste
 1.x-Veröffentlichung vorgesehen. Das ist ein gemeinschaftlich gepflegtes Projekt,
 kein Produkt mit garantierter Reaktionszeit. Alte ZIP-Versionen erhalten keine
-zugesicherte Rückportierung. Der aktuelle vorbereitete Anwendungsstand ist 1.04.
+zugesicherte Rückportierung. Der aktuelle vorbereitete Anwendungsstand ist 1.05.
 
 ## Vertraulich melden
 
@@ -25,8 +25,13 @@ gegebenenfalls ein Korrekturvorschlag. Keine Versuche an fremden Geräten.
 
 ## Grenzen und Betrieb
 
-- Das Widget kommuniziert mit einem lokalen Gerät über UDP/CoAP (standardmäßig
-  Port 5683). Stelle diesen Port nicht durch Routerfreigaben ins Internet.
+- Nur `airctrl-server` kommuniziert mit dem lokalen Gerät über UDP/CoAP
+  (standardmäßig Port 5683). Stelle diesen Port nicht durch Routerfreigaben ins Internet.
+- Desklet, Lua und CLI benutzen einen Unix-Socket im privaten Laufzeitverzeichnis
+  des Benutzers (0700/0600). Das IPC-Protokoll besitzt keine zusätzliche
+  Authentifizierung und darf nicht auf TCP, freigegebene Verzeichnisse oder
+  fremde Benutzerkonten weitergeleitet werden. Jeder Prozess desselben Kontos
+  kann erlaubte Gerätebefehle an den Server senden.
 - Die implementierte Philips-Protokollverschlüsselung ist kein Nachweis einer
   modernen, gegenseitig authentifizierten Vertrauensbeziehung. Betreibe Gerät und
   Client in einem kontrollierten lokalen Netz. Die `/sys/dev/sync`-Antwort

@@ -1,13 +1,14 @@
-# Philips AirControl – Qt6-Gerätepanel v1.04
+# Philips AirControl – Qt6-Gerätepanel v1.05
 
 Kompaktes C++/Qt6-Desktopwidget für den Philips AC2729/10 unter
 Cinnamon. Als Geräteadresse sind IPv4, IPv6 oder ein DNS-/mDNS-Hostname möglich;
 voreingestellt ist **AC2729-10**, UDP-Port **5683**.
 Der bereits am Gerät funktionierende C++-CoAP-Code ist vollständig enthalten.
 
-**v1.04** verwendet genau einen dauerhaften UDP-I/O-Socket samt synchronisiertem
-Protokollzustand für Status und Schaltbefehle. Erst ein Status-Timeout schließt diese Sitzung und öffnet
-nach der Wiederverbindung einen neuen Socket mit neuer Synchronisierung. Die seit
+**v1.05** verwendet einen dauerhaften lokalen Server als einzigen Geräteprozess.
+Desklet, Lua und Kommandozeile sind Clients seines geschützten Unix-Sockets.
+Der Server hält genau einen UDP-I/O-Socket samt synchronisiertem Protokollzustand
+für alle Clients. Erst ein Status-Timeout erneuert diese Geräte-I/O. Die seit
 v1.02 vorhandene, standardmäßig ausgeschaltete
 Lua-Automatik verarbeitet Ereignisse und lokale Zeitpläne. Das Beispiel schaltet Tag/Nacht; alle Aufträge
 verwenden die vorhandene Feldprüfung und bestätigte Gerätesteuerung.
@@ -306,7 +307,7 @@ Bei aktivem Widget funktioniert auch die Menütaste oder **Umschalt+F10**.
 **F5:** Statusverbindung ausdrücklich neu starten. **F1:** Diagnose öffnen.
 **Diagnose:** Der erste Reiter zeigt für jeden empfangenen Geräte-Tag den
 unveränderten Wert und eine deutsche Bedeutung. Der zweite Reiter erklärt
-Verbindung, Qt-Plattform, Sitzung und Backend. Unter „Rohdaten“ bleibt der
+Verbindung, Qt-Plattform, Sitzung, Server und IPC-Socket. Unter „Rohdaten“ bleibt der
 vollständige bisherige Bericht samt JSON erhalten. **Bericht kopieren** übernimmt
 Erklärungen und Rohdaten gemeinsam; alternativ **Strg+Umschalt+C** im Diagnosefenster.
 Nach dem Klick erscheint **Bericht kopiert (… Zeichen)**. Einfügen mit **Strg+V**,
@@ -374,36 +375,36 @@ werden bis zu dessen Rückmeldung ignoriert. Es werden keine Doppelbefehle vorge
 
 ## Verbindung und Rückmeldungen
 
-Ein langlebiger Backend-Prozess ruft `session -J` auf und besitzt genau einen
-UDP-Socket sowie einen synchronisierten Protokollzustand. Jede getypte JSON-Zeile wird
-sofort verarbeitet, auch wenn Zeilen über mehrere Prozessausgaben verteilt sind
-oder mehrere Meldungen zusammen eintreffen. Es gibt keinen periodischen Neustart
-und keine zyklische Neusynchronisierung.
+Ein langlebiger `airctrl-server` besitzt genau einen UDP-Socket sowie einen
+synchronisierten Protokollzustand. Er verteilt getypte JSON-Nachrichten über
+`$XDG_RUNTIME_DIR/airctrl-desklet/server.sock` an alle verbundenen Clients.
+Desklet und Lua besitzen keine eigene Geräteverbindung. Es gibt keinen
+periodischen Neustart und keine zyklische Neusynchronisierung.
 
 | Grenze | Einstellung seit 0.3.5 |
 |---|---|
 | Synchronisierung / erste Statusantwort | Jeweils bis zu 60 s |
-| Gesamter Anlauf-Watchdog | 125 s einschließlich Startreserve |
-| Keine weiteren Statusmeldungen | Backend beendet nach 90 s; zusätzlicher GUI-Watchdog nach 95 s |
+| Keine weiteren Statusmeldungen | Server erneuert die Geräte-I/O nach 90 s |
 | Wiederverbindung nach Fehler | Standard 10 s; unter Einstellungen 5–300 s |
 | Schaltanfrage | 10 s je Anfrage, GUI-Watchdog 25 s |
 | Statusbestätigung nach angenommener Änderung | Bis zu 90 s |
 
 Der bisher gespeicherte Intervallwert wird jetzt als **Wiederverbindungspause**
 verwendet; er bestimmt nicht mehr, wie oft neue Messwerte empfangen werden.
-Die Meldungsrate bestimmt das Gerät. F5 startet die I/O-Sitzung nur auf ausdrücklichen
-Benutzerwunsch neu. Eine gesunde Sitzung bleibt ansonsten bestehen.
+Die Meldungsrate bestimmt das Gerät. F5 fordert den Server nur auf ausdrücklichen
+Benutzerwunsch zum Neuaufbau der Geräte-I/O auf. Eine gesunde Sitzung bleibt bestehen.
 
 Zum Schalten wird die Observe-Anfrage sauber abgemeldet. Der Control-Aufruf läuft
-danach über denselben Backend-Prozess, UDP-Socket und Sendezähler. Anschließend
+danach im Server über denselben UDP-Socket und Sendezähler. Anschließend
 wird Observe auf demselben Socket wieder angemeldet. Erst eine neue Statusmeldung
 nach der Schreibannahme wird zur Rückmeldung verwendet.
 Der angezeigte Gerätezustand wird nie optimistisch umgeschaltet.
 
-Bleibt eine erste oder spätere Statusmeldung bis zum Timeout aus, endet der
-Backend-Prozess: der alte Socket wird geschlossen. Nach der eingestellten
-Wiederverbindungspause öffnet der Ersatzprozess einen neuen Socket und führt
-genau eine neue `/sys/dev/sync`-Synchronisierung aus. Ein fehlgeschlagener
+Bleibt eine erste oder spätere Statusmeldung bis zum Timeout aus, zerstört der
+laufende Server nur seinen Geräteclient und schließt dessen UDP-Socket. Nach der
+Wiederverbindungspause öffnet derselbe Serverprozess einen neuen UDP-Socket und
+führt genau eine neue `/sys/dev/sync`-Synchronisierung aus. Die lokalen Clients
+bleiben verbunden. Ein fehlgeschlagener
 Schaltbefehl allein erneuert Socket und Schlüssel nicht; die Beobachtung wird
 auf derselben Sitzung fortgesetzt.
 
@@ -416,9 +417,8 @@ von der neuen Anmeldung bis zum Status.
 
 Weitere Klicks während eines laufenden Befehls werden nicht gesammelt.
 Schreibbefehle werden **nie automatisch wiederholt**, auch nicht nach einem
-Timeout oder einer Wiederverbindung. Das gilt ebenfalls für den expliziten
-Offline-Power-Klick, der einmal `pwr=1` versucht, ohne die erste Statusmeldung
-abwarten oder die Beobachtung abbrechen zu müssen.
+Timeout oder einer Wiederverbindung. Ein Offline-Power-Klick wird lokal
+abgewiesen, solange der Server keine aktive Geräteverbindung bestätigt.
 
 Ein abgelehnter oder nicht bestätigter Schaltbefehl ist getrennt vom Zustand der
 I/O-Sitzung: Ein anschließend wieder gültiger Empfang bleibt online. Verbindungsfehler
@@ -427,10 +427,10 @@ zeigt Empfangsphase, Zahl der Statusmeldungen, Sitzungsstarts, Wartefristen
 und den letzten Schaltfehler. So lässt sich prüfen, ob die Sitzung wirklich
 dauerhaft läuft (normalerweise ein Start).
 
-Unter Linux bekommt der Backend-Prozess ein Beendigungssignal, wenn das Widget
-beendet oder hart abgebrochen wird. Somit bleibt auch nach `pkill` kein dauerhafter
-Empfänger zurück. Ein normaler Stopp beendet die Sitzung zunächst über SIGTERM;
-antwortet der Prozess nicht, wird er nach einer Sekunde beendet.
+Das Beenden oder harte Abbrechen eines Desklets beendet den Server ausdrücklich
+nicht. Dadurch können weitere Clients und Lua denselben Statusstrom nutzen, ohne
+UDP-Socket oder Synchronisierung neu aufzubauen. `systemctl --user stop
+airctrl-server.service` beendet den zentralen Geräteprozess gezielt.
 
 ### Grundlage aus dem Gerätemitschnitt
 
@@ -510,9 +510,9 @@ Hostfeld ergänzen; der UDP-Port hat ein eigenes Feld.
 `--reset-position` wirkt nur bei einer Plattform, die globale Fensterpositionen
 unterstützt. Unter Wayland entscheidet der Fenstermanager über die Startposition.
 
-Eine Instanzsperre verhindert doppelte Abfragen durch mehrere normale Instanzen.
-Vor einem erneuten Start die laufende Instanz beenden. Die Vorschau verändert
-keine Einstellungen und kommuniziert nicht mit dem Gerät.
+Eine Instanzsperre verhindert mehrere normale Desklet-Fenster. Unabhängig davon
+können mehrere CLI-Clients denselben Server verwenden. Die Vorschau verändert
+keine Einstellungen und kommuniziert weder mit Server noch Gerät.
 
 ## Bauen, testen und Diagnose
 
@@ -535,19 +535,22 @@ Benötigt `dbus-run-session` und die Erlaubnis zum Anlegen lokaler D-Bus-Sockets
 Ohne diese Option wird nur dieser Integrationstest übersprungen; Nachrichtenaufbau
 und Alarmzustandswechsel werden weiterhin ohne Desktopdienst geprüft.
 
-Qt Creator kann die oberste `CMakeLists.txt` direkt öffnen. `airctrl-desklet` und
-`airctrl-backend` müssen nach Build bzw. Installation nebeneinander liegen.
-Die Oberfläche startet das Backend über `QProcess` ohne Shell.
+Qt Creator kann die oberste `CMakeLists.txt` direkt öffnen. `airctrl-desklet`,
+`airctrl-server` und `airctrl-client` müssen nach Build bzw. Installation
+nebeneinander liegen. Normalerweise startet systemd den Server; fehlt er, startet
+das Desklet ihn einmalig über `QProcess` ohne Shell.
 
 ```bash
-# Status unmittelbar über das mitgelieferte Backend prüfen
-./build/airctrl-backend -H 192.0.2.10 status -J
+# Status über den zentralen Server prüfen
+./build/airctrl-client status
+./build/airctrl-client watch
+./build/airctrl-client set pwr=1
 
 # Echte Qt-Oberfläche als PNG rendern, ohne Gerätezugriff
 QT_QPA_PLATFORM=offscreen ./build/airctrl-desklet --screenshot /tmp/airctrl-demo.png
 ```
 
-Die automatisierten Prüfungen verwenden ein simuliertes Backend bzw. einen
+Die automatisierten Prüfungen verwenden einen simulierten Server bzw. einen
 lokalen UDP-Gerätesimulator. Angaben zu Build, Testergebnissen, Bildprüfung und
 Grenzen stehen in [VALIDATION.md](../VALIDATION.md).
 Die C++-Statusabfrage und erste GUI-Messwerte hat der Benutzer am realen Gerät

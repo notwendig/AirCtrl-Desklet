@@ -26,6 +26,7 @@ public:
     ~UdpDevice() { stopped_=true; thread_.join(); ::close(fd_); }
     unsigned short port=0;
     std::atomic<int> syncs{0}, subscriptions{0}, controls{0}, cancellations{0};
+    std::atomic<int> notifications{0}, controlsWithoutInterveningStatus{0};
     std::atomic<int> firstClientPort{0}, changedClientPorts{0};
     std::atomic<bool> notificationsEnabled{true};
     std::atomic<bool> failed{false};
@@ -40,6 +41,7 @@ private:
         using namespace std::chrono;
         try {
             sockaddr_in subscriber{}; detail::Bytes token; unsigned sequence=0; std::string power="1";
+            int notificationsAtPreviousControl=-1;
             auto next=steady_clock::now()+milliseconds(150);
             while(!stopped_) {
                 pollfd descriptor{fd_,POLLIN,0};
@@ -65,7 +67,11 @@ private:
                             if(peer.sin_port==subscriber.sin_port && token==request.token) token.clear();
                         }
                     } else if(path=="/sys/dev/control") {
-                        ++controls;
+                        const int earlierControls=controls.fetch_add(1);
+                        const int receivedStatuses=notifications.load();
+                        if(earlierControls>0 && receivedStatuses<=notificationsAtPreviousControl)
+                            ++controlsWithoutInterveningStatus;
+                        notificationsAtPreviousControl=receivedStatuses;
                         const auto desired=Json::parse(cipher_.decrypt(request.payload)).at("state").at("desired");
                         power=desired.at("pwr").get<std::string>();
                         send({1,68,request.mid,request.token,{},R"({"status":"success"})"},peer);
@@ -74,6 +80,7 @@ private:
                 if(notificationsEnabled.load() && !token.empty() && steady_clock::now()>=next) {
                     detail::Message response{1,69,77,token,{{6,{static_cast<unsigned char>(sequence++%256)}}},{}};
                     response.payload=cipher_.encrypt(Json{{"state",{{"reported",{{"pwr",power},{"rh",50}}}}}}.dump());
+                    ++notifications;
                     send(response,subscriber); next=steady_clock::now()+milliseconds(150);
                 }
             }

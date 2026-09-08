@@ -2,7 +2,7 @@
 
 **Dein Philips-Luftreiniger. Direkt auf dem Linux-Desktop.**
 
-C++17 · Qt 6 · Lua 5.4 · lokale CoAP-Kommunikation · MIT · Version **v1.04**
+C++17 · Qt 6 · Lua 5.4 · lokaler Server/Clients · MIT · Version **v1.05**
 
 [English](README.en.md) · [Bedienung](docs/USER_GUIDE.de.md) · [Entwicklung](docs/DEVELOPMENT.md) · [Änderungen](CHANGELOG.md)
 
@@ -26,8 +26,10 @@ Die Oberfläche ist derzeit deutschsprachig.
   Luftreinigung/2-in-1 und Abschalttimer.
 - Feuchte, Zielfeuchte, Temperatur, PM2,5 und IAI einzeln einblendbar.
 - Aktive Modus- und Wartungssymbole aus bestätigten Statusmeldungen.
-- Ein dauerhafter UDP-Socket mit einmal synchronisiertem Protokollzustand für
-  Beobachtung und Schaltbefehle; automatische Erneuerung bei Status-Timeout.
+- Ein dauerhafter `airctrl-server` als einziger AC2729-Teilnehmer. Desklet,
+  Lua und `airctrl-client` verwenden ausschließlich seinen geschützten Unix-Socket.
+- Genau eine UDP-I/O-Sitzung für alle Clients; automatische Erneuerung nur im
+  Server, wenn 90 Sekunden lang keine Statusmeldung eingeht.
 - Datenalter in Sekunden und separate Alarmglocke.
 - Filtervorwarnungen, Quittierung, Desktop-Benachrichtigungen und optionaler Ton.
 - Farben, Hintergrundtransparenz, Schrift, Fensterdekoration und Autostart im Kontextmenü.
@@ -42,7 +44,7 @@ Ausgegraute Gerätetasten sind in der Demo absichtlich nicht bedienbar.*
 
 ## Schnellstart auf Fedora
 
-Voraussetzungen: C- und C++17-Compiler, CMake ≥ 3.16, Qt ≥ 6.2 (Core/Gui/Widgets/DBus),
+Voraussetzungen: C- und C++17-Compiler, CMake ≥ 3.16, Qt ≥ 6.2 (Core/Gui/Widgets/DBus/Network),
 OpenSSL Crypto, nlohmann/json ≥ 3.9 und Python 3 für den Installer.
 
 ```bash
@@ -70,8 +72,25 @@ keine automatische Geräteerkennung und muss im lokalen Netz auflösbar sein.
 
 Installation unter `~/.local`, ohne `sudo` für das Installationsskript.
 Menüeintrag: **Philips AirControl**. Bestehende Einstellungen bleiben erhalten.
+Der Installer aktiviert außerdem den systemd-Benutzerdienst `airctrl-server`.
+Ohne verfügbare systemd-Benutzersitzung startet das Desklet den Server bei Bedarf.
 Weitere Distributionen: [Build und Installation](docs/DEVELOPMENT.md).
 Update und Entfernen: [Bedienungsanleitung](docs/USER_GUIDE.de.md).
+
+Server und Kommandozeilen-Clients:
+
+```bash
+systemctl --user status airctrl-server.service
+airctrl-client status
+airctrl-client watch
+airctrl-client set pwr=1
+airctrl-client set mode=S om=s uil=0
+airctrl-client refresh
+```
+
+Nur `airctrl-server` enthält die Philips-CoAP-Anbindung. Alle Clients sprechen
+über `$XDG_RUNTIME_DIR/airctrl-desklet/server.sock`; das Verzeichnis und der
+Socket sind ausschließlich für den angemeldeten Benutzer zugänglich.
 
 ## Bedienung
 
@@ -117,8 +136,8 @@ airctrl.schedule {
 `on_event(event)` erhält `startup`, `time`, `connected`, `disconnected`,
 `status`, `alarm` und `command`. Statusereignisse enthalten den vollständigen
 bestätigten Zustand in `event.status` sowie Änderungen in `event.changed`.
-`airctrl.set { ... }` verwendet dieselbe Positivliste und Bestätigungslogik wie
-die Gerätetasten. Pro Zeitplantermin gibt es höchstens einen Schaltversuch;
+`airctrl.set { ... }` verwendet dieselbe Positivliste, IPC-Verbindung und
+Bestätigungslogik wie die Gerätetasten. Pro Zeitplantermin gibt es höchstens einen Schaltversuch;
 bereits passende Zustände erzeugen keinen Netzwerkbefehl.
 
 Lua 5.4.9 wird aus dem geprüften offiziellen Quellstand eingebettet. Die Sandbox
@@ -178,6 +197,7 @@ Ursache der langen Sendepause ist nicht geklärt.
 | Umgebung | Stand |
 |---|---|
 | Philips AC2729/10 | v1.04: gemeinsamer UDP-Port, 17 Schaltungen und Wiederanlauf nach Status-Timeout im Gerätemitschnitt bestätigt |
+| Server/Clients v1.05 | Build, Installation und Offline-Prüfungen bestätigt; Mehrclient-IPC und echter Gerätebetrieb müssen nach dem Einspielen unter Fedora/Cinnamon bestätigt werden |
 | Fedora 44 / Cinnamon / X11 (`xcb`) | Vom Nutzer bestätigt, einschließlich Diagnoseexport von v1.01 |
 | Wayland | Angepasste Fensterbehandlung vorhanden; kein vollständiger nativer Desktop-Test bestätigt |
 | Andere Philips-Modelle | Nicht freigegeben; Modellzuordnungen und Befehle können abweichen |
@@ -207,7 +227,7 @@ Presets benötigen CMake ≥ 3.21 und Ninja. Klassischer Build ohne Presets:
 |---|---|
 | **Jürgen Sievers** | Projektinitiator, Product Owner und Maintainer; Anforderungen, Bedienkonzept, Prioritäten, Gerätetests und Freigaben |
 | **OpenAI Codex** | KI-Entwicklungspartner; gemeinsame C++-/Qt-/Lua-Implementierung, Protokollanalyse, Fehlersuche, Tests und Dokumentation |
-| **betaboon** | Autor des Python-Projekts `aioairctrl`, Grundlage des mitgelieferten C++-Backends |
+| **betaboon** | Autor des Python-Projekts `aioairctrl`, Grundlage der internen C++-Geräteanbindung im Server |
 
 Entstanden im gemeinsamen, iterativen Entwickeln — vom ersten funktionierenden
 Statusabruf bis zum alltagstauglichen Desktopwidget. Codex wird transparent als

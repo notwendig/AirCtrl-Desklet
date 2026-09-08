@@ -1,5 +1,50 @@
 # Änderungsübersicht
 
+## v1.05 – 2026-09-08
+
+- Neue echte Server-/Client-Architektur: Nur `airctrl-server` bindet die
+  Philips-CoAP-Bibliothek ein und kommuniziert mit dem AC2729-10.
+- Desklet, Lua-Automatik und `airctrl-client` verwenden ausschließlich den
+  benutzergeschützten Unix-Socket unter `$XDG_RUNTIME_DIR/airctrl-desklet`.
+- Ein Server verteilt denselben bestätigten Statusstrom an mehrere Clients;
+  Schaltergebnisse werden nur dem jeweiligen Auftraggeber zugeordnet.
+- Gleichzeitige Clientaufträge werden serverweit serialisiert; zwischen zwei
+  Geräteversuchen muss mindestens ein neuer Status eingegangen sein.
+- Wird Geräte-I/O während eines laufenden Auftrags erneuert, bleibt dessen Ausgang
+  ausdrücklich unbekannt; der Auftrag wird nicht wiederholt.
+- Das Beenden eines Desklets lässt Server, UDP-Socket und Observe weiterlaufen.
+- Nach 90 Sekunden ohne Status erneuert der Server nur seine Geräte-I/O-Sitzung
+  (close/open plus `/sys/dev/sync`); die IPC-Clients bleiben verbunden.
+- Neuer CLI-Client für `status`, `watch`, `set`, `refresh` und `server-status`.
+- `install.sh` installiert und aktiviert einen systemd-Benutzerdienst. Fehlt
+  eine Benutzersitzung, startet das Desklet den Server bei Bedarf.
+- Lokales IPC-Protokoll, Sicherheitsgrenzen, Diagnose und Testmodell dokumentiert.
+- Das frühere direkt zugreifende `airctrl-backend` wird nicht mehr installiert.
+- CTest lässt der vollständigen Desklet-/Server-Suite nun 300 statt 90 Sekunden;
+  langsamere Rechner werden nicht mehr mitten im Testlauf abgebrochen.
+- Das Einspielskript kann einen einzelnen, noch nicht veröffentlichten
+  v1.05-Commit sicher aktualisieren und anschließend taggen und pushen.
+- Der lokale Verbindungswächter wird vor `connectToServer()` aktiviert. Eine
+  sofort erfolgreiche Unix-Socket-Verbindung wird dadurch nicht mehr nach
+  drei Sekunden von einem nachträglich gestarteten alten Wächter getrennt.
+- Der IPC-Fake-Server pausiert Statusmeldungen jetzt wie der echte Server,
+  solange ein Schaltbefehl blockiert ist; Testprozesse und Ereignisfilter
+  werden auch nach einer fehlgeschlagenen Assertion sicher bereinigt.
+- Das Einspielskript löscht vor CTest ausschließlich das dedizierte Verzeichnis
+  `build/v1.05-update`. Damit können reproduzierbare alte ZIP-Zeitstempel keine
+  veralteten Objektdateien oder Testprogramme wiederverwenden.
+- Doppelte unmittelbar aufeinanderfolgende Aktualisierungsanforderungen werden
+  in Client und Server zu genau einem Geräte-I/O-Neustart zusammengefasst.
+- Ein beim I/O-Abbruch wartender Schaltauftrag wird verworfen und eindeutig als
+  fehlgeschlagen gemeldet; er gelangt niemals in die Ersatzsitzung.
+- Abgekoppelte Testserver erben keine CTest-Ausgabepipes mehr und beenden sich
+  testweise auch dann, wenn vor der ersten Clientverbindung abgebrochen wird.
+- Erwartete Fehlerfälle der Tests erzeugen keine Benachrichtigungen mehr in der
+  echten Desktopsitzung. Die private D-Bus-Integrationsprüfung bleibt aktiv.
+- Der Fortsetzungsprüfer erkennt auch die bereits lokal vorhandenen v1.05-
+  Zwischenstände sowie die versehentliche Betreffzeile mit doppeltem `and` und
+  korrigiert sie beim Amend auf den endgültigen Commit-Betreff.
+
 ## v1.04 – 2026-09-07
 
 Dokumentationsnachtrag vom **2026-09-08**, Anwendungsversion weiterhin 1.04:

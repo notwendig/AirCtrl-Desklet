@@ -6,7 +6,7 @@
 |---|---|---|
 | **Jürgen Sievers** | Projektinitiator, Product Owner und Maintainer | Idee, Anforderungen, Gestaltung und Bedienkonzept; Praxistests am Philips AC2729/10 unter Fedora/Cinnamon; Prioritäten und Freigabe von Veröffentlichungen. |
 | **OpenAI Codex** | KI-Entwicklungspartner | Gemeinsame C++-/Qt-/Lua-Entwicklung, Analyse des Kommunikationsverhaltens, Fehlerkorrekturen, automatisierte Tests, Dokumentation und Vorbereitung dieses Repositorys. |
-| **betaboon** | Autor des ursprünglichen Python-Projekts | [aioairctrl](https://github.com/betaboon/aioairctrl) als Protokoll- und Implementierungsgrundlage des C++-Backends. |
+| **betaboon** | Autor des ursprünglichen Python-Projekts | [aioairctrl](https://github.com/betaboon/aioairctrl) als Protokoll- und Implementierungsgrundlage des C++-Gerätetransports im Server. |
 
 Dieses Projekt entstand in enger Zusammenarbeit zwischen Jürgen und Codex.
 Codex ist ein KI-System, kein menschlicher Maintainer und keine eigenständige

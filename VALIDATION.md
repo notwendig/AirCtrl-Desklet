@@ -1,10 +1,70 @@
-# Validierung – v1.04
+# Validierung – v1.05
 
-Stand: 2026-09-08.
+Stand: 2026-09-09.
 
-Version 1.04 führt Statusbeobachtung und Schaltbefehle in genau einer dauerhaften
-UDP-I/O-Sitzung zusammen. Ein Status-Timeout schließt und erneuert Socket und
-synchronisierten Protokollzustand; ein Schaltfehler allein tut dies nicht.
+Version 1.05 setzt vor die in v1.04 geprüfte UDP-I/O-Sitzung einen dauerhaften
+lokalen Server. Nur `airctrl-server` verwendet das Philips-Protokoll; Desklet,
+Lua und CLI sind Unix-Socket-Clients.
+
+## Prüfungen in v1.05
+
+- Vollständiger Debug-Build von `airctrl-server`, `airctrl-client`, Desklet,
+  eingebettetem Lua und allen Testzielen mit GCC 13.3.0 und Qt 6.8.3 erfolgreich.
+- `automation-tests`: **12 bestanden, 0 fehlgeschlagen, 0 übersprungen**. Lua besitzt weiterhin keinen direkten Datei-,
+  Netzwerk-, Shell- oder Prozesszugriff; Schaltungen laufen über den Desklet-
+  Controller und damit über den lokalen Server.
+- Die neue Desklet-Suite enthält einen Mehrclient-Fall: zwei Controller müssen
+  genau einen Server, einen UDP-Quellport und eine Synchronisierung teilen; nach
+  dem Ende des ersten Clients muss der zweite weiter Status erhalten.
+- Die isolierte Buildumgebung verweigert `QLocalServer::listen` mit
+  „Operation not permitted“. Deshalb wurde die gesamte native AF_UNIX-/Desklet-
+  Suite hier ausdrücklich übersprungen. Das ist **keine** erfolgreiche
+  Laufzeitprüfung des neuen IPC-Transports.
+- **17 Repository-/Pakettests bestanden**; die öffentliche Positivliste umfasst
+  163 Quelldateien und enthält keinen PCAP-, PCAPNG- oder LZ4-Mitschnitt.
+- Frischer Release-Build über `install.sh` in einen separaten absoluten Präfix
+  erfolgreich. Installiert wurden `airctrl-desklet`, `airctrl-server` und
+  `airctrl-client`; `airctrl-backend` wurde nicht installiert. Desklet meldet v1.05,
+  Server-/Client-Hilfe und generierter systemd-Benutzerdienst wurden geprüft.
+- Eine physische Bestätigung der Server-/Mehrclient-Trennung am AC2729 steht noch aus.
+- Die CTest-Frist der Desklet-Suite beträgt 300 Sekunden. Die zunächst verwendeten
+  90 Sekunden erwiesen sich auf dem Zielrechner als zu knapp und beendeten die
+  Suite nach exakt 90,22 Sekunden; das war kein gemeldeter Einzeltestfehler.
+- Das Einspielskript akzeptiert außerdem den exakt erkennbaren Fortsetzungsfall
+  `master...origin/master = 1 0`: genau ein lokaler Commit mit der erwarteten
+  v1.05-Betreffzeile und `origin/master` als direktem Elterncommit. Andere
+  Abweichungen oder ein fremder lokaler Tag führen weiterhin zum Abbruch.
+- Ein Fedora-44-Lauf mit Qt 6.11.2 deckte einen sofortigen Unix-Socket-
+  Verbindungsrennfehler und einen unvollständigen Schreib-Stub im Fake-Server
+  auf. Die Reihenfolge des Verbindungswächters, die Fake-Observe-Pause und die
+  fehlersichere Ereignisfilter-Bereinigung wurden korrigiert. Der korrigierte
+  Stand baut vollständig; die erneute native Fedora-Suite bleibt vor der
+  Veröffentlichung auszuführen.
+- Der anschließende Fedora-Lauf verwendete nachweislich noch Testzeilennummern
+  des vorherigen Quellstands. Ursache war das wiederverwendete
+  `build/v1.05-update` zusammen mit den deterministischen ZIP-Zeitstempeln.
+  Das Einspielskript entfernt nun genau dieses Buildverzeichnis vor CMake.
+- Der danach tatsächlich frisch gebaute Fedora-44-Lauf mit Qt 6.11.2 erreichte
+  **104 bestandene, 3 fehlgeschlagene und 2 umgebungsbedingt übersprungene**
+  Desklet-Fälle. Der Qt-Testprozess endete kontrolliert nach 80,851 Sekunden;
+  CTest wartete anschließend bis 300 Sekunden auf eine von einem abgekoppelten
+  Server geerbte Ausgabepipe. Damit war diese 300-Sekunden-Zeile kein weiterer
+  Testlauf und kein Grund, das Limit erneut zu erhöhen.
+- Die drei dabei isolierten Fehler betrafen doppelte Refresh-Anforderungen,
+  einen beim Sitzungsabbruch blockierten Test-Schaltauftrag und einen
+  gleichzeitigen Doppelstart des Singleton-Servers im Serialisierungstest.
+  Client, Server, Fake-Server und Testaufbau wurden entsprechend korrigiert.
+  Abgekoppelte Serverausgaben gehen nun nach `/dev/null`; ein unbenutzter
+  Testserver beendet sich nach fünf Sekunden.
+- Die zuvor beobachteten SIGSEGV/SIGABRT-Läufe stammten aus dem älteren
+  Testobjektstand. Der frische Lauf erreichte `cleanupTestCase()` ohne Absturz.
+  Erwartete Negativtests werden außerdem von der realen Desktop-
+  Benachrichtigung getrennt. Der abschließende native Fedora-Lauf dieses neuen
+  Korrekturstands ist vor Commit, Tag, Installation und Push zwingend und wird
+  vom Einspielskript automatisch ausgeführt.
+
+Die folgenden realen Paketbefunde prüfen weiterhin das unverändert innerhalb
+des Servers verwendete Observe-/Control-Verhalten aus v1.04.
 
 ## Bestätigung am physischen AC2729/10 – 2026-09-08
 
@@ -201,13 +261,13 @@ Es wurde kein alternativer Zugriff auf eine echte Benutzersitzung versucht.
 | Offline-Embleme | Letzte Symbole abgeblendet, WLAN orange/durchgestrichen, Tooltips markieren veralteten Status |
 | Emblem-Layout | 287 × 142 Pixel mit zwei Statuskreisen, bis zu neun Symbolen in zwei Reihen; Schriftgrößen 10/24/48, Transparenz und Vordergrundfarbe |
 | Emblem-Bedienung | Nur Rechtsklick öffnet das Kontextmenü; Linksklick auf einen Kreis öffnet Alarmdetails, Ziehen verschiebt ohne Menü oder Geräteschreibzugriff |
-| Dauerbeobachtung | Mehrere Meldungen aus genau einem Prozess; keine periodischen Einzelabfragen |
+| Dauerbeobachtung | Mehrere Meldungen aus genau einem Server; keine periodischen Einzelabfragen |
 | Reale Zeitspanne | 19 Sekunden zwischen Meldungen; nach 11 Sekunden weiterhin online; kein Neustart |
 | Startparameter | session -J --timeout 60 --control-timeout 10 --idle-timeout 90 |
 | Streamingparser | Aufgeteilte JSON-Zeile und mehrere Zeilen in einem Ausgabeblock |
 | Eingabeschutz | Ungültiges JSON und übergroße unvollständige Statuszeile führen zum kontrollierten Fehler |
-| Wiederverbindung | Unerwartetes Prozessende, ausbleibende erste Meldung, späterer Datenstillstand |
-| Lebenszyklus | Stop/Start während Prozessanlauf; F5 startet nur einen Ersatzempfänger; Stop beendet Wiederverbindung |
+| Wiederverbindung | Ausbleibende erste Meldung oder späterer Datenstillstand erneuert nur Geräte-I/O im Server |
+| Lebenszyklus | Clientende lässt Server/Observe bestehen; F5 erneuert nur den Geräteclient |
 | Bedienbarkeit | Empfang sperrt die Tasten nicht; ein Schreibauftrag sperrt nur die übrigen Tasten |
 | Power | Immer aktiv, Orange/Weiß/Grün, Kindersicherung, fehlender Status, transparente Hintergründe |
 | Offline-Power | Ein Einschaltversuch ohne Abwarten der ersten Statusantwort, ohne Empfängerabbruch |
@@ -217,7 +277,7 @@ Es wurde kein alternativer Zugriff auf eine echte Benutzersitzung versucht.
 | Bestätigungsfrist | Ausbleibende Statusbestätigung gibt Bedienung wieder frei; keine Wiederholung |
 | Sitzungsverlust beim Schreiben | Laufender Auftrag wird als unbekannter Ausgang gemeldet und beim Neustart nicht erneut gesendet |
 | Echter CoAP-Transport | GUI-Controller und echtes CLI gegen lokalen UDP-Gerätesimulator |
-| Elternprozessschutz | Hart beendetes Hilfs-Widget führt nachweislich zu SIGTERM und Ende seines Empfängers |
+| Mehrclientbetrieb | Zwei Clients teilen Server, Statusstrom, UDP-Port und Synchronisierung; Schaltantwort bleibt zugeordnet |
 | Bestehende Funktionen | Panelbefehle/Datentypen, Menüs, Schriftgrößen, Transparenz, Werte, Position, Einstellungen und Autostart |
 | Diagnose | Erklärungen, Rohdaten, unbekannte Tags, Kopierbericht |
 | Vorschau | Keine Geräteschreibzugriffe |
@@ -225,8 +285,9 @@ Es wurde kein alternativer Zugriff auf eine echte Benutzersitzung versucht.
 
 ### Echter UDP-Integrationstest
 
-Der Test bindet ausschließlich an 127.0.0.1 mit dynamischem UDP-Port. Er startet
-das tatsächlich gebaute airctrl-backend über den GUI-Controller.
+Der Test bindet ausschließlich an 127.0.0.1 mit dynamischem UDP-Port. Der erste
+GUI-Controller startet den tatsächlich gebauten `airctrl-server`; ein zweiter
+Controller verbindet sich mit demselben Unix-Socket.
 
 Der Simulator beantwortet Synchronisierung und Beobachtungsanmeldung, sendet
 verschlüsselte CoAP-Statusmeldungen mit wiederverwendeter Message-ID und
@@ -237,23 +298,21 @@ verarbeitet einen Power-Schreibbefehl. Geprüft werden:
 - genau ein Schreibauftrag;
 - eine Observe-Abmeldung vor und Neuanmeldung nach dem Schreiben;
 - neue Statusmeldung bestätigt pwr="0";
-- beim Ausbleiben weiterer Statusmeldungen: Prozessende, neuer UDP-Quellport und
-  zweite Synchronisierung, danach wieder gültiger Empfang.
+- beim Ausbleiben weiterer Statusmeldungen: derselbe Serverprozess, neuer
+  Geräte-UDP-Port und zweite Synchronisierung, danach wieder gültiger Empfang;
+- zwei Clients erhalten denselben Status; das Beenden eines Clients beeinflusst
+  Server und zweiten Client nicht.
 
 Dieser Test prüft die Integration mit dem echten Transport, nicht jede Eigenheit
 der Philips-Firmware. Die Verschlüsselungsroutine ist in diesem Simulator dieselbe
 C++-Routine wie im Client; er ist kein unabhängiger Kryptografie-Test.
 
-### Beenden und Elternprozessschutz
+### Serverlebenszyklus
 
-Ein separates Qt-Hilfsprogramm startet einen dauerhaften Empfänger. Der Test
-beendet das Hilfsprogramm hart, sodass dessen Destruktor nicht laufen kann.
-Der Empfänger dokumentiert anschließend seinen tatsächlichen SIGTERM-Ausstieg.
-Dies prüft Linux PR_SET_PDEATHSIG, ohne sich auf Prozessnummern im möglicherweise
-anders eingebundenen /proc der Testumgebung zu verlassen.
-
-Die seit 0.3.5 vorhandene Prüfung über die direkte Exit-Bestätigung des
-Testempfängers wurde unverändert erneut erfolgreich ausgeführt.
+Der Server ist absichtlich nicht mehr Kind-Lebenszeit eines einzelnen Widgets.
+Ein Clientabbruch schließt nur dessen Unix-Socket. Der systemd-Benutzerdienst
+oder ein anderer verbundener Client hält die zentrale Gerätebeobachtung aufrecht.
+Die frühere `PR_SET_PDEATHSIG`-Prüfung entfällt deshalb ab v1.05.
 
 ### Transparenzprüfung der Emblemzeile
 

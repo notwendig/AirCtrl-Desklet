@@ -15,21 +15,40 @@ JavaScript-Erweiterung. Die Oberfläche bleibt deutsch; C++-Bezeichner sind engl
 | `src/automation.*` | Eingebettete Lua-Sandbox, Ereignisse, Zeitpläne und Skriptprotokoll |
 | `examples/automation.lua` | Kanonische Editorvorlage und kommentierte Lua-/Statusreferenz |
 | `src/controlvalues.*` | Gemeinsame Positivliste und Kodierung erlaubter Steuerwerte |
-| `src/controller.*` | Eine I/O-Sitzung, Fristen, Befehlszuordnung und Wiederverbindung |
-| `third_party/aioairctrl` | Separates CLI und C++-Implementierung des Philips-CoAP-Protokolls |
+| `src/server.cpp` | Einziger Geräteprozess, Clientverwaltung, Befehlswarteschlange und I/O-Wiederaufbau |
+| `src/ipc.*` | Einheitlicher geschützter Unix-Socket für Server und Clients |
+| `src/controller.*` | Reiner Desklet-Client, IPC-Zustand und Befehlsbestätigung |
+| `src/client_main.cpp` | Kommandozeilen-Client für Status, Beobachtung, Schalten und F5-Ersatz |
+| `third_party/aioairctrl` | Nur vom Server verwendete C++-Implementierung des Philips-CoAP-Protokolls |
 | `third_party/lua` | Verifizierter offizieller Lua-5.4.9-Quellstand |
-| `tests/` | Qt-Oberflächen-/Controllerprüfungen, Fake-Backend, lokaler UDP-Simulator |
+| `tests/` | Qt-Oberflächen-/Clientprüfungen, Fake-Server, Mehrclient- und UDP-Simulator |
 
-## Empfang und Schalten
+## Server, Clients und Geräte-I/O
 
-Ein langlebiger Backend-Prozess hält genau einen UDP-Socket und einen über
-`/sys/dev/sync` initialisierten Protokollzustand. Er liefert Status und Schaltergebnisse als
-getypte JSON-Zeilen. Gültige Statuspakete aktualisieren den Empfangszeitpunkt;
-reine ACKs und fehlerhafte Zeilen tun dies nicht.
+`airctrl-server` ist pro angemeldetem Benutzer ein Singleton und der einzige
+installierte Prozess mit Zugriff auf `aioairctrl`. Er hält genau einen UDP-Socket
+und einen über `/sys/dev/sync` initialisierten Protokollzustand. Weder Desklet
+noch Lua noch `airctrl-client` öffnen UDP oder kontaktieren den AC2729 direkt.
 
-Die konfigurierte Geräteadresse bleibt ein Host-String. Das Backend löst ihn mit
-`getaddrinfo(AF_UNSPEC)` auf und unterstützt dadurch IPv4, IPv6 sowie DNS-/mDNS-
-Hostnamen. Protokollschema und UDP-Port werden getrennt behandelt.
+Die Clients verbinden sich mit
+`$XDG_RUNTIME_DIR/airctrl-desklet/server.sock`. Das Elternverzeichnis erhält
+Modus 0700, der Socket 0600; eine `QLockFile` verhindert einen zweiten Server.
+Nachrichten sind auf 1 MiB begrenzte, mit Zeilenumbruch abgeschlossene JSON-
+Objekte. Status- und Serverzustände werden an alle verbundenen Clients verteilt.
+Eine Schaltantwort geht ausschließlich an den Client, der ihre Kennung erzeugt hat.
+Mehrere Clientaufträge werden serverweit serialisiert; vor dem nächsten Versuch
+muss Observe mindestens einen neuen Gerätestatus geliefert haben.
+
+Beim Start installiert `install.sh` den systemd-Benutzerdienst
+`airctrl-server.service`. Ist er nicht verfügbar, darf das Desklet genau einen
+Server bei Bedarf starten. Das Schließen oder Abstürzen eines Clients beendet
+den Server und dessen Geräte-I/O nicht. Der Server hält den letzten Status nur
+als Cache; während eines Verbindungsfehlers wird er neuen Clients nicht als
+frischer Status ausgegeben.
+
+Die konfigurierte Geräteadresse bleibt ein Host-String. Ausschließlich der Server
+löst ihn mit `getaddrinfo(AF_UNSPEC)` auf und unterstützt dadurch IPv4, IPv6 sowie
+DNS-/mDNS-Hostnamen. Protokollschema und UDP-Port werden getrennt behandelt.
 
 Für einen Benutzerbefehl wird die laufende Observe-Anfrage sauber abgemeldet.
 Danach läuft der Control-Aufruf nacheinander über denselben Client, UDP-Socket
@@ -37,12 +56,15 @@ und synchronisierten Sendezähler; anschließend wird Observe auf demselben Sock
 Die Annahme ist nicht mit einer bestätigten Zustandsänderung gleichzusetzen: erst
 die nächste Statusmeldung bestätigt die Änderung. Es gibt keine automatische
 Schreibwiederholung und bei einem Schaltfehler keine Neusynchronisierung.
+Wird Geräte-I/O während eines laufenden Auftrags erneuert, meldet der Server den
+Ausgang als unbekannt und lässt keinen Status der neuen Sitzung als Bestätigung gelten.
 
-Bleiben Statusmeldungen bis zum 90-Sekunden-Timeout aus, endet der Backend-Prozess.
-Dadurch wird der alte Socket geschlossen. Nach der Wiederverbindung öffnet ein
-neuer Prozess genau einen neuen Socket und synchronisiert den Protokollzustand neu.
-F5, geänderte Geräteeinstellungen und fatale Prozessfehler können denselben
-kontrollierten Neustart ausdrücklich ebenfalls auslösen.
+Bleiben Statusmeldungen bis zum 90-Sekunden-Timeout aus, zerstört der Server nur
+seinen Geräteclient. Dadurch wird der alte UDP-Socket geschlossen. Nach der
+Wiederverbindung erstellt derselbe Serverprozess genau einen neuen Geräteclient,
+öffnet einen neuen Socket und synchronisiert den Protokollzustand neu. Die IPC-
+Clients bleiben verbunden. F5, geänderte Geräteeinstellungen und fatale
+Protokollfehler können denselben kontrollierten I/O-Neustart auslösen.
 
 Der anfängliche Status darf bis zu 60 s nach der Anmeldung benötigen; die
 90-s-Frist gilt für das Ausbleiben weiterer Statusmeldungen. Wiederverbindungspause
@@ -71,8 +93,8 @@ kein garantierter periodischer Herzschlag; bei unverändertem Zustand ist eine
 Sendepause zulässig ([RFC 7641, Abschnitt 4.3.1](https://www.rfc-editor.org/rfc/rfc7641.html#section-4.3.1)).
 
 Lua läuft im GUI-Prozess und erhält nur kopierte JSON-/Ereignisdaten. Ein
-`airctrl.set`-Auftrag geht durch dieselbe Feldprüfung, Ein-Befehl-Sperre und
-Statusbestätigung wie ein Klick. Zeitpläne speichern ihre ausgeführte
+`airctrl.set`-Auftrag geht wie ein Klick über den Controller und den Unix-Socket
+durch dieselbe Feldprüfung, Ein-Befehl-Sperre und Statusbestätigung. Zeitpläne speichern ihre ausgeführte
 Terminidentität; nach einem Neustart wird nur der jüngste fällige Tag-/Nacht-
 Zustand berücksichtigt. Datei-, Betriebssystem-, Paket- und Debug-Bibliotheken
 werden weder geöffnet noch als API angeboten.
