@@ -1,7 +1,7 @@
 #pragma once
 #include <QObject>
 #include <QJsonObject>
-#include <QLocalSocket>
+#include <QTcpSocket>
 #include <QTimer>
 
 class Controller : public QObject {
@@ -11,19 +11,18 @@ public:
     static constexpr int ObserveIdleSeconds = 90;
     explicit Controller(QString serverExecutable, QObject* parent = nullptr);
     ~Controller() override;
-    void configure(QString host, int port, int reconnectSeconds);
+    void configure(QString serverHost, int serverPort, int reconnectSeconds);
     void start();
     void stop();
     bool busy() const { return busy_; }
-    bool observing() const { return hasStatus_ && socket_.state() == QLocalSocket::ConnectedState; }
+    bool observing() const { return hasStatus_ && socket_.state() == QAbstractSocket::ConnectedState; }
     quint64 statusCount() const { return statusCount_; }
     quint64 observationStarts() const { return observationStarts_; }
     QString observationProgress() const { return progress_; }
-    QString host() const { return host_; }
+    QString host() const { return serverHost_; }
     QString backendPath() const { return executable_; }
-    QString socketPath() const { return socketPath_; }
+    QString serverEndpoint() const { return serverHost_+":"+QString::number(serverPort_); }
     void setWatchdogInterval(int milliseconds);
-    void setObservationWatchdogs(int startupMs, int idleMs);
     void setConfirmationTimeout(int milliseconds);
     void setReconnectDelay(int milliseconds);
 public slots:
@@ -43,7 +42,6 @@ private:
     void launchServer();
     void readServer();
     void handleEnvelope(const QJsonObject& envelope);
-    void sendConfigure();
     void send(const QJsonObject& object);
     void connectionFailed(const QString& reason);
     void launchWrite(const QJsonObject& values);
@@ -51,17 +49,16 @@ private:
     void setBusy(bool busy);
     QString addressError() const;
 
-    QString executable_, socketPath_, host_ = "AC2729-10";
-    int port_ = 5683, reconnectMs_ = 10000;
-    int requestMs_ = 60000, idleMs_ = 90000;
+    QString executable_, serverHost_;
+    int serverPort_ = 5680, reconnectMs_ = 10000;
     int writeMs_ = 25000, confirmationMs_ = 90000;
     bool active_ = false, busy_ = false, hasStatus_ = false;
     bool awaitingConfirmation_ = false, launchAttempted_ = false, failureReported_ = false;
-    bool serverConfigured_ = false, refreshScheduled_ = false;
+    bool refreshScheduled_ = false;
     quint64 statusCount_ = 0, observationStarts_ = 0;
     quint64 nextCommandId_ = 1, pendingCommandId_ = 0;
     QString progress_;
-    QLocalSocket socket_;
+    QTcpSocket socket_;
     QTimer reconnect_, connectWatchdog_, writeWatchdog_, confirmation_;
     QByteArray stream_;
 };

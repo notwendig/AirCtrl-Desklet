@@ -1,17 +1,21 @@
-# Lokales Server-/Client-Protokoll
+# AirControl-TCP-Protokoll
 
-Seit v1.05 kommuniziert ausschließlich `airctrl-server` mit dem Philips AC2729.
-Desklet, Lua-Automatik und `airctrl-client` verwenden einen lokalen Unix-Socket.
-Das Protokoll ist nicht für TCP, fremde Rechner oder das Internet vorgesehen.
+Seit v1.06 kommuniziert ausschließlich `airctrl-server` mit dem Philips AC2729.
+Desklet, Lua-Automatik und `airctrl-client` kennen nur den TCP-Endpunkt des
+Servers, standardmäßig `nadhh:5680`. Gerätehostname, UDP-Port und Gerätefristen
+stehen ausschließlich in `/etc/airctrld.cfg`.
 
-## Endpunkt und Zugriff
+## Endpunkt und Sicherheit
 
-- Standard: `$XDG_RUNTIME_DIR/airctrl-desklet/server.sock`
-- Testüberschreibung: `AIRCTRL_SOCKET=/absoluter/pfad.sock`
-- Verzeichnis: Modus 0700
-- Socket: Modus 0600
+- Transport: TCP
+- Standardport: 5680
+- Standard-Listenadresse: `0.0.0.0`
 - Rahmen: UTF-8-JSON, genau ein Objekt pro Zeile
 - Höchstgröße: 1 MiB je Clientpuffer
+
+Das Protokoll besitzt keine Anmeldung und keine Transportverschlüsselung. Port
+5680 darf deshalb nur für vertrauenswürdige Rechner im lokalen Netz erreichbar
+sein und niemals aus dem Internet veröffentlicht werden.
 
 Der Server sendet beim Verbindungsaufbau seinen Zustand und bei aktiver
 Geräteverbindung zusätzlich den letzten Status. Gerätestatus und Zustandswechsel
@@ -21,10 +25,12 @@ gehen an alle Clients. Ein Schaltergebnis geht nur an den Auftraggeber.
 
 | `_airctrl` | Felder | Bedeutung |
 |---|---|---|
-| `configure` | `host`, `port`, `reconnect_ms`, `request_ms`, `idle_ms` | Serverweite Geräteparameter setzen; eine Änderung erneuert die Geräte-I/O-Sitzung |
 | `control` | `id`, `values` | Einen positiv geprüften Geräteauftrag genau einmal versuchen |
 | `refresh` | – | Geräte-I/O im Server schließen, neu öffnen und synchronisieren |
 | `ping` | – | IPC-Verbindung ohne Gerätezugriff prüfen |
+
+Eine `configure`-Nachricht wird abgewiesen. Clients dürfen die Gerätekonfiguration
+nicht ändern.
 
 Beispiel:
 
@@ -56,7 +62,7 @@ Versuchen muss mindestens eine neue Statusmeldung des Geräts eingegangen sein.
 
 Der Server verarbeitet Observe und Control nacheinander auf einem einzigen
 UDP-Socket. Ein Schaltauftrag meldet Observe kurz ab, sendet Control und meldet
-Observe auf demselben Socket wieder an. Erst wenn 90 Sekunden lang keine
-Statusmeldung eingeht, wird der Geräteclient zerstört. Nach der konfigurierten
-Pause öffnet der Server einen neuen UDP-Socket und führt `/sys/dev/sync` erneut aus.
-Die Unix-Socket-Verbindungen der Clients bleiben dabei bestehen.
+Observe auf demselben Socket wieder an. Nach `device/idle_ms` ohne Status wird
+der Geräteclient zerstört. Nach `device/reconnect_ms` öffnet der Server einen
+neuen UDP-Socket und synchronisiert `/sys/dev/sync` erneut. Die TCP-Verbindungen
+der Clients bleiben dabei bestehen.

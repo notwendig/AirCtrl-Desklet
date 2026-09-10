@@ -1,12 +1,11 @@
-# Philips AirControl – Qt6-Gerätepanel v1.05
+# Philips AirControl – Qt6-Gerätepanel v1.06
 
-Kompaktes C++/Qt6-Desktopwidget für den Philips AC2729/10 unter
-Cinnamon. Als Geräteadresse sind IPv4, IPv6 oder ein DNS-/mDNS-Hostname möglich;
-voreingestellt ist **AC2729-10**, UDP-Port **5683**.
+Kompaktes C++/Qt6-Desktopwidget für den Philips AC2729/10 unter Cinnamon.
+Geräteadresse und UDP-Port stehen ausschließlich in `/etc/airctrld.cfg`.
 Der bereits am Gerät funktionierende C++-CoAP-Code ist vollständig enthalten.
 
-**v1.05** verwendet einen dauerhaften lokalen Server als einzigen Geräteprozess.
-Desklet, Lua und Kommandozeile sind Clients seines geschützten Unix-Sockets.
+**v1.06** verwendet einen dauerhaften TCP-Server als einzigen Geräteprozess.
+Desklet, Lua und Kommandozeile kennen nur den Server, standardmäßig `nadhh:5680`.
 Der Server hält genau einen UDP-I/O-Socket samt synchronisiertem Protokollzustand
 für alle Clients. Erst ein Status-Timeout erneuert diese Geräte-I/O. Die seit
 v1.02 vorhandene, standardmäßig ausgeschaltete
@@ -375,9 +374,29 @@ werden bis zu dessen Rückmeldung ignoriert. Es werden keine Doppelbefehle vorge
 
 ## Verbindung und Rückmeldungen
 
+Der Installer legt beim ersten v1.06-Start diese Administratorkonfiguration an
+und überschreibt spätere Änderungen nicht:
+
+```ini
+[server]
+listen_address=0.0.0.0
+port=5680
+
+[device]
+host=AC2729-10
+port=5683
+reconnect_ms=10000
+request_ms=60000
+idle_ms=90000
+```
+
+Nach einer Änderung ist `systemctl --user restart airctrl-server.service`
+erforderlich. Im Desklet unter **Verbindung und Autostart** stehen dagegen nur
+AirControl-Server, TCP-Port und die Client-Wiederverbindung.
+
 Ein langlebiger `airctrl-server` besitzt genau einen UDP-Socket sowie einen
 synchronisierten Protokollzustand. Er verteilt getypte JSON-Nachrichten über
-`$XDG_RUNTIME_DIR/airctrl-desklet/server.sock` an alle verbundenen Clients.
+TCP-Port 5680 an alle verbundenen Clients.
 Desklet und Lua besitzen keine eigene Geräteverbindung. Es gibt keinen
 periodischen Neustart und keine zyklische Neusynchronisierung.
 
@@ -385,13 +404,14 @@ periodischen Neustart und keine zyklische Neusynchronisierung.
 |---|---|
 | Synchronisierung / erste Statusantwort | Jeweils bis zu 60 s |
 | Keine weiteren Statusmeldungen | Server erneuert die Geräte-I/O nach 90 s |
-| Wiederverbindung nach Fehler | Standard 10 s; unter Einstellungen 5–300 s |
+| Geräte-Wiederverbindung nach Fehler | Serverwert `device/reconnect_ms` in `/etc/airctrld.cfg` |
+| Client-Wiederverbindung zum Server | Standard 10 s; im Clientmenü 1–300 s |
 | Schaltanfrage | 10 s je Anfrage, GUI-Watchdog 25 s |
 | Statusbestätigung nach angenommener Änderung | Bis zu 90 s |
 
-Der bisher gespeicherte Intervallwert wird jetzt als **Wiederverbindungspause**
-verwendet; er bestimmt nicht mehr, wie oft neue Messwerte empfangen werden.
-Die Meldungsrate bestimmt das Gerät. F5 fordert den Server nur auf ausdrücklichen
+Die Wiederverbindung im Clientmenü betrifft ausschließlich eine abgebrochene
+TCP-Verbindung zum Server. Die Geräte-Wiederverbindung bestimmt dagegen nur
+`/etc/airctrld.cfg`. Die Meldungsrate bestimmt das Gerät. F5 fordert den Server nur auf ausdrücklichen
 Benutzerwunsch zum Neuaufbau der Geräte-I/O auf. Eine gesunde Sitzung bleibt bestehen.
 
 Zum Schalten wird die Observe-Anfrage sauber abgemeldet. Der Control-Aufruf läuft
@@ -403,7 +423,7 @@ Der angezeigte Gerätezustand wird nie optimistisch umgeschaltet.
 Bleibt eine erste oder spätere Statusmeldung bis zum Timeout aus, zerstört der
 laufende Server nur seinen Geräteclient und schließt dessen UDP-Socket. Nach der
 Wiederverbindungspause öffnet derselbe Serverprozess einen neuen UDP-Socket und
-führt genau eine neue `/sys/dev/sync`-Synchronisierung aus. Die lokalen Clients
+führt genau eine neue `/sys/dev/sync`-Synchronisierung aus. Die TCP-Clients
 bleiben verbunden. Ein fehlgeschlagener
 Schaltbefehl allein erneuert Socket und Schlüssel nicht; die Beobachtung wird
 auf derselben Sitzung fortgesetzt.
@@ -498,15 +518,15 @@ Der Installer aktiviert den Autostart nicht selbst. Einstellungen liegen unter
 
 ```bash
 ~/.local/bin/airctrl-desklet --window
-~/.local/bin/airctrl-desklet --host 192.0.2.10
-~/.local/bin/airctrl-desklet --host luftreiniger.local
+~/.local/bin/airctrl-desklet --server nadhh --server-port 5680
 ~/.local/bin/airctrl-desklet --reset-position
 ~/.local/bin/airctrl-desklet --demo
 ```
 
-Beide Hostangaben sind Beispiele; eine IPv4-/IPv6-Adresse oder den eigenen lokalen
-DNS-/mDNS-Namen des Geräts einsetzen. Kein `http://`, `https://` oder `:Port` im
-Hostfeld ergänzen; der UDP-Port hat ein eigenes Feld.
+Im Clientmenü und bei `--server` wird ausschließlich der Hostname oder die IP des
+AirControl-Servers eingetragen, niemals die Geräteadresse. Der TCP-Port bleibt
+ein eigenes Feld. Das Protokoll besitzt keine Anmeldung oder Verschlüsselung;
+Port 5680 nur für vertrauenswürdige Rechner im lokalen Netz freigeben.
 `--reset-position` wirkt nur bei einer Plattform, die globale Fensterpositionen
 unterstützt. Unter Wayland entscheidet der Fenstermanager über die Startposition.
 

@@ -71,10 +71,10 @@ einen dynamischen Port; keine IP des echten Geräts wird getestet.
 `automation-tests` prüft die Lua-Sandbox, die bytegleiche Beispielvorlage,
 Zeitpläne, Wochentage, Nachholen, Ereignisdaten, erlaubte Steuerfelder und das
 Ausführungslimit ohne Gerätezugriff. Die Desklet-Suite prüft zusätzlich, dass
-zwei Clients denselben Server, UDP-Port und Statusstrom verwenden und IPv4,
-IPv6 sowie Hostnamen unverändert beim Server ankommen. Kann die isolierte
-Umgebung keine Unix-Sockets anlegen, wird diese Suite ausdrücklich übersprungen;
-das ist kein bestandener nativer IPC-Test. Für die vollständige Desklet-/Server-
+zwei Clients denselben TCP-Server, UDP-Port und Statusstrom verwenden. Der
+Geräteendpunkt stammt dabei ausschließlich aus einer temporären Serverkonfiguration.
+Kann die isolierte Umgebung keine TCP-Loopback-Sockets anlegen, wird diese Suite
+ausdrücklich übersprungen; das ist kein bestandener nativer IPC-Test. Für die vollständige Desklet-/Server-
 Suite gilt ein CTest-Limit von 300 Sekunden, weil sie absichtlich einen
 19-Sekunden-Datenpausentest und zahlreiche getrennte Serverstarts enthält.
 Abgekoppelte Testserver leiten ihre Ausgabe nicht in CTest und beenden sich im
@@ -128,15 +128,15 @@ Push erfolgt atomar über den ausdrücklich gesetzten SSH-Remote und niemals mit
 ## Server und Clients lokal prüfen
 
 ```bash
-./build/dev/airctrl-server
-./build/dev/airctrl-client server-status
-./build/dev/airctrl-client status
-./build/dev/airctrl-client watch
-./build/dev/airctrl-client set pwr=1
+./build/dev/airctrl-server --config /etc/airctrld.cfg
+./build/dev/airctrl-client --host nadhh --port 5680 server-status
+./build/dev/airctrl-client --host nadhh --port 5680 status
+./build/dev/airctrl-client --host nadhh --port 5680 watch
+./build/dev/airctrl-client --host nadhh --port 5680 set pwr=1
 ```
 
 `airctrl-server` bleibt beim Schließen eines Clients aktiv. `airctrl-client refresh`
-erneuert nur den Geräteclient samt UDP-Socket; der Unix-Socket bleibt bestehen.
+erneuert nur den Geräteclient samt UDP-Socket; die TCP-Verbindungen bleiben bestehen.
 Das Nachrichtenformat steht in [IPC_PROTOCOL.md](IPC_PROTOCOL.md).
 
 ## Vorschauen ohne Gerät

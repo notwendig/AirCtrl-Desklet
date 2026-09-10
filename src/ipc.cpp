@@ -1,22 +1,12 @@
 #include "ipc.hpp"
 
-#include <QDir>
-#include <QStandardPaths>
-#ifdef Q_OS_UNIX
-#include <unistd.h>
-#endif
+QString defaultAirctrlServerHost() {
+    const auto testHost=qEnvironmentVariable("AIRCTRL_TEST_SERVER_HOST").trimmed();
+    return testHost.isEmpty() ? QStringLiteral("nadhh") : testHost;
+}
 
-QString airctrlSocketPath() {
-    const auto overridePath = qEnvironmentVariable("AIRCTRL_SOCKET").trimmed();
-    if (!overridePath.isEmpty()) return overridePath;
-
-    auto runtime = qEnvironmentVariable("XDG_RUNTIME_DIR").trimmed();
-    if (runtime.isEmpty()) {
-#ifdef Q_OS_UNIX
-        runtime = QDir::tempPath() + "/airctrl-" + QString::number(::getuid());
-#else
-        runtime = QStandardPaths::writableLocation(QStandardPaths::TempLocation) + "/airctrl";
-#endif
-    }
-    return QDir(runtime).filePath("airctrl-desklet/server.sock");
+quint16 defaultAirctrlServerPort() {
+    bool ok=false;
+    const auto value=qEnvironmentVariable("AIRCTRL_TEST_SERVER_PORT").toUInt(&ok);
+    return ok && value>0 && value<=65535 ? static_cast<quint16>(value) : quint16(5680);
 }

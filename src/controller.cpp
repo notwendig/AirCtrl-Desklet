@@ -8,13 +8,14 @@
 #include <QProcess>
 
 Controller::Controller(QString serverExecutable, QObject* parent)
-    : QObject(parent), executable_(std::move(serverExecutable)), socketPath_(airctrlSocketPath()) {
+    : QObject(parent), executable_(std::move(serverExecutable)),
+      serverHost_(defaultAirctrlServerHost()), serverPort_(defaultAirctrlServerPort()) {
     for (auto* timer : {&reconnect_, &connectWatchdog_, &writeWatchdog_, &confirmation_})
         timer->setSingleShot(true);
     connect(&reconnect_, &QTimer::timeout, this, &Controller::connectServer);
     connect(&connectWatchdog_, &QTimer::timeout, this, [this] {
         socket_.abort();
-        connectionFailed("Keine Verbindung zum lokalen AirControl-Server.");
+        connectionFailed("Keine Verbindung zum AirControl-Server.");
     });
     connect(&writeWatchdog_, &QTimer::timeout, this, [this] {
         failCommand("Keine Serverantwort auf den Schaltbefehl · Ausgang unbekannt; keine automatische Wiederholung.");
@@ -22,52 +23,49 @@ Controller::Controller(QString serverExecutable, QObject* parent)
     connect(&confirmation_, &QTimer::timeout, this, [this] {
         failCommand("Keine neue Statusbestätigung nach dem Schaltbefehl · keine automatische Wiederholung.");
     });
-    connect(&socket_, &QLocalSocket::connected, this, [this] {
+    connect(&socket_, &QTcpSocket::connected, this, [this] {
         connectWatchdog_.stop();
         failureReported_ = false;
-        serverConfigured_ = false;
-        progress_ = "Mit lokalem AirControl-Server verbunden";
-        sendConfigure();
+        progress_ = "Mit AirControl-Server "+serverEndpoint()+" verbunden";
     });
-    connect(&socket_, &QLocalSocket::readyRead, this, &Controller::readServer);
-    connect(&socket_, &QLocalSocket::disconnected, this, [this] {
+    connect(&socket_, &QTcpSocket::readyRead, this, &Controller::readServer);
+    connect(&socket_, &QTcpSocket::disconnected, this, [this] {
         connectWatchdog_.stop();
         launchAttempted_ = false;
-        serverConfigured_ = false;
         hasStatus_ = false;
         if (busy_) failCommand("Serververbindung wurde während des Schaltbefehls beendet · keine Wiederholung.");
-        if (active_) connectionFailed("Verbindung zum lokalen AirControl-Server wurde beendet.");
+        if (active_) connectionFailed("Verbindung zum AirControl-Server wurde beendet.");
     });
-    connect(&socket_, &QLocalSocket::errorOccurred, this, [this](QLocalSocket::LocalSocketError error) {
-        if (!active_ || error == QLocalSocket::PeerClosedError) return;
-        if (!launchAttempted_ && (error == QLocalSocket::ServerNotFoundError ||
-                                  error == QLocalSocket::ConnectionRefusedError)) {
+    connect(&socket_, &QTcpSocket::errorOccurred, this, [this](QAbstractSocket::SocketError error) {
+        if (!active_ || error == QAbstractSocket::RemoteHostClosedError) return;
+        if (!executable_.isEmpty() && !launchAttempted_ &&
+            error == QAbstractSocket::ConnectionRefusedError) {
             launchServer();
             reconnect_.start(100);
             return;
         }
-        connectionFailed("Lokaler AirControl-Server nicht erreichbar: " + socket_.errorString());
+        connectionFailed("AirControl-Server "+serverEndpoint()+" nicht erreichbar: " + socket_.errorString());
     });
 }
 
 Controller::~Controller() { stop(); }
 
 void Controller::configure(QString host, int port, int reconnectSeconds) {
-    host_ = host.trimmed();
-    port_ = port;
-    reconnectMs_ = qBound(5, reconnectSeconds, 300) * 1000;
-    if (socket_.state() == QLocalSocket::ConnectedState) sendConfigure();
+    const auto newHost=host.trimmed();
+    const bool endpointChanged=newHost!=serverHost_ || port!=serverPort_;
+    serverHost_ = newHost;
+    serverPort_ = port;
+    reconnectMs_ = qBound(1, reconnectSeconds, 300) * 1000;
+    if(endpointChanged && active_) {
+        socket_.abort();
+        reconnect_.stop();
+        connectServer();
+    }
 }
 void Controller::setWatchdogInterval(int ms) { writeMs_ = qMax(50, ms); }
-void Controller::setObservationWatchdogs(int startup, int idle) {
-    requestMs_ = qMax(50, startup);
-    idleMs_ = qMax(50, idle);
-    if (socket_.state() == QLocalSocket::ConnectedState) sendConfigure();
-}
 void Controller::setConfirmationTimeout(int ms) { confirmationMs_ = qMax(50, ms); }
 void Controller::setReconnectDelay(int ms) {
     reconnectMs_ = qMax(50, ms);
-    if (socket_.state() == QLocalSocket::ConnectedState) sendConfigure();
 }
 void Controller::setBusy(bool busy) {
     if (busy_ == busy) return;
@@ -75,9 +73,10 @@ void Controller::setBusy(bool busy) {
     emit busyChanged(busy);
 }
 QString Controller::addressError() const {
-    if (host_.isEmpty() || port_ < 1 || port_ > 65535)
-        return "Ungültiger Hostname oder ungültige IP-Adresse.";
-    if (!QFileInfo(executable_).isExecutable()) return "AirControl-Server fehlt: " + executable_;
+    if (serverHost_.isEmpty() || serverPort_ < 1 || serverPort_ > 65535)
+        return "Ungültiger Servername oder TCP-Port.";
+    if (!executable_.isEmpty() && !QFileInfo(executable_).isExecutable())
+        return "Testserver fehlt: " + executable_;
     return {};
 }
 void Controller::start() {
@@ -96,43 +95,38 @@ void Controller::stop() {
     awaitingConfirmation_ = false;
     pendingCommandId_ = 0;
     hasStatus_ = false;
-    serverConfigured_ = false;
     stream_.clear();
     socket_.abort();
     setBusy(false);
 }
 void Controller::connectServer() {
-    if (!active_ || socket_.state() != QLocalSocket::UnconnectedState) return;
+    if (!active_ || socket_.state() != QAbstractSocket::UnconnectedState) return;
     const auto error = addressError();
     if (!error.isEmpty()) {
         connectionFailed(error);
         return;
     }
-    progress_ = "Verbinde mit lokalem AirControl-Server";
+    progress_ = "Verbinde mit AirControl-Server "+serverEndpoint();
     // Start first: connecting to an already listening local server may emit
-    // connected() before connectToServer() returns. Starting the watchdog
+    // connected() before connectToHost() returns. Starting the watchdog
     // afterwards would arm a stale timer that aborts the healthy socket.
     connectWatchdog_.start(3000);
-    socket_.connectToServer(socketPath_, QIODevice::ReadWrite);
+    socket_.connectToHost(serverHost_,static_cast<quint16>(serverPort_),QIODevice::ReadWrite);
 }
 void Controller::launchServer() {
     launchAttempted_ = true;
-    const QStringList arguments{"--socket", socketPath_, "-H", host_, "-P", QString::number(port_),
-        "--reconnect-ms", QString::number(reconnectMs_), "--request-ms", QString::number(requestMs_),
-        "--idle-ms", QString::number(idleMs_)};
     // A detached server must not inherit CTest's stdout/stderr pipes. Otherwise
     // CTest waits for the long-lived server even after the test process exited.
     QProcess server;
     server.setProgram(executable_);
-    server.setArguments(arguments);
     server.setStandardOutputFile(QProcess::nullDevice());
     server.setStandardErrorFile(QProcess::nullDevice());
     if (!server.startDetached())
-        connectionFailed("AirControl-Server konnte nicht gestartet werden: " + executable_);
+        connectionFailed("Testserver konnte nicht gestartet werden: " + executable_);
 }
 void Controller::connectionFailed(const QString& reason) {
     hasStatus_ = false;
-    progress_ = "Warte auf lokalen Server";
+    progress_ = "Warte auf AirControl-Server "+serverEndpoint();
     if (!failureReported_) {
         failureReported_ = true;
         emit failed(reason);
@@ -145,7 +139,7 @@ void Controller::refresh() {
     QTimer::singleShot(0, this, [this] {
         refreshScheduled_ = false;
         if (!active_ || busy_) return;
-        if (socket_.state() == QLocalSocket::ConnectedState) {
+        if (socket_.state() == QAbstractSocket::ConnectedState) {
             send({{"_airctrl", "refresh"}});
             progress_ = "Geräte-I/O wird im Server neu aufgebaut";
         } else {
@@ -154,12 +148,8 @@ void Controller::refresh() {
         }
     });
 }
-void Controller::sendConfigure() {
-    send({{"_airctrl", "configure"}, {"host", host_}, {"port", port_},
-          {"reconnect_ms", reconnectMs_}, {"request_ms", requestMs_}, {"idle_ms", idleMs_}});
-}
 void Controller::send(const QJsonObject& object) {
-    if (socket_.state() != QLocalSocket::ConnectedState) return;
+    if (socket_.state() != QAbstractSocket::ConnectedState) return;
     socket_.write(QJsonDocument(object).toJson(QJsonDocument::Compact) + '\n');
 }
 void Controller::readServer() {
@@ -205,7 +195,7 @@ void Controller::handleEnvelope(const QJsonObject& envelope) {
         }
         return;
     }
-    if (kind == "configured") { serverConfigured_ = true; return; }
+    if (kind == "configured") return; // compatibility with a v1.05 server during upgrade
     if (kind == "pong") return;
     if (kind == "error") {
         connectionFailed(envelope.value("error").toString());
@@ -228,10 +218,9 @@ void Controller::handleEnvelope(const QJsonObject& envelope) {
     }
     if (kind != "status" || !envelope.value("data").isObject() ||
         envelope.value("data").toObject().isEmpty()) {
-        connectionFailed("Unbekannte Meldung des lokalen AirControl-Servers.");
+        connectionFailed("Unbekannte Meldung des AirControl-Servers.");
         return;
     }
-    if (!serverConfigured_) return; // ignore a cache from a different prior configuration
     const auto status = envelope.value("data").toObject();
     hasStatus_ = true;
     failureReported_ = false;
@@ -264,7 +253,7 @@ void Controller::launchWrite(const QJsonObject& values) {
         failCommand(error);
         return;
     }
-    if (!active_ || socket_.state() != QLocalSocket::ConnectedState || !hasStatus_) {
+    if (!active_ || socket_.state() != QAbstractSocket::ConnectedState || !hasStatus_) {
         failCommand("Keine aktive Geräteverbindung im AirControl-Server.");
         return;
     }

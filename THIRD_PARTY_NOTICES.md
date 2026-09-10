@@ -19,7 +19,7 @@ The original upstream copyright notice is retained.
 
 | Dependency | Use | Upstream licensing information |
 |---|---|---|
-| Qt 6: Core, Gui, Widgets, DBus, Network; Test for tests | Desktop UI, local Unix-socket IPC and event handling | [Qt licensing](https://www.qt.io/licensing/) — use the license applicable to the installed modules and distribution. |
+| Qt 6: Core, Gui, Widgets, DBus, Network; Test for tests | Desktop UI, TCP client/server IPC and event handling | [Qt licensing](https://www.qt.io/licensing/) — use the license applicable to the installed modules and distribution. |
 | OpenSSL libcrypto | Protocol cryptography | [OpenSSL license](https://openssl-library.org/source/license/) |
 | nlohmann/json | JSON handling in the AirControl server transport | [MIT license](https://github.com/nlohmann/json/blob/develop/LICENSE.MIT) |
 | DejaVu Sans | Default UI font supplied by the OS | [DejaVu license](https://dejavu-fonts.github.io/License.html) |

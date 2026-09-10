@@ -17,3 +17,4 @@ rm -f -- "$install_prefix/bin/airctrl-desklet" "$install_prefix/bin/airctrl-back
     "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/airctrl-server.service"
 if command -v systemctl >/dev/null; then systemctl --user daemon-reload 2>/dev/null || true; fi
 printf '%s\n' 'AirControl entfernt. Persönliche Einstellungen bleiben erhalten.'
+printf '%s\n' '/etc/airctrld.cfg wurde als Administratorkonfiguration nicht gelöscht.'

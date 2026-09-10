@@ -373,7 +373,7 @@ void Desklet::updateFooter() {
         age="Letzter Empfang vor "+QString::number(dataAgeSeconds())+" s";
     }
     const auto connection=demo_ ? QString("Vorschau – keine Gerätesteuerung") : connected_ ? QString("Verbunden") : QString("Keine Verbindung");
-    const auto detail=connection+"\n"+preferences_.host+"\n"+age+"\n"+notice_+
+    const auto detail=connection+"\nServer "+endpointText(preferences_.serverHost,preferences_.serverPort)+"\n"+age+"\n"+notice_+
         "\nRechtsklick: Menü · Ziehen: Verschieben · F1: Diagnose";
     setToolTip(detail); setAccessibleDescription(detail);
     for(auto* value:values_) {
@@ -572,7 +572,7 @@ void Desklet::setDecorationHidden(bool hidden) {
 }
 void Desklet::start() {
     if (demo_) return;
-    controller_.configure(preferences_.host, preferences_.port, preferences_.interval);
+    controller_.configure(preferences_.serverHost,preferences_.serverPort,preferences_.serverReconnectSeconds);
     controller_.start();
 }
 void Desklet::showAndPosition() {
@@ -758,16 +758,16 @@ void Desklet::showSettings() {
     controller_.stop(); // no old-host reply can arrive during a modal configuration change
     QDialog dialog(this); dialog.setWindowTitle("AirControl – Einstellungen");
     auto* layout = new QVBoxLayout(&dialog); auto* form = new QFormLayout;
-    QLineEdit host(preferences_.host); host.setObjectName("deviceHost"); host.setMinimumWidth(240);
-    host.setPlaceholderText("AC2729-10");
-    host.setToolTip("IPv4-, IPv6-Adresse oder DNS-/mDNS-Hostname; ohne http:// und ohne Port.");
-    QSpinBox port; port.setRange(1,65535); port.setValue(preferences_.port);
-    QSpinBox interval; interval.setRange(5,300); interval.setSuffix(" Sekunden"); interval.setValue(preferences_.interval);
+    QLineEdit host(preferences_.serverHost); host.setObjectName("serverHost"); host.setMinimumWidth(240);
+    host.setPlaceholderText("nadhh");
+    host.setToolTip("Hostname oder IP-Adresse des AirControl-Servers; nicht die Adresse des Luftreinigers.");
+    QSpinBox port; port.setObjectName("serverPort"); port.setRange(1,65535); port.setValue(preferences_.serverPort);
+    QSpinBox interval; interval.setRange(1,300); interval.setSuffix(" Sekunden"); interval.setValue(preferences_.serverReconnectSeconds);
     QCheckBox desktop("Desktopmodus (unter X11 hinter normalen Fenstern)"); desktop.setChecked(preferences_.desktop);
     desktop.setToolTip("Die Fensterdekoration wird separat im Kontextmenü ein- oder ausgeblendet.");
     QCheckBox autostart("Bei der Anmeldung starten"); autostart.setChecked(QFileInfo::exists(autostartPath()));
-    interval.setToolTip("Pause vor einem neuen Verbindungsversuch nach einem Fehler. Statusmeldungen kommen automatisch vom Gerät.");
-    form->addRow("IP oder Host", &host); form->addRow("UDP-Port", &port); form->addRow("Wiederverbindung nach Fehler", &interval);
+    interval.setToolTip("Pause vor einem neuen TCP-Verbindungsversuch zum Server. Geräte-Timeouts stehen ausschließlich in /etc/airctrld.cfg.");
+    form->addRow("AirControl-Server", &host); form->addRow("TCP-Port", &port); form->addRow("Server erneut verbinden", &interval);
     layout->addLayout(form); layout->addWidget(&desktop); layout->addWidget(&autostart);
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel);
     buttons->button(QDialogButtonBox::Save)->setText("Speichern"); buttons->button(QDialogButtonBox::Cancel)->setText("Abbrechen");
@@ -780,18 +780,19 @@ void Desklet::showSettings() {
     });
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
     if (dialog.exec() != QDialog::Accepted) { controller_.start(); return; }
-    const bool changedDevice = preferences_.host != host.text().trimmed() || preferences_.port != port.value();
+    const bool changedServer = preferences_.serverHost != host.text().trimmed() || preferences_.serverPort != port.value();
     const bool changedMode = preferences_.desktop != desktop.isChecked();
-    preferences_.host = host.text().trimmed(); preferences_.port = port.value(); preferences_.interval = interval.value();
+    preferences_.serverHost=host.text().trimmed(); preferences_.serverPort=port.value();
+    preferences_.serverReconnectSeconds=interval.value();
     preferences_.desktop = desktop.isChecked(); rememberPosition();
     if (changedMode) { applyWindowMode(); showAndPosition(); }
-    if (changedDevice) {
+    if (changedServer) {
         status_={}; updated_={}; packetReceivedAt_={}; connected_=false; error_.clear();
         lastDataAt_=-1; receptionFailed_=false; activeCommandError_.clear(); commandError_.clear();
-        activeAlerts_.clear(); alarmLatch_={}; notice_="Gerät gewechselt";
+        activeAlerts_.clear(); alarmLatch_={}; notice_="Server gewechselt";
         updateEmblems(); updateValues(); updateControls(); updateFooter();
     }
-    controller_.configure(preferences_.host, preferences_.port, preferences_.interval);
+    controller_.configure(preferences_.serverHost,preferences_.serverPort,preferences_.serverReconnectSeconds);
     controller_.start();
 }
 void Desklet::showDetails() {
@@ -800,12 +801,14 @@ void Desklet::showDetails() {
     dialog.setMinimumSize(640,420);
     auto* layout = new QVBoxLayout(&dialog);
     auto* tabs = new QTabWidget(&dialog); tabs->setObjectName("diagnosticTabs");
-    const auto heading = QString("AirControl %1\nGerät: %2\nPlattform: %3\nServer: %4\n"
-                                 "IPC: %5\nEmpfang: zentraler Server mit einer CoAP-I/O-Sitzung\n"
-                                 "Anlauf: 60 s je Anfrage · Datenpause: 90 s · Schaltanfrage: 10 s\nLetzter Empfang: %6\n\n")
-        .arg(QCoreApplication::applicationVersion(),endpointText(preferences_.host,preferences_.port),
-            QGuiApplication::platformName(),controller_.backendPath(),controller_.socketPath(),
-            updated_.isValid() ? updated_.toString(Qt::ISODate) : "noch keiner");
+    const auto deviceName=status_.value("name").toString("unbekannt")+" · "+
+        status_.value("modelid").toString("Modell unbekannt");
+    const auto serverEndpoint=endpointText(preferences_.serverHost,preferences_.serverPort);
+    const auto heading = QString("AirControl %1\nGerät laut Status: %2\nPlattform: %3\n"
+                                 "Server: %4\nIPC: TCP\nEmpfang: Server mit einer CoAP-I/O-Sitzung\n"
+                                 "Geräteziel und Geräte-Timeouts: /etc/airctrld.cfg\nLetzter Empfang: %5\n\n")
+        .arg(QCoreApplication::applicationVersion(),deviceName,QGuiApplication::platformName(),
+            serverEndpoint,updated_.isValid() ? updated_.toString(Qt::ISODate) : "noch keiner");
     const auto session=QString("Desktopsitzung: %1\nWayland-Behandlung: %2\n\n")
         .arg(qEnvironmentVariable("XDG_SESSION_TYPE","unbekannt"),waylandSession_ ? "ja" : "nein");
     const auto errorText=(error_.isEmpty() ? QString() : "Letzter Verbindungsfehler:\n"+error_+"\n\n")+
@@ -847,13 +850,13 @@ void Desklet::showDetails() {
     tabs->addTab(table(deviceFields,"deviceFields",true),"Gerätewerte erklärt");
     QList<DiagnosticField> connectionFields{
         {"AirControl",QCoreApplication::applicationVersion(),"Version des Qt-Widgets."},
-        {"Gerät",endpointText(preferences_.host,preferences_.port),"Konfigurierter Hostname oder IP-Adresse und UDP-Port des Luftreinigers."},
+        {"Gerät",deviceName,"Gerätename und Modell aus dem letzten bestätigten Status; der Client kennt keine Geräteadresse."},
         {"Verbindung",demo_ ? "Vorschau" : connected_ ? "Verbunden" : "Keine Verbindung","Zustand der Verbindung aus Sicht des Widgets."},
         {"Plattform",QGuiApplication::platformName(),"Tatsächlich von Qt verwendetes Fenster-Backend, z.B. xcb oder wayland."},
         {"Desktopsitzung",qEnvironmentVariable("XDG_SESSION_TYPE","unbekannt"),"Vom Desktop gemeldeter Sitzungstyp. Er kann vom Qt-Fenster-Backend abweichen."},
         {"Wayland-Behandlung",waylandSession_ ? "ja" : "nein","Ob das Widget seine Wayland-spezifische Fensterbehandlung verwendet."},
-        {"Server",controller_.backendPath(),"Pfad des einzigen Prozesses, der mit dem AC2729 kommuniziert."},
-        {"IPC-Socket",controller_.socketPath(),"Geschützter Unix-Socket für Desklet, Lua und Kommandozeilen-Clients."},
+        {"Server",serverEndpoint,"TCP-Endpunkt für Desklet, Lua und Kommandozeilen-Clients."},
+        {"IPC-Transport","TCP","Nur der getrennte Server kennt das AC2729-Gerät und dessen UDP-Port."},
         {"Empfangsmodus","Zentraler Server mit einer I/O-Sitzung","Alle Clients erhalten denselben Statusstrom; nur airctrl-server besitzt UDP-Socket und Protokollzustand."},
         {"Empfangsphase",controller_.observationProgress(),"Vom Server gemeldeter Fortschritt der Geräte-I/O; das Desklet bleibt ein reiner IPC-Client."},
         {"Statusmeldungen",QString::number(controller_.statusCount()),"Anzahl gültiger Statuszeilen seit Programmstart."},
@@ -869,11 +872,12 @@ void Desklet::showDetails() {
         {"Letzte Lua-Aktion",automation_.lastAction().isEmpty() ? "—" : automation_.lastAction(),"Letzter von Lua angeforderter bzw. bestätigter Steuerauftrag."},
         {"Aktive Alarme",alertReport(activeAlerts_),"Warnungen aus bekannten Gerätestatusfeldern sowie Fehler beim Empfang oder Schalten. Unbekannte err-Codes werden nicht geraten."},
         {"Beobachtungsstarts",QString::number(controller_.observationStarts()),"Serverweite Starts der Geräte-I/O-Sitzung; Clientfenster erzeugen keine zusätzlichen UDP-Sitzungen."},
-        {"CoAP-Anlauf","60 Sekunden je Anfrage","Synchronisierung und erste Statusantwort erhalten jeweils bis zu 60 Sekunden; die Frist wird allein im Server überwacht."},
-        {"Maximale Datenpause","90 Sekunden","Erst nach längerem Ausbleiben von Statusmeldungen wird der I/O-Socket geschlossen und mit neuer Synchronisierung geöffnet. Die beobachteten 18–19 Sekunden sind normale Pausen."},
+        {"Serverkonfiguration","/etc/airctrld.cfg","Enthält ausschließlich serverseitig Geräteziel, UDP-Port sowie Geräte-Timeouts."},
+        {"CoAP-Anlauf","serverseitig","Synchronisierung und erste Statusantwort werden allein durch /etc/airctrld.cfg begrenzt."},
+        {"Maximale Datenpause","serverseitig","Nach der in /etc/airctrld.cfg gesetzten Pause wird der Geräte-I/O-Socket geschlossen und neu synchronisiert."},
         {"Schaltbefehl","10 Sekunden je Anfrage","Observe wird kurz abgemeldet; der Befehl nutzt denselben Socket und fortlaufenden Sendezähler. Keine automatische Wiederholung oder Neusynchronisierung bei einem Schaltfehler."},
         {"Statusbestätigung","90 Sekunden","Nach der Schreibannahme wird Observe auf demselben Socket wieder angemeldet und die nächste Statusmeldung als Rückmeldung verwendet."},
-        {"Wiederverbindung",QString::number(preferences_.interval)+" Sekunden","Pause vor einem neuen Empfangsversuch nach einem Fehler; kein Abfrageintervall."},
+        {"Server-Wiederverbindung",QString::number(preferences_.serverReconnectSeconds)+" Sekunden","Pause des Desklets vor einem neuen TCP-Verbindungsversuch zum Server; kein Geräte-Abfrageintervall."},
         {"Letzter Empfang",updated_.isValid() ? updated_.toString(Qt::ISODate) : "noch keiner","Zeitpunkt des letzten in Werte und Embleme übernommenen Status. Ein Schalt-ACK allein verändert ihn nicht."}
     };
     if(!error_.isEmpty()) connectionFields.append({"Letzter Fehler",error_,"Unveränderte letzte Fehlermeldung des Servers bzw. der IPC-Verbindung."});

@@ -58,6 +58,14 @@ class RepositoryTests(unittest.TestCase):
         self.assertNotIn("airctrl-backend", install_line)
         self.assertIn("src/server.cpp", cmake)
         self.assertIn("src/client_main.cpp", cmake)
+        self.assertIn("config/airctrld.cfg", cmake)
+        config = (self.root / "config" / "airctrld.cfg").read_text()
+        self.assertIn("host=AC2729-10", config)
+        self.assertIn("port=5683", config)
+        self.assertIn("port=5680", config)
+        server = (self.root / "src" / "server.cpp").read_text()
+        self.assertIn("QTcpServer", server)
+        self.assertNotIn("QLocalServer", server)
 
     def test_desklet_suite_has_slow_machine_timeout(self):
         cmake = (self.root / "CMakeLists.txt").read_text()
@@ -66,13 +74,13 @@ class RepositoryTests(unittest.TestCase):
         self.assertNotIn(
             "set_tests_properties(desklet PROPERTIES TIMEOUT 90)", cmake)
 
-    def test_local_socket_watchdog_is_armed_before_connect(self):
+    def test_tcp_watchdog_is_armed_before_connect(self):
         controller = (self.root / "src" / "controller.cpp").read_text()
         start = controller.index("void Controller::connectServer()")
         end = controller.index("void Controller::launchServer()", start)
         connect_body = controller[start:end]
         self.assertLess(connect_body.index("connectWatchdog_.start(3000);"),
-                        connect_body.index("socket_.connectToServer("))
+                        connect_body.index("socket_.connectToHost("))
         fake = (self.root / "tests" / "fake_backend.cpp").read_text()
         self.assertIn("std::optional<IpcCommand> pending_", fake)
         self.assertIn("if(pending_) return", fake)
@@ -89,19 +97,17 @@ class RepositoryTests(unittest.TestCase):
         self.assertIn('qputenv("AIRCTRL_TEST_SUPPRESS_DESKTOP_ALARMS","1")', tests)
 
     def test_update_script_uses_original_ssh_and_atomic_push(self):
-        script = (self.root / "einspielen-v1.05.sh").read_text()
+        script = (self.root / "einspielen-v1.06.sh").read_text()
         self.assertIn('${HOME}/Projects/Qt/AirCtrl-Desklet', script)
         self.assertIn('git@github.com:notwendig/AirCtrl-Desklet.git', script)
         self.assertIn('push --atomic', script)
         self.assertIn('public_files', script)
-        self.assertIn('check_v105_resume.py', script)
         self.assertIn('rev-list --left-right --count', script)
-        self.assertIn('commit --amend -m "$commit_message"', script)
-        self.assertIn('v1.05: central AirControl server and and local clients', script)
-        self.assertIn('local_parent', script)
+        self.assertIn('v1.06: TCP server and system device configuration', script)
+        self.assertIn('"tests/parent_probe.cpp"', script)
         self.assertIn('cmake -E remove_directory "$test_build"', script)
         self.assertLess(script.index('cmake -E remove_directory "$test_build"'),
-                        script.index('cmake -S "$project_dir" -B "$test_build"'))
+                        script.index('cmake -S "$source_dir" -B "$test_build"'))
         self.assertNotIn('push --force', script)
 
     def test_interrupted_update_resume_accepts_only_known_bytes(self):
@@ -160,7 +166,7 @@ class RepositoryTests(unittest.TestCase):
             self.assertIn("AirCtrl-Desklet/.github/workflows/ci.yml", names)
             self.assertIn("AirCtrl-Desklet/docs/images/desklet-dark.png", names)
             self.assertIn("AirCtrl-Desklet/docs/IPC_PROTOCOL.md", names)
-            self.assertIn("AirCtrl-Desklet/einspielen-v1.05.sh", names)
+            self.assertIn("AirCtrl-Desklet/einspielen-v1.06.sh", names)
             self.assertFalse(any("secret.log" in name or name.endswith("/.env") for name in names))
             self.assertFalse(any(name.lower().endswith((".pcap", ".pcapng", ".lz4")) for name in names))
             self.assertTrue(all(name.startswith("AirCtrl-Desklet/") and ".." not in Path(name).parts

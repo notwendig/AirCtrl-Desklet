@@ -5,9 +5,10 @@
 #include <QFont>
 #include <QStringList>
 struct Preferences {
-    QString host = "AC2729-10";
-    int port = 5683;
-    int interval = 10;
+    Preferences();
+    QString serverHost;
+    int serverPort;
+    int serverReconnectSeconds = 10;
     int ageWarningSeconds = 45;
     int ageStaleSeconds = 90;
     bool desktopAlarms = true;

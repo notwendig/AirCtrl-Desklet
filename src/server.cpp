@@ -5,17 +5,16 @@
 
 #include <QCoreApplication>
 #include <QCommandLineParser>
-#include <QDir>
-#include <QFile>
 #include <QFileInfo>
 #include <QHash>
+#include <QHostAddress>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QLockFile>
-#include <QLocalServer>
-#include <QLocalSocket>
 #include <QMetaObject>
 #include <QPointer>
+#include <QSettings>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QTimer>
 
 #include <atomic>
@@ -33,12 +32,47 @@ struct DeviceConfig {
     int reconnectMs = 10000;
     int requestMs = 60000;
     int idleMs = 90000;
-    bool operator==(const DeviceConfig& other) const {
-        return host == other.host && port == other.port && reconnectMs == other.reconnectMs &&
-               requestMs == other.requestMs && idleMs == other.idleMs;
-    }
-    bool operator!=(const DeviceConfig& other) const { return !(*this == other); }
 };
+
+struct ServerConfig {
+    QHostAddress listenAddress{QHostAddress::Any};
+    quint16 listenPort=5680;
+    DeviceConfig device;
+};
+
+bool loadConfig(const QString& path,ServerConfig* config,QString* error) {
+    if(!QFileInfo::exists(path) || !QFileInfo(path).isFile()) {
+        if(error) *error="Konfiguration fehlt: "+path;
+        return false;
+    }
+    QSettings file(path,QSettings::IniFormat);
+    if(file.status()!=QSettings::NoError) {
+        if(error) *error="Konfiguration kann nicht gelesen werden: "+path;
+        return false;
+    }
+    const auto addressText=file.value("server/listen_address","0.0.0.0").toString().trimmed();
+    QHostAddress address;
+    bool listenPortOk=false,devicePortOk=false,reconnectOk=false,requestOk=false,idleOk=false;
+    const auto listenPort=file.value("server/port",5680).toUInt(&listenPortOk);
+    DeviceConfig device;
+    device.host=file.value("device/host","AC2729-10").toString().trimmed();
+    device.port=file.value("device/port",5683).toInt(&devicePortOk);
+    device.reconnectMs=file.value("device/reconnect_ms",10000).toInt(&reconnectOk);
+    device.requestMs=file.value("device/request_ms",60000).toInt(&requestOk);
+    device.idleMs=file.value("device/idle_ms",90000).toInt(&idleOk);
+    if(!address.setAddress(addressText) || !listenPortOk || listenPort<1 || listenPort>65535 ||
+       device.host.isEmpty() || !devicePortOk || device.port<1 || device.port>65535 ||
+       !reconnectOk || device.reconnectMs<50 || device.reconnectMs>300000 ||
+       !requestOk || device.requestMs<50 || device.requestMs>86400000 ||
+       !idleOk || device.idleMs<50 || device.idleMs>86400000) {
+        if(error) *error="Ungültiger Wert in "+path;
+        return false;
+    }
+    config->listenAddress=address;
+    config->listenPort=static_cast<quint16>(listenPort);
+    config->device=std::move(device);
+    return true;
+}
 
 struct DeviceCommand {
     quint64 client = 0;
@@ -49,32 +83,17 @@ struct DeviceCommand {
 class AirCtrlServer final : public QObject {
     Q_OBJECT
 public:
-    AirCtrlServer(QString socketPath, DeviceConfig config, QObject* parent = nullptr)
-        : QObject(parent), socketPath_(std::move(socketPath)), config_(std::move(config)) {
-        connect(&listener_, &QLocalServer::newConnection, this, &AirCtrlServer::acceptClients);
+    AirCtrlServer(QHostAddress listenAddress,quint16 listenPort,DeviceConfig config,QObject* parent = nullptr)
+        : QObject(parent),listenAddress_(std::move(listenAddress)),listenPort_(listenPort),config_(std::move(config)) {
+        connect(&listener_, &QTcpServer::newConnection, this, &AirCtrlServer::acceptClients);
     }
     ~AirCtrlServer() override { shutdown(); }
 
     bool start(QString* error) {
-        const QFileInfo endpoint(socketPath_);
-        if (!QDir().mkpath(endpoint.absolutePath())) {
-            if (error) *error = "IPC-Verzeichnis konnte nicht angelegt werden: " + endpoint.absolutePath();
-            return false;
-        }
-        QFile::setPermissions(endpoint.absolutePath(), QFileDevice::ReadOwner | QFileDevice::WriteOwner |
-                                                       QFileDevice::ExeOwner);
-        instanceLock_ = std::make_unique<QLockFile>(socketPath_ + ".lock");
-        instanceLock_->setStaleLockTime(30000);
-        if (!instanceLock_->tryLock(0)) {
-            if (error) *error = "AirControl-Server läuft bereits.";
-            return false;
-        }
-        QLocalServer::removeServer(socketPath_);
-        if (!listener_.listen(socketPath_)) {
+        if (!listener_.listen(listenAddress_,listenPort_)) {
             if (error) *error = listener_.errorString();
             return false;
         }
-        QFile::setPermissions(socketPath_, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
         worker_ = std::thread([this] { deviceLoop(); });
         // Tests may stop a controller before its first connection completes.
         // Do not leave that detached, never-used test server behind forever.
@@ -95,7 +114,6 @@ private:
         wake_.notify_all();
         if (worker_.joinable()) worker_.join();
         listener_.close();
-        QLocalServer::removeServer(socketPath_);
     }
 
     void acceptClients() {
@@ -104,8 +122,8 @@ private:
             clients_.insert(id, socket);
             buffers_.insert(id, {});
             socket->setProperty("airctrlClient", QVariant::fromValue<qulonglong>(id));
-            connect(socket, &QLocalSocket::readyRead, this, [this, id] { readClient(id); });
-            connect(socket, &QLocalSocket::disconnected, this, [this, id] {
+            connect(socket, &QTcpSocket::readyRead, this, [this, id] { readClient(id); });
+            connect(socket, &QTcpSocket::disconnected, this, [this, id] {
                 if (auto* old = clients_.take(id)) old->deleteLater();
                 buffers_.remove(id);
                 if (clients_.isEmpty() && qEnvironmentVariableIntValue("AIRCTRL_SERVER_EXIT_ON_IDLE") == 1)
@@ -124,7 +142,7 @@ private:
         buffer += socket->readAll();
         if (buffer.size() > 1024 * 1024) {
             send(client, {{"_airctrl", "error"}, {"error", "IPC-Nachricht ist zu groß."}});
-            socket->disconnectFromServer();
+            socket->disconnectFromHost();
             return;
         }
         for (;;) {
@@ -145,36 +163,8 @@ private:
     void handle(quint64 client, const QJsonObject& request) {
         const auto kind = request.value("_airctrl").toString();
         if (kind == "configure") {
-            DeviceConfig config;
-            config.host = request.value("host").toString().trimmed();
-            config.port = request.value("port").toInt(5683);
-            config.reconnectMs = qBound(50, request.value("reconnect_ms").toInt(10000), 300000);
-            config.requestMs = qBound(50, request.value("request_ms").toInt(60000), 86400000);
-            config.idleMs = qBound(50, request.value("idle_ms").toInt(90000), 86400000);
-            if (config.host.isEmpty() || config.port < 1 || config.port > 65535) {
-                send(client, {{"_airctrl", "error"}, {"error", "Ungültiger Hostname oder UDP-Port."}});
-                return;
-            }
-            bool changed = false;
-            {
-                std::lock_guard<std::mutex> lock(mutex_);
-                if (config != config_) {
-                    config_ = config;
-                    ++configGeneration_;
-                    reconnectRequested_ = true;
-                    changed = true;
-                }
-            }
-            if (changed) {
-                deviceReady_.store(false);
-                DeviceCommand pending;
-                while (takeCommand(&pending))
-                    postControl(pending, false, "Gerätekonfiguration geändert; Befehl nicht ausgeführt.");
-                wake_.notify_all();
-            }
-            send(client, {{"_airctrl", "configured"}, {"host", config.host}, {"port", config.port}});
-            if (!changed && state_ == "connected" && !lastStatus_.isEmpty())
-                send(client, {{"_airctrl", "status"}, {"data", lastStatus_}});
+            send(client, {{"_airctrl", "error"},
+                {"error", "Geräteeinstellungen gehören ausschließlich in /etc/airctrld.cfg."}});
             return;
         }
         if (kind == "refresh") {
@@ -227,7 +217,7 @@ private:
 
     void send(quint64 client, const QJsonObject& object) {
         auto* socket = clients_.value(client);
-        if (!socket || socket->state() != QLocalSocket::ConnectedState) return;
+        if (!socket || socket->state() != QAbstractSocket::ConnectedState) return;
         socket->write(QJsonDocument(object).toJson(QJsonDocument::Compact) + '\n');
     }
     void broadcast(const QJsonObject& object) {
@@ -376,10 +366,10 @@ private:
         }
     }
 
-    QString socketPath_;
-    QLocalServer listener_;
-    std::unique_ptr<QLockFile> instanceLock_;
-    QHash<quint64, QLocalSocket*> clients_;
+    QHostAddress listenAddress_;
+    quint16 listenPort_;
+    QTcpServer listener_;
+    QHash<quint64, QTcpSocket*> clients_;
     QHash<quint64, QByteArray> buffers_;
     quint64 nextClient_ = 1;
     QString state_ = "starting", stateError_;
@@ -403,38 +393,26 @@ int main(int argc, char** argv) {
     QCoreApplication::setApplicationName("airctrl-server");
     QCoreApplication::setApplicationVersion(AIRCTRL_VERSION);
     QCommandLineParser parser;
-    parser.setApplicationDescription("Lokaler AirControl-Server; einziger Prozess mit AC2729-Zugriff");
+    parser.setApplicationDescription("AirControl-TCP-Server; einziger Prozess mit AC2729-Zugriff");
     parser.addHelpOption();
     parser.addVersionOption();
-    parser.addOptions({
-        {{"H", "host"}, "Hostname oder IP-Adresse des Geräts", "host", "AC2729-10"},
-        {{"P", "port"}, "UDP-Port", "port", "5683"},
-        {"socket", "Lokaler Unix-Socket", "path"},
-        {"reconnect", "Wiederverbindung nach Fehler in Sekunden", "seconds", "10"},
-        {"reconnect-ms", "Wiederverbindung in Millisekunden", "milliseconds"},
-        {"request-ms", "CoAP-Anlauffrist in Millisekunden", "milliseconds", "60000"},
-        {"idle-ms", "Status-Stillstandsfrist in Millisekunden", "milliseconds", "90000"},
-    });
+    parser.addOption({"config","Serverkonfiguration","file","/etc/airctrld.cfg"});
+    parser.addOption({"check-config","Konfiguration prüfen und beenden"});
     parser.process(app);
-    bool portOk = false, reconnectOk = false;
-    DeviceConfig config;
-    config.host = parser.value("host").trimmed();
-    config.port = parser.value("port").toInt(&portOk);
-    config.reconnectMs = parser.value("reconnect").toInt(&reconnectOk) * 1000;
-    if (parser.isSet("reconnect-ms")) config.reconnectMs = parser.value("reconnect-ms").toInt(&reconnectOk);
-    bool requestOk=false,idleOk=false;
-    config.requestMs=parser.value("request-ms").toInt(&requestOk);
-    config.idleMs=parser.value("idle-ms").toInt(&idleOk);
-    if (config.host.isEmpty() || !portOk || config.port < 1 || config.port > 65535 ||
-        !reconnectOk || config.reconnectMs < 50 || config.reconnectMs > 300000 ||
-        !requestOk || config.requestMs<50 || config.requestMs>86400000 ||
-        !idleOk || config.idleMs<50 || config.idleMs>86400000) {
-        qCritical("Ungültiger Host, Port oder Wiederverbindungswert.");
+    auto configPath=parser.value("config");
+    const auto testConfig=qEnvironmentVariable("AIRCTRL_TEST_SERVER_CONFIG").trimmed();
+    if(!testConfig.isEmpty()) configPath=testConfig;
+    ServerConfig config;
+    QString error;
+    if(!loadConfig(configPath,&config,&error)) {
+        qCritical().noquote()<<error;
         return 2;
     }
-    const auto socket = parser.isSet("socket") ? parser.value("socket") : airctrlSocketPath();
-    AirCtrlServer server(socket, config);
-    QString error;
+    if(parser.isSet("check-config")) {
+        qInfo().noquote()<<"Konfiguration gültig:"<<configPath;
+        return 0;
+    }
+    AirCtrlServer server(config.listenAddress,config.listenPort,config.device);
     if (!server.start(&error)) {
         qCritical().noquote() << "AirControl-Server konnte nicht starten:" << error;
         return 1;

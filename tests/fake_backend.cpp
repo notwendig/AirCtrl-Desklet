@@ -5,8 +5,9 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QLocalServer>
-#include <QLocalSocket>
+#include <QHostAddress>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QPointer>
 #include <QSaveFile>
 #include <QThread>
@@ -98,7 +99,7 @@ QString currentMode() {
 }
 
 struct IpcCommand {
-    QPointer<QLocalSocket> socket;
+    QPointer<QTcpSocket> socket;
     quint64 id = 0;
     QJsonObject values;
 };
@@ -106,50 +107,50 @@ struct IpcCommand {
 class FakeServer final : public QObject {
     Q_OBJECT
 public:
-    explicit FakeServer(QString path,QObject* parent=nullptr):QObject(parent),path_(std::move(path)) {
-        QLocalServer::removeServer(path_);
-        if(!server_.listen(path_)) throw std::runtime_error(server_.errorString().toStdString());
-        connect(&server_,&QLocalServer::newConnection,this,&FakeServer::accept);
+    explicit FakeServer(quint16 port,QObject* parent=nullptr):QObject(parent) {
+        requestMs_=qEnvironmentVariableIntValue("AIRCTRL_TEST_REQUEST_MS");
+        idleMs_=qEnvironmentVariableIntValue("AIRCTRL_TEST_IDLE_MS");
+        reconnectMs_=qEnvironmentVariableIntValue("AIRCTRL_TEST_DEVICE_RECONNECT_MS");
+        if(requestMs_<=0) requestMs_=60000;
+        if(idleMs_<=0) idleMs_=90000;
+        if(reconnectMs_<=0) reconnectMs_=10000;
+        if(!server_.listen(QHostAddress::LocalHost,port)) throw std::runtime_error(server_.errorString().toStdString());
+        connect(&server_,&QTcpServer::newConnection,this,&FakeServer::accept);
         tick_.setInterval(5); connect(&tick_,&QTimer::timeout,this,&FakeServer::step); tick_.start();
+        beginAttempt();
         if(qEnvironmentVariableIntValue("AIRCTRL_SERVER_EXIT_ON_IDLE")==1)
             QTimer::singleShot(5000,this,[this] { if(clients_.isEmpty()) QCoreApplication::quit(); });
     }
-    ~FakeServer() override { server_.close(); QLocalServer::removeServer(path_); }
+    ~FakeServer() override { server_.close(); }
 private:
     void accept() {
         while(auto* socket=server_.nextPendingConnection()) {
             clients_.append(socket); buffers_[socket]={};
-            connect(socket,&QLocalSocket::readyRead,this,[this,socket]{ read(socket); });
-            connect(socket,&QLocalSocket::disconnected,this,[this,socket]{
+            connect(socket,&QTcpSocket::readyRead,this,[this,socket]{ read(socket); });
+            connect(socket,&QTcpSocket::disconnected,this,[this,socket]{
                 clients_.removeAll(socket); buffers_.remove(socket); socket->deleteLater();
                 if(pending_ && pending_->socket==socket) pending_.reset();
                 if(clients_.isEmpty()) QTimer::singleShot(0,this,[this]{
                     if(clients_.isEmpty()) QCoreApplication::quit();
                 });
             });
-            send(socket,{{"_airctrl","state"},{"state","starting"},{"starts",starts_}});
+            send(socket,{{"_airctrl","state"},{"state",firstStatus_ ? "connected" : "connecting"},{"starts",starts_}});
+            if(firstStatus_ && !lastStatus_.isEmpty())
+                send(socket,{{"_airctrl","status"},{"data",lastStatus_}});
         }
     }
-    void read(QLocalSocket* socket) {
+    void read(QTcpSocket* socket) {
         auto& buffer=buffers_[socket]; buffer+=socket->readAll();
         for(;;) {
             const auto newline=buffer.indexOf('\n'); if(newline<0) break;
             const auto line=buffer.left(newline).trimmed(); buffer.remove(0,newline+1);
             const auto object=QJsonDocument::fromJson(line).object(); if(object.isEmpty()) continue;
             const auto kind=object.value("_airctrl").toString();
-            if(kind=="configure") configure(socket,object);
+            if(kind=="configure") send(socket,{{"_airctrl","error"},{"error","device settings are server-only"}});
             else if(kind=="refresh") scheduleRefresh();
             else if(kind=="control") control(socket,object);
             else if(kind=="ping") send(socket,{{"_airctrl","pong"}});
         }
-    }
-    void configure(QLocalSocket* socket,const QJsonObject& object) {
-        requestMs_=object.value("request_ms").toInt(60000);
-        idleMs_=object.value("idle_ms").toInt(90000);
-        reconnectMs_=object.value("reconnect_ms").toInt(10000);
-        host_=object.value("host").toString(); port_=object.value("port").toInt();
-        send(socket,{{"_airctrl","configured"},{"host",host_},{"port",port_}});
-        if(!configured_) { configured_=true; beginAttempt(); }
     }
     void beginAttempt() {
         refreshScheduled_=false;
@@ -164,10 +165,10 @@ private:
         // one event-loop turn. They all mean one replacement I/O session.
         if(refreshScheduled_) return;
         refreshScheduled_=true;
-        QTimer::singleShot(0,this,[this] { if(configured_) beginAttempt(); });
+        QTimer::singleShot(0,this,[this] { beginAttempt(); });
     }
     void step() {
-        if(!configured_) return;
+        if(retryPending_ || clients_.isEmpty()) return;
         const auto mode=currentMode();
         if(!firstStatus_) {
             if(mode=="failure" || mode=="failure-once") {
@@ -209,11 +210,12 @@ private:
         // The outcome of a command interrupted by a new I/O session is
         // unknown. Never retain or replay it in the replacement session.
         pending_.reset();
-        firstStatus_=false; configured_=false;
+        firstStatus_=false;
+        retryPending_=true;
         broadcast({{"_airctrl","state"},{"state","error"},{"starts",starts_},{"error",error}});
-        QTimer::singleShot(qMax(20,reconnectMs_),this,[this]{ if(!clients_.isEmpty()) { configured_=true; beginAttempt(); } });
+        QTimer::singleShot(qMax(20,reconnectMs_),this,[this]{ retryPending_=false; beginAttempt(); });
     }
-    void control(QLocalSocket* socket,const QJsonObject& object) {
+    void control(QTcpSocket* socket,const QJsonObject& object) {
         const auto id=object.value("id").toVariant().toULongLong();
         const auto values=object.value("values").toObject(); logControl(values);
         const auto mode=currentMode();
@@ -233,20 +235,21 @@ private:
         if(mode!="idle" && gateOpen("AIRCTRL_TEST_READ_GATE")) emitStatus(status());
     }
     void emitStatus(const QJsonObject& value) {
-        firstStatus_=true; statusTick_.restart();
+        firstStatus_=true; lastStatus_=value; statusTick_.restart();
         broadcast({{"_airctrl","status"},{"data",value}});
     }
-    void send(QLocalSocket* socket,const QJsonObject& object) {
-        if(socket->state()==QLocalSocket::ConnectedState)
+    void send(QTcpSocket* socket,const QJsonObject& object) {
+        if(socket->state()==QAbstractSocket::ConnectedState)
             socket->write(QJsonDocument(object).toJson(QJsonDocument::Compact)+'\n');
     }
     void broadcast(const QJsonObject& object) { for(auto* socket:clients_) send(socket,object); }
 
-    QString path_,host_="AC2729-10"; int port_=5683,requestMs_=60000,idleMs_=90000,reconnectMs_=10000;
-    QLocalServer server_; QList<QLocalSocket*> clients_; QHash<QLocalSocket*,QByteArray> buffers_;
+    QString host_="AC2729-10"; int port_=5683,requestMs_=60000,idleMs_=90000,reconnectMs_=10000;
+    QTcpServer server_; QList<QTcpSocket*> clients_; QHash<QTcpSocket*,QByteArray> buffers_;
     std::optional<IpcCommand> pending_;
     QTimer tick_; QElapsedTimer attempt_,statusTick_; qint64 starts_=0;
-    bool configured_=false,firstStatus_=false,refreshScheduled_=false;
+    QJsonObject lastStatus_;
+    bool firstStatus_=false,refreshScheduled_=false,retryPending_=false;
 };
 
 int session(const QString& mode) {
@@ -332,9 +335,10 @@ int main(int argc,char** argv) {
     std::signal(SIGTERM,stop); std::signal(SIGINT,stop);
     QCoreApplication app(argc,argv);
     auto args=app.arguments(); args.removeFirst();
-    const auto socketIndex=args.indexOf("--socket");
-    if(socketIndex>=0 && socketIndex+1<args.size()) {
-        try { FakeServer server(args[socketIndex+1]); return app.exec(); }
+    bool portOk=false;
+    const auto serverPort=qEnvironmentVariable("AIRCTRL_TEST_SERVER_PORT").toUInt(&portOk);
+    if(portOk && serverPort>0 && serverPort<=65535) {
+        try { FakeServer server(static_cast<quint16>(serverPort)); return app.exec(); }
         catch(const std::exception& error) { std::cerr<<error.what()<<'\n'; return 1; }
     }
     appendLog(QJsonArray::fromStringList(args));

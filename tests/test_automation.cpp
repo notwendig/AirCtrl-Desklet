@@ -98,6 +98,21 @@ private slots:
         QVERIFY(log.contains("online")); QVERIFY(log.contains("warning:1")); QVERIFY(log.contains("Testfehler"));
     }
 
+    void unchangedAlarmDoesNotRepeatWhenMessageAgeChanges() {
+        AutomationEngine engine(false);
+        QVERIFY(engine.loadScriptText(R"lua(
+            function on_event(event)
+                if event.type == "alarm" then airctrl.log("warning", event.alerts[1].message) end
+            end
+        )lua"));
+        engine.alertsEvent({{"connection",AlertLevel::Warning,"Keine Daten seit 45 Sekunden"}});
+        QCOMPARE(engine.logEntries().size(),1);
+        engine.alertsEvent({{"connection",AlertLevel::Warning,"Keine Daten seit 46 Sekunden"}});
+        QCOMPARE(engine.logEntries().size(),1);
+        engine.alertsEvent({{"connection",AlertLevel::Error,"Keine Daten seit 90 Sekunden"}});
+        QCOMPARE(engine.logEntries().size(),2);
+    }
+
     void invalidControlAndScheduleAreRejected() {
         AutomationEngine invalid(false);
         QVERIFY(!invalid.loadScriptText("airctrl.schedule{name='x',at='7:00',set={evil=1}}"));

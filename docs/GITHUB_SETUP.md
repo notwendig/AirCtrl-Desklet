@@ -5,17 +5,17 @@ Maintainer Commits, Tags und Veröffentlichungen nach seiner Prüfung selbst aus
 
 ## Direkte Aktualisierung des vorhandenen Originals
 
-Das v1.05-Übergabe-ZIP enthält `AirCtrl-Desklet/einspielen-v1.05.sh`. Das Skript
+Das v1.06-Übergabe-ZIP enthält `AirCtrl-Desklet/einspielen-v1.06.sh`. Das Skript
 arbeitet standardmäßig ausschließlich auf `~/Projects/Qt/AirCtrl-Desklet`. Es
 verlangt einen sauberen Git-Arbeitsbaum, kopiert anhand der öffentlichen
 Positivliste, prüft Repository, Build und Tests, installiert anschließend unter
-`~/.local`, erstellt den Commit und den annotierten Tag `v1.05` und pusht Branch
+`~/.local`, erstellt den Commit und den annotierten Tag `v1.06` und pusht Branch
 plus Tag atomar.
 
 ```bash
 cd ~/Downloads
-unzip -o AirCtrl-Desklet-1.05.zip
-bash AirCtrl-Desklet/einspielen-v1.05.sh
+unzip -o AirCtrl-Desklet-1.06.zip
+bash AirCtrl-Desklet/einspielen-v1.06.sh
 ```
 
 Das Remote wird ausdrücklich auf SSH gesetzt:
@@ -42,8 +42,8 @@ Installationsabhängigkeiten: [DEVELOPMENT.md](DEVELOPMENT.md).
 Prüfe README-Bilder, Rollen, Lizenz, Quellcode und Dateien vor der Freigabe.
 Insbesondere keine echten Diagnoseberichte, Gerätekennungen, Mitschnitte,
 Zugangsdaten oder Buildverzeichnisse veröffentlichen. `.gitignore` allein entfernt
-keine bereits versionierten Dateien. Der Standardhost `AC2729-10` ist keine
-automatische Geräteerkennung und muss im lokalen Namensdienst auflösbar sein.
+keine bereits versionierten Dateien. Der Gerätehost `AC2729-10` steht nur in
+`/etc/airctrld.cfg`; Clients verwenden standardmäßig den Server `nadhh:5680`.
 
 ## 2. Neues Repository lokal initialisieren
 
@@ -61,7 +61,7 @@ git diff --cached
 Prüfe die vorgemerkten Dateien. Erst danach:
 
 ```bash
-git commit -m "v1.05: central AirControl server and local clients"
+git commit -m "v1.06: TCP server and system device configuration"
 ```
 
 Git verwendet deine vorhandene Identität. Falls sie fehlt, entscheide selbst
@@ -82,7 +82,7 @@ Keinen Force-Push verwenden. Vor dem Push Arbeitsbaum und Remote prüfen.
 
 Empfohlene Beschreibung:
 
-> Qt 6 desktop controller with one local Philips AC2729 server, multiple Unix-socket clients, live status, Lua automation and diagnostics.
+> Qt 6 desktop controller with one Philips AC2729 server, multiple TCP clients, live status, Lua automation and diagnostics.
 
 Passende Topics: `qt6`, `cpp17`, `linux`, `cinnamon`, `philips`, `air-purifier`,
 `coap`, `lua`, `home-automation`, `desktop-widget`, `fedora`.
@@ -103,19 +103,19 @@ Passende Topics: `qt6`, `cpp17`, `linux`, `cinnamon`, `philips`, `air-purifier`,
 - Wenn verfügbar, Secret Scanning/Push Protection einschalten. Das ersetzt
   keine manuelle Prüfung von Gerätenummern und Screenshots.
 
-## 5. Release v1.05 als Entwurf
+## 5. Release v1.06 als Entwurf
 
-Das Einspielskript erstellt und pusht `v1.05` bereits. Die folgenden Befehle sind
+Das Einspielskript erstellt und pusht `v1.06` bereits. Die folgenden Befehle sind
 nur die manuelle Alternative, wenn das Skript bewusst nicht verwendet wurde:
 
 ```bash
-git tag -a v1.05 -m "AirCtrl-Desklet v1.05"
-git push origin v1.05
+git tag -a v1.06 -m "AirCtrl-Desklet v1.06"
+git push origin v1.06
 ```
 
 Der vorbereitete Release-Workflow baut und testet den Tag erneut. Er erzeugt
 einen **nicht veröffentlichten Entwurf** mit Quell-ZIP, SHA-256-Datei und den
-[Release-Notizen](releases/v1.05.md). Prüfe Dateien und Grenzen, bevor du im
+[Release-Notizen](releases/v1.06.md). Prüfe Dateien und Grenzen, bevor du im
 GitHub-Release auf „Publish release“ klickst. Bei Wiederholung wird ein
 vorhandener Release nicht überschrieben.
 

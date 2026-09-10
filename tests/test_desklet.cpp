@@ -7,14 +7,18 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
-#include <QLocalServer>
+#include <QHostAddress>
+#include <QTcpServer>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QtTest>
 #include <QMenu>
 #include <QInputDialog>
+#include <QDialog>
+#include <QLineEdit>
 #include <QContextMenuEvent>
 #include <QSettings>
+#include <QSaveFile>
 #include <QMouseEvent>
 #include <QSpinBox>
 #include <QTableWidget>
@@ -96,6 +100,27 @@ private:
     QTemporaryDir temp_;
     QString log_, state_;
     int testSequence_=0;
+    quint16 testServerPort_=0;
+    bool allocateServerPort() {
+        QTcpServer probe;
+        if(!probe.listen(QHostAddress::LocalHost,0)) return false;
+        testServerPort_=probe.serverPort();
+        probe.close();
+        qputenv("AIRCTRL_TEST_SERVER_HOST","127.0.0.1");
+        qputenv("AIRCTRL_TEST_SERVER_PORT",QByteArray::number(testServerPort_));
+        return true;
+    }
+    bool writeServerConfig(quint16 devicePort,int reconnectMs=10000,int requestMs=60000,int idleMs=90000) {
+        const auto path=temp_.filePath(QString("airctrld-%1.cfg").arg(testSequence_));
+        QSaveFile file(path);
+        if(!file.open(QIODevice::WriteOnly)) return false;
+        file.write(QString("[server]\nlisten_address=127.0.0.1\nport=%1\n"
+                           "[device]\nhost=127.0.0.1\nport=%2\nreconnect_ms=%3\nrequest_ms=%4\nidle_ms=%5\n")
+                       .arg(testServerPort_).arg(devicePort).arg(reconnectMs).arg(requestMs).arg(idleMs).toUtf8());
+        if(!file.commit()) return false;
+        qputenv("AIRCTRL_TEST_SERVER_CONFIG",path.toUtf8());
+        return true;
+    }
     void setMode(const QString& mode) {
         qputenv("AIRCTRL_TEST_MODE",mode.toUtf8());
         QFile file(temp_.filePath("mode.txt"));
@@ -138,11 +163,9 @@ private:
 private slots:
     void initTestCase() {
         QVERIFY(temp_.isValid());
-        const auto probePath=temp_.filePath("unix-socket-probe");
-        QLocalServer::removeServer(probePath);
-        QLocalServer probe;
-        if(!probe.listen(probePath)) QSKIP("Die Testumgebung erlaubt keine lokalen Unix-Sockets.");
-        probe.close(); QLocalServer::removeServer(probePath);
+        QTcpServer probe;
+        if(!probe.listen(QHostAddress::LocalHost,0)) QSKIP("Die Testumgebung erlaubt keine TCP-Loopback-Sockets.");
+        probe.close();
         QCoreApplication::setOrganizationName("AirControlTests");
         QCoreApplication::setApplicationName("AirControlTests");
         QCoreApplication::setApplicationVersion(AIRCTRL_VERSION);
@@ -156,7 +179,12 @@ private slots:
     }
     void init() {
         setMode(""); QFile::remove(log_); QFile::remove(state_);
-        qputenv("AIRCTRL_SOCKET",temp_.filePath(QString("server-%1.sock").arg(++testSequence_)).toUtf8());
+        ++testSequence_;
+        QVERIFY(allocateServerPort());
+        qputenv("AIRCTRL_TEST_REQUEST_MS","60000");
+        qputenv("AIRCTRL_TEST_IDLE_MS","90000");
+        qputenv("AIRCTRL_TEST_DEVICE_RECONNECT_MS","10000");
+        qunsetenv("AIRCTRL_TEST_SERVER_CONFIG");
         qunsetenv("AIRCTRL_TEST_READ_GATE"); QFile::remove(temp_.filePath("read.ready"));
         qunsetenv("AIRCTRL_TEST_WRITE_GATE"); QFile::remove(temp_.filePath("write.ready"));
         qunsetenv("AIRCTRL_TEST_NOTIFY_GATE"); qunsetenv("AIRCTRL_TEST_TICK_MS");
@@ -166,7 +194,7 @@ private slots:
     }
     void observationStreamsWithoutPolling() {
         Controller c(FAKE_BACKEND); QSignalSpy status(&c,&Controller::statusReceived), errors(&c,&Controller::failed);
-        c.configure("127.0.0.1",12345,5); c.start(); c.start();
+        c.start(); c.start();
         QTRY_VERIFY(status.count()>=3);
         QVERIFY(!c.busy()); QVERIFY(c.observing()); QCOMPARE(c.observationStarts(),quint64(1));
         QCOMPARE(calls().size(),1); QCOMPARE(errors.count(),0);
@@ -177,19 +205,23 @@ private slots:
         QCOMPARE(args[args.toVariantList().indexOf("--idle-timeout")+1].toString(),QString("90"));
         c.stop();
     }
-    void defaultHostIsAc2729Dash10() {
-        QCOMPARE(Preferences{}.host, QString("AC2729-10"));
-        QCOMPARE(Preferences::load().host, QString("AC2729-10"));
+    void clientDefaultsContainOnlyServerEndpoint() {
+        ScopedEnvironment host("AIRCTRL_TEST_SERVER_HOST","nadhh");
+        ScopedEnvironment port("AIRCTRL_TEST_SERVER_PORT","5680");
+        QCOMPARE(Preferences{}.serverHost, QString("nadhh"));
+        QCOMPARE(Preferences{}.serverPort, 5680);
         QSettings settings;
         settings.setValue("device/host", "ac2729/10");
-        QCOMPARE(Preferences::load().host, QString("AC2729-10"));
-        QCOMPARE(settings.value("device/host").toString(), QString("AC2729-10"));
-        settings.setValue("device/host", "AC2729_10");
-        QCOMPARE(Preferences::load().host, QString("AC2729-10"));
-        settings.setValue("device/host", "192.168.77.5");
-        QCOMPARE(Preferences::load().host, QString("192.168.77.5"));
+        settings.setValue("device/port", 5683);
+        auto saved=Preferences::load();
+        QCOMPARE(saved.serverHost,QString("nadhh"));
+        QCOMPARE(saved.serverPort,5680);
+        saved.save();
+        QVERIFY(!settings.contains("device/host"));
+        QVERIFY(!settings.contains("device/port"));
         Controller controller(FAKE_BACKEND);
-        QCOMPARE(controller.host(), QString("AC2729-10"));
+        QCOMPARE(controller.host(), QString("nadhh"));
+        QCOMPARE(controller.serverEndpoint(),QString("nadhh:5680"));
     }
     void realisticNineteenSecondPauseStaysOnline() {
         qputenv("AIRCTRL_TEST_TICK_MS","19000");
@@ -218,22 +250,16 @@ private slots:
         QVERIFY(requests[2].contains("rhset=60")); QVERIFY(requests[2].contains("-I"));
         QCOMPARE(c.observationStarts(),quint64(1)); c.stop();
     }
-    void hostnamesAndIpAddressesReachBackendUnchanged() {
+    void serverHostnamesAreStoredUnchanged() {
         const QList<QPair<QString,QString>> hosts{
             {" 192.0.2.10 ","192.0.2.10"},
             {" luftreiniger.local ","luftreiniger.local"},
             {" [2001:db8::5] ","[2001:db8::5]"},
         };
         for(const auto& item:hosts) {
-            QFile::remove(log_);
-            qputenv("AIRCTRL_SOCKET",temp_.filePath(QString("server-%1.sock").arg(++testSequence_)).toUtf8());
-            Controller c(FAKE_BACKEND); c.configure(item.first,5683,5);
-            QCOMPARE(c.host(),item.second); c.start();
-            QTRY_COMPARE_WITH_TIMEOUT(calls().size(),1,15000);
-            const auto args=calls().first(); int hostArgument=-1;
-            for(int i=0;i<args.size();++i) if(args[i].toString()=="-H") hostArgument=i;
-            QVERIFY(hostArgument>=0); QVERIFY(hostArgument+1<args.size());
-            QCOMPARE(args[hostArgument+1].toString(),item.second); c.stop();
+            Controller c(QString{}); c.configure(item.first,5680,5);
+            QCOMPARE(c.host(),item.second);
+            QCOMPARE(c.serverEndpoint(),item.second+":5680");
         }
     }
     void luaStatusEventUsesConfirmedWritePathOnce() {
@@ -332,6 +358,7 @@ private slots:
     }
     void observerExitReconnects() {
         setMode("exit-stream");
+        qputenv("AIRCTRL_TEST_DEVICE_RECONNECT_MS","200");
         Controller c(FAKE_BACKEND); c.setReconnectDelay(200);
         QSignalSpy status(&c,&Controller::statusReceived), errors(&c,&Controller::failed);
         c.start(); QTRY_COMPARE(errors.count(),1);
@@ -341,7 +368,9 @@ private slots:
     }
     void idleWatchdogReconnects() {
         setMode("idle");
-        Controller c(FAKE_BACKEND); c.setObservationWatchdogs(1000,200); c.setReconnectDelay(200);
+        qputenv("AIRCTRL_TEST_IDLE_MS","200");
+        qputenv("AIRCTRL_TEST_DEVICE_RECONNECT_MS","200");
+        Controller c(FAKE_BACKEND); c.setReconnectDelay(200);
         QSignalSpy errors(&c,&Controller::failed);
         c.start(); QTRY_VERIFY(c.observing()); QTRY_COMPARE(errors.count(),1);
         QVERIFY(!c.observing()); setMode("");
@@ -379,6 +408,7 @@ private slots:
     }
     void pendingWriteFailsWhenIoSessionReconnectsWithoutReplay() {
         setMode("exit-stream");
+        qputenv("AIRCTRL_TEST_DEVICE_RECONNECT_MS","200");
         qputenv("AIRCTRL_TEST_WRITE_GATE",temp_.filePath("write.ready").toUtf8());
         Controller c(FAKE_BACKEND); c.setReconnectDelay(200);
         QSignalSpy errors(&c,&Controller::failed), commandErrors(&c,&Controller::commandFailed),
@@ -393,7 +423,8 @@ private slots:
     }
     void realUdpObservationAndControlUseOneSocketAndSessionKey() {
         UdpDevice device;
-        Controller c(REAL_BACKEND); c.configure("127.0.0.1",device.port,5);
+        QVERIFY(writeServerConfig(device.port));
+        Controller c(REAL_BACKEND);
         QSignalSpy status(&c,&Controller::statusReceived), errors(&c,&Controller::failed);
         QSignalSpy commandErrors(&c,&Controller::commandFailed), accepted(&c,&Controller::controlAccepted);
         c.start(); QTRY_VERIFY(status.count()>=2);
@@ -408,8 +439,8 @@ private slots:
     }
     void realUdpStatusTimeoutRenewsSocketAndSessionKey() {
         UdpDevice device;
-        Controller c(REAL_BACKEND); c.configure("127.0.0.1",device.port,5);
-        c.setObservationWatchdogs(1000,250); c.setReconnectDelay(100);
+        QVERIFY(writeServerConfig(device.port,100,1000,250));
+        Controller c(REAL_BACKEND); c.setReconnectDelay(100);
         QSignalSpy status(&c,&Controller::statusReceived), errors(&c,&Controller::failed);
         c.start(); QTRY_VERIFY(status.count()>=1);
         QCOMPARE(device.syncs.load(),1); QCOMPARE(device.changedClientPorts.load(),0);
@@ -424,9 +455,8 @@ private slots:
     }
     void twoClientsShareOneServerAndOneDeviceSocket() {
         UdpDevice device;
+        QVERIFY(writeServerConfig(device.port));
         Controller first(REAL_BACKEND),second(REAL_BACKEND);
-        first.configure("127.0.0.1",device.port,5);
-        second.configure("127.0.0.1",device.port,5);
         QSignalSpy firstStatus(&first,&Controller::statusReceived),secondStatus(&second,&Controller::statusReceived);
         QSignalSpy accepted(&first,&Controller::controlAccepted),secondErrors(&second,&Controller::failed);
         first.start(); QTRY_VERIFY(firstStatus.count()>=1);
@@ -448,9 +478,8 @@ private slots:
     }
     void concurrentClientControlsAreSerializedByStatus() {
         UdpDevice device;
+        QVERIFY(writeServerConfig(device.port));
         Controller first(REAL_BACKEND),second(REAL_BACKEND);
-        first.configure("127.0.0.1",device.port,5);
-        second.configure("127.0.0.1",device.port,5);
         QSignalSpy firstStatus(&first,&Controller::statusReceived),secondStatus(&second,&Controller::statusReceived);
         QSignalSpy firstAccepted(&first,&Controller::controlAccepted),secondAccepted(&second,&Controller::controlAccepted);
         // Let the first client establish the one shared server before the
@@ -532,7 +561,9 @@ private slots:
     }
     void initialTimeoutAndRecovery() {
         setMode("timeout");
-        Controller c(FAKE_BACKEND); c.setObservationWatchdogs(200,1000); c.setReconnectDelay(200);
+        qputenv("AIRCTRL_TEST_REQUEST_MS","200");
+        qputenv("AIRCTRL_TEST_DEVICE_RECONNECT_MS","200");
+        Controller c(FAKE_BACKEND); c.setReconnectDelay(200);
         QSignalSpy errors(&c,&Controller::failed);
         c.start(); QTRY_COMPARE(errors.count(),1); QVERIFY(!c.observing()); QVERIFY(!c.busy());
         setMode(""); QTRY_VERIFY(c.observing());
@@ -1458,13 +1489,30 @@ private slots:
         QVERIFY(!widget.findChild<QPushButton*>("humidityTarget")->isEnabled());
         QVERIFY(!QFile::exists(log_));
     }
+    void clientSettingsContainOnlyServerConnection() {
+        Desklet widget(Preferences{}, FAKE_BACKEND);
+        bool serverHost=false,serverPort=false,noDeviceFields=false;
+        QTimer::singleShot(50,this,[&] {
+            auto* dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget());
+            if(!dialog) return;
+            serverHost=dialog->findChild<QLineEdit*>("serverHost")!=nullptr;
+            serverPort=dialog->findChild<QSpinBox*>("serverPort")!=nullptr;
+            noDeviceFields=dialog->findChild<QWidget*>("deviceHost")==nullptr &&
+                           dialog->findChild<QWidget*>("devicePort")==nullptr;
+            dialog->reject();
+        });
+        widget.showSettings();
+        QVERIFY(serverHost);
+        QVERIFY(serverPort);
+        QVERIFY(noDeviceFields);
+    }
     void settingsRoundtripAndAutostart() {
-        Preferences p; p.host = "host.example"; p.port = 5678; p.interval = 15;
+        Preferences p; p.serverHost = "host.example"; p.serverPort = 5678; p.serverReconnectSeconds = 15;
         p.desktop = false; p.hideDecoration=false; p.locked = true; p.position = {42,60};
         p.background=QColor("#334455"); p.foreground=QColor("#ddccbb"); p.transparency=65;
         p.valueFont=QFont("DejaVu Serif",22,QFont::Bold,true); p.visibleValues={"rh","temp","iaql"}; p.save();
-        auto q = Preferences::load(); QCOMPARE(q.host,p.host); QCOMPARE(q.port,p.port);
-        QCOMPARE(q.interval,p.interval); QCOMPARE(q.position,p.position); QVERIFY(q.locked); QVERIFY(!q.desktop);
+        auto q = Preferences::load(); QCOMPARE(q.serverHost,p.serverHost); QCOMPARE(q.serverPort,p.serverPort);
+        QCOMPARE(q.serverReconnectSeconds,p.serverReconnectSeconds); QCOMPARE(q.position,p.position); QVERIFY(q.locked); QVERIFY(!q.desktop);
         QVERIFY(!q.hideDecoration);
         QCOMPARE(q.background,p.background); QCOMPARE(q.foreground,p.foreground); QCOMPARE(q.transparency,p.transparency);
         QCOMPARE(q.valueFont,p.valueFont); QCOMPARE(q.visibleValues,p.visibleValues);

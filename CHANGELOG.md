@@ -1,5 +1,22 @@
 # Änderungsübersicht
 
+## v1.06 – 2026-09-10
+
+- Geräteadresse, UDP-Port und Gerätefristen aus allen Clients entfernt und in
+  `/etc/airctrld.cfg` zentralisiert.
+- Server-/Client-Verbindung vollständig auf TCP umgestellt; Standardserver im
+  Desklet ist `nadhh:5680`.
+- Das Clientmenü enthält nur Serverhost, TCP-Port und Client-Wiederverbindung.
+- Nur `airctrl-server` bindet die Philips-CoAP-Bibliothek ein und kennt
+  `AC2729-10:5683`; Desklet, Lua und CLI öffnen keine Geräteverbindung.
+- systemd-Dienst startet mit `--config /etc/airctrld.cfg`; vorhandene
+  Administratorkonfigurationen werden bei Updates nicht überschrieben.
+- TCP-Mehrclienttests und echter UDP-Gerätesimulator verwenden dieselbe neue
+  Serverkonfiguration; der v1.05-Mischzustand aus Unix-Socket und TCP ist entfernt.
+- Wiederholte Lua-Warnereignisse bei unverändertem Alarm werden verhindert,
+  indem die stabile Alarmkennung statt des wechselnden Meldungstextes verglichen wird.
+- Neues geprüftes Einspielskript für Commit, Tag `v1.06` und atomaren SSH-Push.
+
 ## v1.05 – 2026-09-08
 
 - Neue echte Server-/Client-Architektur: Nur `airctrl-server` bindet die

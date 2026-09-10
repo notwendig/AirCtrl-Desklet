@@ -1,8 +1,9 @@
 #pragma once
 
 #include <QString>
+#include <QtGlobal>
 
-// Per-user local IPC endpoint. AIRCTRL_SOCKET is intentionally supported for
-// isolated tests and parallel development builds.
-QString airctrlSocketPath();
-
+// Client endpoint. Environment overrides are intentionally supported for
+// isolated tests; production settings are stored by Preferences.
+QString defaultAirctrlServerHost();
+quint16 defaultAirctrlServerPort();

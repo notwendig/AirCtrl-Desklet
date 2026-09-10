@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(airctrl_desklet VERSION 1.05 LANGUAGES C CXX)
+project(airctrl_desklet VERSION 1.06 LANGUAGES C CXX)
 configure_file(src/version.hpp.in generated/airctrl_version.hpp @ONLY)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/examples/automation.lua" AIRCTRL_AUTOMATION_EXAMPLE)
 configure_file(src/automation_example.hpp.in generated/airctrl_automation_example.hpp @ONLY)
@@ -38,7 +38,7 @@ target_include_directories(aioairctrl PUBLIC ${AIRCTRL_SOURCE}/include)
 target_link_libraries(aioairctrl PUBLIC nlohmann_json::nlohmann_json
     PRIVATE OpenSSL::Crypto Threads::Threads)
 # Only airctrl-server links the device protocol in the installed system.
-# Every UI/automation/CLI consumer uses the per-user Unix socket instead.
+# Every UI/automation/CLI consumer uses the server's TCP endpoint instead.
 add_executable(airctrl-server src/server.cpp src/ipc.cpp src/ipc.hpp
     src/controlvalues.cpp src/controlvalues.hpp)
 target_include_directories(airctrl-server PRIVATE src ${CMAKE_CURRENT_BINARY_DIR}/generated)
@@ -106,3 +106,4 @@ install(FILES assets/airctrl-desklet.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/ic
 install(FILES LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/airctrl-desklet)
 install(FILES third_party/lua/LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/airctrl-desklet RENAME LUA-LICENSE)
 install(FILES examples/automation.lua DESTINATION ${CMAKE_INSTALL_DATADIR}/airctrl-desklet/examples)
+install(FILES config/airctrld.cfg DESTINATION ${CMAKE_INSTALL_DATADIR}/airctrl-desklet)

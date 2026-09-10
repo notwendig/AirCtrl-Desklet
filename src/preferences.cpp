@@ -1,4 +1,5 @@
 #include "preferences.hpp"
+#include "ipc.hpp"
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
@@ -7,18 +8,17 @@
 #include <QSettings>
 #include <QStandardPaths>
 
+Preferences::Preferences()
+    : serverHost(defaultAirctrlServerHost()), serverPort(defaultAirctrlServerPort()) {}
+
 Preferences Preferences::load() {
     QSettings s;
     Preferences p;
-    p.host = s.value("device/host", p.host).toString().trimmed();
-    if (p.host.compare("AC2729/10", Qt::CaseInsensitive) == 0 ||
-        p.host.compare("AC2729_10", Qt::CaseInsensitive) == 0) {
-        p.host = "AC2729-10";
-        s.setValue("device/host", p.host);
-    }
-    p.port = s.value("device/port", p.port).toInt();
-    if (p.port < 1 || p.port > 65535) p.port = 5683;
-    p.interval = qBound(5, s.value("device/interval", p.interval).toInt(), 300);
+    p.serverHost = s.value("server/host", p.serverHost).toString().trimmed();
+    if(p.serverHost.isEmpty()) p.serverHost=defaultAirctrlServerHost();
+    p.serverPort = s.value("server/port", p.serverPort).toInt();
+    if (p.serverPort < 1 || p.serverPort > 65535) p.serverPort = defaultAirctrlServerPort();
+    p.serverReconnectSeconds = qBound(1, s.value("server/reconnectSeconds", 10).toInt(), 300);
     p.ageWarningSeconds=qBound(5,s.value("alarms/warningSeconds",45).toInt(),3599);
     p.ageStaleSeconds=qBound(p.ageWarningSeconds+1,s.value("alarms/staleSeconds",90).toInt(),7200);
     p.desktopAlarms=s.value("alarms/desktop",true).toBool();
@@ -48,9 +48,12 @@ Preferences Preferences::load() {
 }
 void Preferences::save() const {
     QSettings s;
-    s.setValue("device/host", host);
-    s.setValue("device/port", port);
-    s.setValue("device/interval", interval);
+    s.setValue("server/host", serverHost);
+    s.setValue("server/port", serverPort);
+    s.setValue("server/reconnectSeconds", serverReconnectSeconds);
+    s.remove("device/host");
+    s.remove("device/port");
+    s.remove("device/interval");
     s.setValue("alarms/warningSeconds",ageWarningSeconds);
     s.setValue("alarms/staleSeconds",ageStaleSeconds);
     s.setValue("alarms/desktop",desktopAlarms);

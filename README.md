@@ -2,7 +2,7 @@
 
 **Dein Philips-Luftreiniger. Direkt auf dem Linux-Desktop.**
 
-C++17 · Qt 6 · Lua 5.4 · lokaler Server/Clients · MIT · Version **v1.05**
+C++17 · Qt 6 · Lua 5.4 · TCP-Server/Clients · MIT · Version **v1.06**
 
 [English](README.en.md) · [Bedienung](docs/USER_GUIDE.de.md) · [Entwicklung](docs/DEVELOPMENT.md) · [Änderungen](CHANGELOG.md)
 
@@ -27,7 +27,7 @@ Die Oberfläche ist derzeit deutschsprachig.
 - Feuchte, Zielfeuchte, Temperatur, PM2,5 und IAI einzeln einblendbar.
 - Aktive Modus- und Wartungssymbole aus bestätigten Statusmeldungen.
 - Ein dauerhafter `airctrl-server` als einziger AC2729-Teilnehmer. Desklet,
-  Lua und `airctrl-client` verwenden ausschließlich seinen geschützten Unix-Socket.
+  Lua und `airctrl-client` verwenden ausschließlich seine TCP-Schnittstelle.
 - Genau eine UDP-I/O-Sitzung für alle Clients; automatische Erneuerung nur im
   Server, wenn 90 Sekunden lang keine Statusmeldung eingeht.
 - Datenalter in Sekunden und separate Alarmglocke.
@@ -56,24 +56,26 @@ bash install.sh
 ~/.local/bin/airctrl-desklet --demo
 ```
 
-Die Vorschau schließen. Danach die IP-Adresse oder den Hostnamen des eigenen
-Geräts verwenden:
+Die Geräteadresse steht ausschließlich in `/etc/airctrld.cfg`:
 
-```bash
-~/.local/bin/airctrl-desklet --host 192.0.2.10
-# oder beispielsweise im lokalen DNS/mDNS:
-~/.local/bin/airctrl-desklet --host luftreiniger.local
+```ini
+[server]
+listen_address=0.0.0.0
+port=5680
+
+[device]
+host=AC2729-10
+port=5683
 ```
 
-`192.0.2.10` und `luftreiniger.local` sind **nur Dokumentationsbeispiele**. Die tatsächliche Adresse
-anschließend unter **Rechtsklick → Verbindung und Autostart** dauerhaft speichern.
-`--host` gilt zunächst für diesen Start. Voreingestellt ist `AC2729-10`; dies ist
-keine automatische Geräteerkennung und muss im lokalen Netz auflösbar sein.
+Im Desklet wird unter **Rechtsklick → Verbindung und Autostart** nur der
+AirControl-Server eingetragen, standardmäßig `nadhh` und TCP-Port `5680`.
+Der Client kennt weder Gerätehostname noch UDP-Port.
 
 Installation unter `~/.local`, ohne `sudo` für das Installationsskript.
 Menüeintrag: **Philips AirControl**. Bestehende Einstellungen bleiben erhalten.
 Der Installer aktiviert außerdem den systemd-Benutzerdienst `airctrl-server`.
-Ohne verfügbare systemd-Benutzersitzung startet das Desklet den Server bei Bedarf.
+Ohne verfügbare systemd-Benutzersitzung muss `airctrl-server` separat gestartet werden.
 Weitere Distributionen: [Build und Installation](docs/DEVELOPMENT.md).
 Update und Entfernen: [Bedienungsanleitung](docs/USER_GUIDE.de.md).
 
@@ -81,16 +83,17 @@ Server und Kommandozeilen-Clients:
 
 ```bash
 systemctl --user status airctrl-server.service
-airctrl-client status
-airctrl-client watch
-airctrl-client set pwr=1
+airctrl-client --host nadhh --port 5680 status
+airctrl-client --host nadhh --port 5680 watch
+airctrl-client --host nadhh --port 5680 set pwr=1
 airctrl-client set mode=S om=s uil=0
 airctrl-client refresh
 ```
 
 Nur `airctrl-server` enthält die Philips-CoAP-Anbindung. Alle Clients sprechen
-über `$XDG_RUNTIME_DIR/airctrl-desklet/server.sock`; das Verzeichnis und der
-Socket sind ausschließlich für den angemeldeten Benutzer zugänglich.
+zeilenbasiertes JSON über TCP, standardmäßig mit `nadhh:5680`. Dieses Protokoll
+hat keine eigene Anmeldung oder Verschlüsselung; Port 5680 darf in der Firewall
+nur für vertrauenswürdige Rechner im lokalen Netz freigegeben werden.
 
 ## Bedienung
 
@@ -197,7 +200,7 @@ Ursache der langen Sendepause ist nicht geklärt.
 | Umgebung | Stand |
 |---|---|
 | Philips AC2729/10 | v1.04: gemeinsamer UDP-Port, 17 Schaltungen und Wiederanlauf nach Status-Timeout im Gerätemitschnitt bestätigt |
-| Server/Clients v1.05 | Build, Installation und Offline-Prüfungen bestätigt; Mehrclient-IPC und echter Gerätebetrieb müssen nach dem Einspielen unter Fedora/Cinnamon bestätigt werden |
+| Server/Clients v1.06 | TCP-Mehrclientbetrieb, zentrale `/etc/airctrld.cfg` und echter UDP-Simulator lokal geprüft; echter Gerätebetrieb muss nach dem Einspielen bestätigt werden |
 | Fedora 44 / Cinnamon / X11 (`xcb`) | Vom Nutzer bestätigt, einschließlich Diagnoseexport von v1.01 |
 | Wayland | Angepasste Fensterbehandlung vorhanden; kein vollständiger nativer Desktop-Test bestätigt |
 | Andere Philips-Modelle | Nicht freigegeben; Modellzuordnungen und Befehle können abweichen |

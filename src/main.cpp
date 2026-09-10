@@ -22,8 +22,8 @@ int main(int argc, char** argv) {
     parser.setApplicationDescription("Qt6-Desktopwidget für Philips AC2729/10");
     parser.addHelpOption(); parser.addVersionOption();
     parser.addOptions({
-        {{"H","host"}, "Hostname oder IP-Adresse des Geräts (Standard: AC2729-10)", "host"},
-        {{"P","port"}, "UDP-Port (Standard: 5683)", "port"},
+        {{"H","server"}, "Hostname oder IP-Adresse des AirControl-Servers (Standard: nadhh)", "host"},
+        {{"P","server-port"}, "TCP-Port des AirControl-Servers (Standard: 5680)", "port"},
         {"window", "Als normales Fenster starten"},
         {"demo", "Vorschau ohne Geräteverbindung oder Speichern von Einstellungen"},
         {"screenshot", "Vorschau als PNG speichern und beenden", "file"},
@@ -32,11 +32,11 @@ int main(int argc, char** argv) {
     parser.process(app);
     const bool demo = parser.isSet("demo") || parser.isSet("screenshot");
     auto preferences = Preferences::load();
-    if (parser.isSet("host")) preferences.host = parser.value("host");
-    if (parser.isSet("port")) {
-        bool ok = false; const auto port = parser.value("port").toInt(&ok);
-        if (!ok || port < 1 || port > 65535) { std::cerr << "Ungültiger UDP-Port\n"; return 2; }
-        preferences.port = port;
+    if (parser.isSet("server")) preferences.serverHost = parser.value("server");
+    if (parser.isSet("server-port")) {
+        bool ok = false; const auto port = parser.value("server-port").toInt(&ok);
+        if (!ok || port < 1 || port > 65535) { std::cerr << "Ungültiger TCP-Port\n"; return 2; }
+        preferences.serverPort = port;
     }
     if (parser.isSet("window")) { preferences.desktop = false; preferences.hideDecoration = false; }
     if (parser.isSet("reset-position")) preferences.position = {-1,-1};
@@ -49,8 +49,7 @@ int main(int argc, char** argv) {
             "Über das Symbol in der Leiste kannst du das Widget anzeigen.");
         return 0;
     }
-    const auto server = QCoreApplication::applicationDirPath() + "/airctrl-server";
-    Desklet widget(preferences, server, demo);
+    Desklet widget(preferences, {}, demo);
     if (demo) {
         // Measurements from the user's confirmed AC2729 status; no identifying IDs.
         widget.applyStatus({{"name","Wohnzimmer"},{"modelid","AC2729/10"},

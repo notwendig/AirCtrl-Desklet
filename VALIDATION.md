@@ -1,6 +1,31 @@
-# Validierung – v1.05
+# Validierung – v1.06
 
-Stand: 2026-09-09.
+Stand: 2026-09-10.
+
+## Prüfungen in v1.06
+
+- Vollständiger Debug-Build von Server, TCP-Client, Desklet, eingebettetem Lua
+  und allen Testzielen mit GCC 13.3.0 und Qt 6.8.3 erfolgreich.
+- Beide CTest-Ziele bestanden: Desklet einschließlich TCP-Mehrclient- und echtem
+  UDP-Simulator in **35,76 s**, Automation in **0,07 s**; Gesamt **35,84 s**.
+- Direkt gezählt: **108 Desklet-Fälle bestanden**, 2 nur wegen fehlender nativer
+  X11-/privater D-Bus-Sitzung übersprungen; **13 Automation-Fälle bestanden**.
+- Die Tests verwenden für jeden Fall einen eigenen TCP-Loopback-Port. Der echte
+  `airctrl-server` liest dabei eine temporäre Datei mit demselben Schema wie
+  `/etc/airctrld.cfg`; Geräteparameter werden nicht vom Client übertragen.
+- Zwei Clients teilen weiterhin genau einen Geräte-UDP-Port und eine
+  Synchronisierung. Ein Status-Timeout erzeugt einen neuen Geräte-UDP-Port und
+  eine neue Synchronisierung, ohne den TCP-Serverprozess zu ersetzen.
+- Der Fake-Server puffert den letzten Status wie der reale Server und pausiert
+  sauber zwischen Fehler und Wiederverbindungsversuch. Dadurch sind die früheren
+  SIGSEGV-/SIGABRT- und Timeout-Symptome nicht mehr vorhanden.
+- Repository-, Paket-, Installations- und Fedora-Zieltests werden zusätzlich vom
+  Einspielskript ausgeführt, bevor Commit und Tag `v1.06` erzeugt werden.
+- Der physische Betrieb dieser v1.06-TCP-Fassung am AC2729 ist noch vom Maintainer
+  zu bestätigen. Die darunterliegende Geräte-I/O entspricht weiterhin der
+  bereits per Mitschnitt bestätigten v1.04-Implementierung.
+
+## Historischer Prüfstand v1.05
 
 Version 1.05 setzt vor die in v1.04 geprüfte UDP-I/O-Sitzung einen dauerhaften
 lokalen Server. Nur `airctrl-server` verwendet das Philips-Protokoll; Desklet,

@@ -6,7 +6,7 @@
 #include <QCommandLineParser>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QLocalSocket>
+#include <QTcpSocket>
 #include <iostream>
 
 namespace {
@@ -20,11 +20,11 @@ QJsonValue typedValue(const QString& key,const QString& text) {
     }
     return text;
 }
-void writeLine(QLocalSocket& socket,const QJsonObject& object) {
+void writeLine(QTcpSocket& socket,const QJsonObject& object) {
     socket.write(QJsonDocument(object).toJson(QJsonDocument::Compact)+'\n');
     if(!socket.waitForBytesWritten(3000)) throw std::runtime_error(socket.errorString().toStdString());
 }
-QJsonObject nextLine(QLocalSocket& socket,QByteArray& buffer,int timeoutMs) {
+QJsonObject nextLine(QTcpSocket& socket,QByteArray& buffer,int timeoutMs) {
     for(;;) {
         const auto newline=buffer.indexOf('\n');
         if(newline>=0) {
@@ -50,11 +50,12 @@ int main(int argc,char** argv) {
     QCoreApplication::setApplicationName("airctrl-client");
     QCoreApplication::setApplicationVersion(AIRCTRL_VERSION);
     QCommandLineParser parser;
-    parser.setApplicationDescription("Client für den lokalen AirControl-Server");
+    parser.setApplicationDescription("TCP-Client für den AirControl-Server");
     parser.addHelpOption();
     parser.addVersionOption();
     parser.addOptions({
-        {"socket","Lokaler Unix-Socket","path"},
+        {{"H","host"},"AirControl-Server","host",defaultAirctrlServerHost()},
+        {{"P","port"},"TCP-Port des AirControl-Servers","port",QString::number(defaultAirctrlServerPort())},
         {"timeout","Antwortfrist in Sekunden","seconds","120"},
         {{"J","json"},"Kompaktes JSON"},
     });
@@ -68,10 +69,14 @@ int main(int argc,char** argv) {
         std::cerr<<"Unbekannter Befehl: "<<command.toStdString()<<'\n'; return 2;
     }
     bool timeoutOk=false; const auto timeout=parser.value("timeout").toInt(&timeoutOk);
-    if(!timeoutOk || timeout<1 || timeout>86400) { std::cerr<<"Ungültige Antwortfrist\n"; return 2; }
+    bool portOk=false; const auto port=parser.value("port").toUInt(&portOk);
+    const auto host=parser.value("host").trimmed();
+    if(!timeoutOk || timeout<1 || timeout>86400 || !portOk || port<1 || port>65535 || host.isEmpty()) {
+        std::cerr<<"Ungültiger Server, TCP-Port oder Antwortfrist\n"; return 2;
+    }
     try {
-        QLocalSocket socket;
-        socket.connectToServer(parser.isSet("socket")?parser.value("socket"):airctrlSocketPath());
+        QTcpSocket socket;
+        socket.connectToHost(host,static_cast<quint16>(port));
         if(!socket.waitForConnected(3000)) throw std::runtime_error(socket.errorString().toStdString());
         if(command=="refresh") { writeLine(socket,{{"_airctrl","refresh"}}); return 0; }
         if(command=="set") {

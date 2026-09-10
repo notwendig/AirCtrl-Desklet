@@ -15,11 +15,11 @@ ROOT_FILES = (
     "CHANGELOG.md", "CMakeLists.txt", "CMakePresets.json", "CODE_OF_CONDUCT.md",
     "CONTRIBUTING.md", "LICENSE", "README.md", "README.en.md", "SECURITY.md",
     "THIRD_PARTY_NOTICES.md", "VALIDATION.md", "install.sh", "uninstall.sh",
-    "einspielen-v1.05.sh",
+    "einspielen-v1.05.sh", "einspielen-v1.06.sh",
     "vorschau.png", "alarme-vorschau.png", "diagnose-vorschau.png",
     "embleme-vorschau.png", "filter-vorschau.png", "power-vorschau.png",
 )
-SOURCE_DIRS = (".github", "assets", "docs", "examples", "scripts", "src", "tests", "third_party")
+SOURCE_DIRS = (".github", "assets", "config", "docs", "examples", "scripts", "src", "tests", "third_party")
 REQUIRED = ROOT_FILES + (
     ".github/workflows/ci.yml", ".github/workflows/release.yml",
     ".github/dependabot.yml", ".github/ISSUE_TEMPLATE/bug_report.yml",
@@ -27,6 +27,7 @@ REQUIRED = ROOT_FILES + (
     "docs/DEVELOPMENT.md", "docs/GITHUB_SETUP.md", "docs/ARCHITECTURE.md",
     "docs/USER_GUIDE.de.md", "docs/LUA_AUTOMATION.md",
     "docs/IPC_PROTOCOL.md",
+    "config/airctrld.cfg",
     "scripts/v1.05-resume.json",
     "scripts/check_v105_resume.py",
     "docs/PROTOCOL_VALIDATION_2026-09-08.md",
@@ -38,7 +39,7 @@ REQUIRED = ROOT_FILES + (
     "examples/automation.lua", "tests/test_automation.cpp",
     "scripts/package_source.py", "tests/test_repository.py",
 )
-ALLOWED_SUFFIXES = {".md", ".c", ".h", ".cpp", ".hpp", ".in", ".py", ".sh", ".lua", ".png", ".html",
+ALLOWED_SUFFIXES = {".md", ".c", ".h", ".cpp", ".hpp", ".in", ".py", ".sh", ".lua", ".png", ".html", ".cfg",
                     ".svg", ".qrc", ".desktop", ".yml", ".yaml", ".json"}
 ALLOWED_NAMES = {"LICENSE", "README", "Makefile"}
 IGNORED_DIRS = {"__pycache__", ".pytest_cache"}

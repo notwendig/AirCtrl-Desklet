@@ -12,6 +12,24 @@ cmake --build "$project_dir/build" --parallel --clean-first
 pkill -x airctrl-backend 2>/dev/null || true
 pkill -x airctrl-server 2>/dev/null || true
 cmake --install "$project_dir/build"
+
+# The daemon owns all device parameters. Preserve an existing administrator
+# configuration; create the system file only on the first v1.06 installation.
+if [[ "${AIRCTRL_SKIP_SYSTEM_CONFIG:-0}" != "1" ]]; then
+    if [[ ! -e /etc/airctrld.cfg ]]; then
+        if [[ ${EUID} -eq 0 ]]; then
+            install -m 0644 -- "$project_dir/config/airctrld.cfg" /etc/airctrld.cfg
+        elif command -v sudo >/dev/null; then
+            sudo install -m 0644 -- "$project_dir/config/airctrld.cfg" /etc/airctrld.cfg
+        else
+            printf '%s\n' 'FEHLER: /etc/airctrld.cfg fehlt und sudo ist nicht verfügbar.' >&2
+            exit 1
+        fi
+    else
+        printf '%s\n' 'Vorhandene /etc/airctrld.cfg bleibt unverändert.'
+    fi
+    "$install_prefix/bin/airctrl-server" --config /etc/airctrld.cfg --check-config
+fi
 # Absolute launcher works even when ~/.local/bin is not in Cinnamon's PATH.
 python3 - "$install_prefix" <<'PY'
 from pathlib import Path
@@ -44,7 +62,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart="{escaped}"
+ExecStart="{escaped}" --config /etc/airctrld.cfg
 Restart=on-failure
 RestartSec=10
 
@@ -56,9 +74,10 @@ if [[ "${AIRCTRL_SKIP_SYSTEMD:-0}" != "1" ]] && command -v systemctl >/dev/null 
    systemctl --user daemon-reload 2>/dev/null; then
     systemctl --user enable --now airctrl-server.service
 else
-    printf '%s\n' 'Hinweis: Kein systemd-Benutzerdienst; das Desklet startet den Server bei Bedarf.' >&2
+    printf '%s\n' 'Hinweis: Kein systemd-Benutzerdienst eingerichtet; airctrl-server muss separat gestartet werden.' >&2
 fi
 printf '%s\n' "Installiert. Start: $install_prefix/bin/airctrl-desklet"
 printf '%s\n' "Server: $install_prefix/bin/airctrl-server"
 printf '%s\n' "Client: $install_prefix/bin/airctrl-client status"
+printf '%s\n' 'Serverkonfiguration: /etc/airctrld.cfg'
 printf '%s\n' 'Autostart im Widget unter Einstellungen aktivieren.'

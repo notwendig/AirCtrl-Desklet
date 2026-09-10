@@ -5,7 +5,7 @@
 Sicherheitskorrekturen sind für den aktuellen Standardbranch und die jeweils neueste
 1.x-Veröffentlichung vorgesehen. Das ist ein gemeinschaftlich gepflegtes Projekt,
 kein Produkt mit garantierter Reaktionszeit. Alte ZIP-Versionen erhalten keine
-zugesicherte Rückportierung. Der aktuelle vorbereitete Anwendungsstand ist 1.05.
+zugesicherte Rückportierung. Der aktuelle vorbereitete Anwendungsstand ist 1.06.
 
 ## Vertraulich melden
 
@@ -27,11 +27,10 @@ gegebenenfalls ein Korrekturvorschlag. Keine Versuche an fremden Geräten.
 
 - Nur `airctrl-server` kommuniziert mit dem lokalen Gerät über UDP/CoAP
   (standardmäßig Port 5683). Stelle diesen Port nicht durch Routerfreigaben ins Internet.
-- Desklet, Lua und CLI benutzen einen Unix-Socket im privaten Laufzeitverzeichnis
-  des Benutzers (0700/0600). Das IPC-Protokoll besitzt keine zusätzliche
-  Authentifizierung und darf nicht auf TCP, freigegebene Verzeichnisse oder
-  fremde Benutzerkonten weitergeleitet werden. Jeder Prozess desselben Kontos
-  kann erlaubte Gerätebefehle an den Server senden.
+- Desklet, Lua und CLI benutzen TCP, standardmäßig Port 5680. Das Protokoll
+  besitzt keine eigene Authentifizierung oder Transportverschlüsselung. Die
+  Server-Firewall muss den Port auf vertrauenswürdige Rechner im lokalen Netz
+  begrenzen; keine Routerfreigabe und keine Veröffentlichung im Internet.
 - Die implementierte Philips-Protokollverschlüsselung ist kein Nachweis einer
   modernen, gegenseitig authentifizierten Vertrauensbeziehung. Betreibe Gerät und
   Client in einem kontrollierten lokalen Netz. Die `/sys/dev/sync`-Antwort
@@ -43,8 +42,9 @@ gegebenenfalls ein Korrekturvorschlag. Keine Versuche an fremden Geräten.
   sie **nicht automatisch**. Vor einer Veröffentlichung manuell prüfen.
 - `--demo` und die automatisierten Tests benötigen kein echtes Gerät. Verwende
   sie für reproduzierbare öffentliche Fehlerberichte.
-- `install.sh` baut und installiert Software im Benutzerpräfix; dafür ist kein
-  `sudo` nötig. Lies fremde Pull Requests und Skripte vor der Ausführung.
+- `install.sh` baut und installiert Programme im Benutzerpräfix. Nur das erste
+  Anlegen von `/etc/airctrld.cfg` benötigt Root-Rechte über `sudo`. Lies fremde
+  Pull Requests und Skripte vor der Ausführung.
 - Die vorbereitete CI enthält keine Gerätezugänge und verwendet keine
   Produktionsgeheimnisse. Actions sind auf vollständige Commit-SHAs festgelegt.
   Release-Schreibrechte sind auf den Release-Job beschränkt.

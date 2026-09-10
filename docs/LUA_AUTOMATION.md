@@ -2,7 +2,7 @@
 
 [Projektübersicht](../README.md) · [Architektur](ARCHITECTURE.md) · [Sicherheit](../SECURITY.md)
 
-AirCtrl-Desklet 1.05 enthält Lua 5.4.9 als eingebettetes Automatikmodul. Es kann
+AirCtrl-Desklet 1.06 enthält Lua 5.4.9 als eingebettetes Automatikmodul. Es kann
 auf bestätigte Gerätezustände und lokale Ereignisse reagieren oder zu festen
 Uhrzeiten schalten. Nach der Installation ist es **deaktiviert**.
 
@@ -119,7 +119,7 @@ beobachtet, nicht von Philips bestätigt; fehlende Werte bleiben `nil`.
 `dtrs` darf nicht mit `airctrl.set` geschrieben werden. Dieser Gerätetimer ist
 unabhängig von den lokalen Uhrzeitregeln in `airctrl.schedule`.
 
-Lua-Schaltungen verwenden seit v1.05 wie die Tasten ausschließlich die IPC-
+Lua-Schaltungen verwenden seit v1.06 wie die Tasten ausschließlich die TCP-
 Verbindung zum zentralen `airctrl-server`. Lua öffnet niemals selbst UDP oder
 eine Verbindung zum Gerät. Alle Clients teilen dieselbe Geräte-I/O-Sitzung.
 Dabei wird Observe kurz ab- und wieder angemeldet; ein neuer Socket oder Sync
