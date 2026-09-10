@@ -344,7 +344,11 @@ int main(int argc,char** argv) {
     appendLog(QJsonArray::fromStringList(args));
     const auto mode=qEnvironmentVariable("AIRCTRL_TEST_MODE");
     if(mode=="failure-once") {
-        QFile records(qEnvironmentVariable("AIRCTRL_TEST_LOG")); records.open(QIODevice::ReadOnly);
+        QFile records(qEnvironmentVariable("AIRCTRL_TEST_LOG"));
+        if (!records.open(QIODevice::ReadOnly)) {
+            std::cerr << "Cannot read fake-backend log\n";
+            return 1;
+        }
         if(records.readAll().count('\n')==1) { std::cerr<<"Error: CoAP response timed out\n"; return 1; }
     }
     if(mode=="failure") { std::cerr<<"device offline\n"; return 1; }

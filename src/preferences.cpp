@@ -1,3 +1,7 @@
+/**
+ * @file preferences.cpp
+ * @brief Validated per-user settings and desktop autostart persistence.
+ */
 #include "preferences.hpp"
 #include "ipc.hpp"
 #include <QCoreApplication>

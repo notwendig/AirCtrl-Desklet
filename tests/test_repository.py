@@ -102,13 +102,31 @@ class RepositoryTests(unittest.TestCase):
         self.assertIn('git@github.com:notwendig/AirCtrl-Desklet.git', script)
         self.assertIn('push --atomic', script)
         self.assertIn('public_files', script)
-        self.assertIn('rev-list --left-right --count', script)
+        self.assertIn('worktree add --detach "$publish_dir" origin/master', script)
+        self.assertIn('backup-before-server-clients-', script)
         self.assertIn('v1.06: TCP server and system device configuration', script)
+        self.assertIn('architecture_tag="server_clients"', script)
+        self.assertIn('"refs/tags/$architecture_tag"', script)
+        self.assertIn('Der veröffentlichte Tag $tag bleibt unverändert', script)
+        self.assertIn('push_refs=("HEAD:master" "refs/tags/$architecture_tag")', script)
         self.assertIn('"tests/parent_probe.cpp"', script)
         self.assertIn('cmake -E remove_directory "$test_build"', script)
         self.assertLess(script.index('cmake -E remove_directory "$test_build"'),
                         script.index('cmake -S "$source_dir" -B "$test_build"'))
         self.assertNotIn('push --force', script)
+        self.assertNotIn('reset --hard', script)
+
+    def test_ci_targets_published_master_branch(self):
+        workflow = (self.root / ".github" / "workflows" / "ci.yml").read_text()
+        self.assertIn("branches: [master]", workflow)
+        self.assertNotIn("branches: [main]", workflow)
+
+    def test_cpp_api_is_doxygen_documented(self):
+        self.assertIn("OUTPUT_LANGUAGE        = English",
+                      (self.root / "Doxyfile").read_text())
+        for header in (self.root / "src").glob("*.hpp"):
+            with self.subTest(header=header.name):
+                self.assertIn("@file", header.read_text())
 
     def test_interrupted_update_resume_accepts_only_known_bytes(self):
         source = self.area / "resume-source"

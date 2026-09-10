@@ -4,7 +4,7 @@
 
 C++17 · Qt 6 · Lua 5.4 · TCP server/clients · MIT · **v1.06**
 
-[Deutsch](README.md) · [Development](docs/DEVELOPMENT.md) · [Changelog](CHANGELOG.md)
+[Deutsch](README.md) · [Development](docs/DEVELOPMENT.md) · [C++ API](docs/CPP_API.md) · [Changelog](CHANGELOG.md)
 
 ![AirCtrl-Desklet running on Cinnamon with a customized dark theme](docs/images/desklet-dark.png)
 

@@ -1,3 +1,7 @@
+/**
+ * @file alerts.cpp
+ * @brief Stable alarm identities, data-age policy, and notification payloads.
+ */
 #include "alerts.hpp"
 #include "emblems.hpp"
 #include <QFontMetrics>

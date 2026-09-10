@@ -22,6 +22,7 @@ JavaScript-Erweiterung. Die Oberfläche bleibt deutsch; C++-Bezeichner sind engl
 | `third_party/aioairctrl` | Nur vom Server verwendete C++-Implementierung des Philips-CoAP-Protokolls |
 | `third_party/lua` | Verifizierter offizieller Lua-5.4.9-Quellstand |
 | `tests/` | Qt-Oberflächen-/Clientprüfungen, Fake-Server, Mehrclient- und UDP-Simulator |
+| `Doxyfile`, `docs/CPP_API.md` | Englische C++-Schnittstellenreferenz und Erzeugungsanleitung |
 
 ## Server, Clients und Geräte-I/O
 

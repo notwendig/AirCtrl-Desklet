@@ -8,9 +8,14 @@ Maintainer Commits, Tags und Veröffentlichungen nach seiner Prüfung selbst aus
 Das v1.06-Übergabe-ZIP enthält `AirCtrl-Desklet/einspielen-v1.06.sh`. Das Skript
 arbeitet standardmäßig ausschließlich auf `~/Projects/Qt/AirCtrl-Desklet`. Es
 verlangt einen sauberen Git-Arbeitsbaum, kopiert anhand der öffentlichen
-Positivliste, prüft Repository, Build und Tests, installiert anschließend unter
-`~/.local`, erstellt den Commit und den annotierten Tag `v1.06` und pusht Branch
-plus Tag atomar.
+Positivliste, prüft Repository, Build und Tests, erstellt den Commit und den
+annotierten Tag `server_clients` und pusht Branch plus Tag atomar. Ein bereits
+veröffentlichter Tag `v1.06` bleibt unverändert; nur wenn er noch fehlt, wird er
+am selben Commit zusätzlich erzeugt. Veröffentlicht wird aus einem temporären Worktree direkt auf Grundlage
+von `origin/master`; dadurch ist der Push auch bei einem älteren, sauberen lokalen
+Commit ein Fast-Forward. Der vorherige lokale Stand bleibt unter
+`backup-before-server-clients-<Kurz-ID>` erhalten. Nach erfolgreichem Push wird
+der lokale `master` auf den veröffentlichten Commit gesetzt und v1.06 installiert.
 
 ```bash
 cd ~/Downloads
@@ -105,12 +110,13 @@ Passende Topics: `qt6`, `cpp17`, `linux`, `cinnamon`, `philips`, `air-purifier`,
 
 ## 5. Release v1.06 als Entwurf
 
-Das Einspielskript erstellt und pusht `v1.06` bereits. Die folgenden Befehle sind
+Das Einspielskript erstellt und pusht `server_clients`. Einen bereits
+veröffentlichten Tag `v1.06` lässt es unverändert. Die folgenden Befehle sind
 nur die manuelle Alternative, wenn das Skript bewusst nicht verwendet wurde:
 
 ```bash
-git tag -a v1.06 -m "AirCtrl-Desklet v1.06"
-git push origin v1.06
+git tag -a server_clients -m "AirCtrl server/client architecture"
+git push --atomic origin master server_clients
 ```
 
 Der vorbereitete Release-Workflow baut und testet den Tag erneut. Er erzeugt

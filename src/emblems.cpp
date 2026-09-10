@@ -1,3 +1,7 @@
+/**
+ * @file emblems.cpp
+ * @brief Confirmed-state emblems and conservative maintenance indicators.
+ */
 #include "emblems.hpp"
 #include <QFontMetrics>
 #include <QPainter>

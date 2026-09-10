@@ -1,3 +1,7 @@
+/**
+ * @file main.cpp
+ * @brief GUI entry point, command-line overrides, and single-instance guard.
+ */
 #include "desklet.hpp"
 #include <QApplication>
 #include "airctrl_version.hpp"

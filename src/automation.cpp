@@ -1,3 +1,7 @@
+/**
+ * @file automation.cpp
+ * @brief Resource-limited Lua sandbox and deterministic schedule dispatcher.
+ */
 #include "automation.hpp"
 #include "airctrl_automation_example.hpp"
 #include "controlvalues.hpp"

@@ -1,6 +1,6 @@
 # Entwicklung und Tests
 
-[Deutsch](../README.md) · [English overview](../README.en.md) · [Architektur](ARCHITECTURE.md)
+[Deutsch](../README.md) · [English overview](../README.en.md) · [Architektur](ARCHITECTURE.md) · [C++-API](CPP_API.md)
 
 ## Voraussetzungen
 
@@ -51,6 +51,11 @@ internen Philips-CoAP-Bibliothek; `airctrl-client` und das Desklet sprechen IPC.
 Die Editorvorlage wird beim Konfigurieren aus `examples/automation.lua` in den
 generierten Header `airctrl_automation_example.hpp` übernommen; diese generierte
 Datei nicht manuell bearbeiten.
+
+Die eigenen öffentlichen C++-Schnittstellen sind auf Englisch mit Doxygen
+kommentiert. Optional erzeugt `doxygen Doxyfile` die HTML-Referenz unter
+`build/doxygen/html`; siehe [C++-API-Dokumentation](CPP_API.md). Doxygen-Ausgaben
+sind Buildartefakte und dürfen nicht eingecheckt werden.
 
 Klassisch, ohne Presets/Ninja:
 

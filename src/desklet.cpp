@@ -1,3 +1,7 @@
+/**
+ * @file desklet.cpp
+ * @brief Desktop presentation, dialogs, confirmed-state controls, and alarms.
+ */
 #include "desklet.hpp"
 #include "diagnostics.hpp"
 #include <QApplication>

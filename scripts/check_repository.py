@@ -12,7 +12,7 @@ from urllib.parse import unquote, urlsplit
 ROOT = Path(__file__).resolve().parents[1]
 ROOT_FILES = (
     ".editorconfig", ".gitattributes", ".gitignore", "AUTHORS.md",
-    "CHANGELOG.md", "CMakeLists.txt", "CMakePresets.json", "CODE_OF_CONDUCT.md",
+    "CHANGELOG.md", "CMakeLists.txt", "CMakePresets.json", "CODE_OF_CONDUCT.md", "Doxyfile",
     "CONTRIBUTING.md", "LICENSE", "README.md", "README.en.md", "SECURITY.md",
     "THIRD_PARTY_NOTICES.md", "VALIDATION.md", "install.sh", "uninstall.sh",
     "einspielen-v1.05.sh", "einspielen-v1.06.sh",
@@ -41,7 +41,7 @@ REQUIRED = ROOT_FILES + (
 )
 ALLOWED_SUFFIXES = {".md", ".c", ".h", ".cpp", ".hpp", ".in", ".py", ".sh", ".lua", ".png", ".html", ".cfg",
                     ".svg", ".qrc", ".desktop", ".yml", ".yaml", ".json"}
-ALLOWED_NAMES = {"LICENSE", "README", "Makefile"}
+ALLOWED_NAMES = {"Doxyfile", "LICENSE", "README", "Makefile"}
 IGNORED_DIRS = {"__pycache__", ".pytest_cache"}
 LINK = re.compile(r"!?\[[^\]]*\]\(([^\s)]+)(?:\s+\"[^\"]*\")?\)")
 DEVICE_ID = re.compile(r"(?:DeviceId|ProductId)[^\n]{0,40}?[\"'][0-9a-f]{32}[\"']", re.I)

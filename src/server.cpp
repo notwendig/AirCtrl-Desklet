@@ -1,3 +1,7 @@
+/**
+ * @file server.cpp
+ * @brief Multi-client TCP server and sole owner of the Philips UDP session.
+ */
 #include "controlvalues.hpp"
 #include "ipc.hpp"
 #include "airctrl_version.hpp"
@@ -26,6 +30,7 @@
 #include <thread>
 
 namespace {
+/** @brief Validated device endpoint and timeout policy from /etc/airctrld.cfg. */
 struct DeviceConfig {
     QString host = "AC2729-10";
     int port = 5683;
@@ -34,12 +39,14 @@ struct DeviceConfig {
     int idleMs = 90000;
 };
 
+/** @brief Validated listener and device configuration used for one process run. */
 struct ServerConfig {
     QHostAddress listenAddress{QHostAddress::Any};
     quint16 listenPort=5680;
     DeviceConfig device;
 };
 
+/** @brief Parse the mandatory system configuration without accepting client overrides. */
 bool loadConfig(const QString& path,ServerConfig* config,QString* error) {
     if(!QFileInfo::exists(path) || !QFileInfo(path).isFile()) {
         if(error) *error="Konfiguration fehlt: "+path;
@@ -74,12 +81,20 @@ bool loadConfig(const QString& path,ServerConfig* config,QString* error) {
     return true;
 }
 
+/** @brief One validated control request correlated to its originating TCP client. */
 struct DeviceCommand {
     quint64 client = 0;
     quint64 id = 0;
     QJsonObject values;
 };
 
+/**
+ * @brief Bridges many untrusted local-network TCP clients to one device session.
+ *
+ * Qt sockets remain on the main thread. The blocking Philips client lives on
+ * one worker thread; queued invocations carry status and results back across
+ * that boundary. The command queue is serialized globally, not per client.
+ */
 class AirCtrlServer final : public QObject {
     Q_OBJECT
 public:
@@ -245,6 +260,7 @@ private:
             broadcast(stateEnvelope());
         }, Qt::QueuedConnection);
     }
+    /** @brief Transfer an immutable device snapshot back to the Qt thread. */
     void postStatus(const aioairctrl::Json& status) {
         const auto bytes = QByteArray::fromStdString(status.dump());
         QMetaObject::invokeMethod(this, [this, bytes] {
@@ -281,6 +297,13 @@ private:
         commands_.pop_front();
         return true;
     }
+    /**
+     * @brief Own the complete lifetime of every Philips UDP/CoAP session.
+     *
+     * Leaving an outer iteration destroys the previous device client and its
+     * socket. The following iteration creates and synchronizes a fresh session
+     * while all TCP clients remain attached to this server process.
+     */
     void deviceLoop() {
         while (!stopping_.load()) {
             DeviceConfig config;

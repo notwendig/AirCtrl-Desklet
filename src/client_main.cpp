@@ -1,3 +1,7 @@
+/**
+ * @file client_main.cpp
+ * @brief Synchronous command-line client for the AirControl TCP protocol.
+ */
 #include "controlvalues.hpp"
 #include "ipc.hpp"
 #include "airctrl_version.hpp"
@@ -10,6 +14,7 @@
 #include <iostream>
 
 namespace {
+/** @brief Convert CLI text to the public control schema's JSON value type. */
 QJsonValue typedValue(const QString& key,const QString& text) {
     if(key=="cl") {
         if(text=="true" || text=="1") return true;
@@ -20,10 +25,12 @@ QJsonValue typedValue(const QString& key,const QString& text) {
     }
     return text;
 }
+/** @brief Send one complete line-delimited JSON object. */
 void writeLine(QTcpSocket& socket,const QJsonObject& object) {
     socket.write(QJsonDocument(object).toJson(QJsonDocument::Compact)+'\n');
     if(!socket.waitForBytesWritten(3000)) throw std::runtime_error(socket.errorString().toStdString());
 }
+/** @brief Read and validate one size-limited line-delimited JSON object. */
 QJsonObject nextLine(QTcpSocket& socket,QByteArray& buffer,int timeoutMs) {
     for(;;) {
         const auto newline=buffer.indexOf('\n');

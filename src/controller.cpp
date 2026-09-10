@@ -1,3 +1,7 @@
+/**
+ * @file controller.cpp
+ * @brief Non-blocking desklet connection to the AirControl TCP server.
+ */
 #include "controller.hpp"
 #include "controlvalues.hpp"
 #include "ipc.hpp"

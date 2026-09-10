@@ -1,3 +1,7 @@
+/**
+ * @file diagnostics.cpp
+ * @brief Human-readable descriptions that preserve the original status data.
+ */
 #include "diagnostics.hpp"
 #include <QHash>
 #include <QJsonArray>

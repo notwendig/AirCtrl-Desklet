@@ -2,6 +2,20 @@
 
 Stand: 2026-09-10.
 
+## Dokumentation und Veröffentlichung
+
+- Alle eigenen Header unter `src/` besitzen englische Doxygen-Datei- und
+  Schnittstellenkommentare; `Doxyfile` erzeugt optional eine englische HTML-Referenz.
+- Der CI-Pushfilter verwendet den veröffentlichten Branch `master` statt des
+  im Repository nicht verwendeten Namens `main`.
+- Das Veröffentlichungsverfahren setzt `server_clients` auf den geprüften
+  Dokumentationscommit und pusht Branch und Tag atomar ohne Force-Push. Ein
+  bereits veröffentlichter Versions-Tag `v1.06` wird niemals verschoben; fehlt
+  er noch, werden beide Tags am selben Commit erzeugt.
+- Ein temporärer, von `origin/master` abgeleiteter Worktree verhindert die früheren
+  Non-Fast-Forward-/Rebase-Konflikte; ein abweichender sauberer lokaler Stand
+  bleibt vor der Umschaltung als Sicherungsbranch erhalten.
+
 ## Prüfungen in v1.06
 
 - Vollständiger Debug-Build von Server, TCP-Client, Desklet, eingebettetem Lua
@@ -20,7 +34,7 @@ Stand: 2026-09-10.
   sauber zwischen Fehler und Wiederverbindungsversuch. Dadurch sind die früheren
   SIGSEGV-/SIGABRT- und Timeout-Symptome nicht mehr vorhanden.
 - Repository-, Paket-, Installations- und Fedora-Zieltests werden zusätzlich vom
-  Einspielskript ausgeführt, bevor Commit und Tag `v1.06` erzeugt werden.
+  Einspielskript ausgeführt, bevor Commit und Tag `server_clients` erzeugt werden.
 - Der physische Betrieb dieser v1.06-TCP-Fassung am AC2729 ist noch vom Maintainer
   zu bestätigen. Die darunterliegende Geräte-I/O entspricht weiterhin der
   bereits per Mitschnitt bestätigten v1.04-Implementierung.

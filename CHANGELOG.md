@@ -15,7 +15,13 @@
   Serverkonfiguration; der v1.05-Mischzustand aus Unix-Socket und TCP ist entfernt.
 - Wiederholte Lua-Warnereignisse bei unverändertem Alarm werden verhindert,
   indem die stabile Alarmkennung statt des wechselnden Meldungstextes verglichen wird.
-- Neues geprüftes Einspielskript für Commit, Tag `v1.06` und atomaren SSH-Push.
+- Eigene C++-Schnittstellen auf Englisch im Doxygen-Stil dokumentiert; optionales
+  `Doxyfile` erzeugt die HTML-Referenz außerhalb des Quellbaums.
+- CI-Branchfilter vom nicht verwendeten `main` auf den veröffentlichten Branch
+  `master` korrigiert.
+- Neues geprüftes Einspielskript für Commit und Tag `server_clients` sowie
+  atomaren SSH-Push. Ein bereits veröffentlichter Tag `v1.06` bleibt unverändert;
+  nur falls er noch fehlt, wird er zusammen mit `server_clients` erzeugt.
 
 ## v1.05 – 2026-09-08
 

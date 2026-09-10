@@ -4,7 +4,7 @@
 
 C++17 · Qt 6 · Lua 5.4 · TCP-Server/Clients · MIT · Version **v1.06**
 
-[English](README.en.md) · [Bedienung](docs/USER_GUIDE.de.md) · [Entwicklung](docs/DEVELOPMENT.md) · [Änderungen](CHANGELOG.md)
+[English](README.en.md) · [Bedienung](docs/USER_GUIDE.de.md) · [Entwicklung](docs/DEVELOPMENT.md) · [C++-API](docs/CPP_API.md) · [Änderungen](CHANGELOG.md)
 
 ![AirCtrl-Desklet mit dunklem Hintergrund, Gerätetasten, Statussymbolen und Messwerten](docs/images/desklet-dark.png)
 

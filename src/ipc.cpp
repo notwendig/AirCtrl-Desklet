@@ -1,3 +1,7 @@
+/**
+ * @file ipc.cpp
+ * @brief Documented production defaults with isolated test overrides.
+ */
 #include "ipc.hpp"
 
 QString defaultAirctrlServerHost() {

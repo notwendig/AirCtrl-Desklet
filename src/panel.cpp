@@ -1,3 +1,7 @@
+/**
+ * @file panel.cpp
+ * @brief Custom painting for the compact device-control button row.
+ */
 #include "panel.hpp"
 #include <QPainter>
 #include <QPainterPath>
