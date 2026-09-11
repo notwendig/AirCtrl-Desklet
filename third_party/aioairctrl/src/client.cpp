@@ -32,34 +32,34 @@ struct Client::Impl {
         log("Synchronizing /sys/dev/sync");
         static constexpr char hex[] = "0123456789ABCDEF";
         std::string challenge;
-        for (auto b : detail::random_bytes(4)) { challenge += hex[b >> 4]; challenge += hex[b & 15]; }
-        const auto request = transport.request(2, "/sys/dev/sync", challenge);
-        const auto response = transport.receive(request, options.timeout);
+        for (unsigned char b : detail::random_bytes(4)) { challenge += hex[b >> 4]; challenge += hex[b & 15]; }
+        const detail::Message request = transport.request(2, "/sys/dev/sync", challenge);
+        const std::optional<detail::Message> response = transport.receive(request, options.timeout);
         encryption.set_client_key(response->payload);
     }
-    void sync() { auto guard = lock(); sync_unlocked(); }
+    void sync() { std::unique_lock<std::mutex> guard = lock(); sync_unlocked(); }
     Json status(const detail::Message& message) {
-        const auto data = Json::parse(encryption.decrypt(message.payload));
+        const Json data = Json::parse(encryption.decrypt(message.payload));
         return data.at("state").at("reported");
     }
     Json get_status() {
-        auto guard = lock();
+        std::unique_lock<std::mutex> guard = lock();
         log("Reading /sys/dev/status");
-        const auto request = transport.request(1, "/sys/dev/status", {}, 0);
+        const detail::Message request = transport.request(1, "/sys/dev/status", {}, 0);
         try {
-            const auto response = transport.receive(request, options.timeout);
-            auto result = status(*response);
+            const std::optional<detail::Message> response = transport.receive(request, options.timeout);
+            Json result = status(*response);
             transport.cancel(request);
             return result;
         } catch (...) { transport.cancel(request); throw; }
     }
     void observe(StatusCallback callback, StopPredicate stop) {
         if (!callback) throw std::invalid_argument("Status callback is required");
-        auto guard = lock();
+        std::unique_lock<std::mutex> guard = lock();
         log("Observing /sys/dev/status");
-        const auto request = transport.request(1, "/sys/dev/status", {}, 0);
+        const detail::Message request = transport.request(1, "/sys/dev/status", {}, 0);
         try {
-            auto response = transport.receive(request, options.timeout, stop);
+            std::optional<detail::Message> response = transport.receive(request, options.timeout, stop);
             if (response) {
                 if (callback(status(*response))) {
                     if (!response->observe()) throw std::runtime_error("Device did not accept CoAP Observe");
@@ -79,16 +79,16 @@ struct Client::Impl {
     bool set(const Json& data, int retries, bool resync) {
         if (!data.is_object() || data.empty()) throw std::invalid_argument("Control data must be a nonempty JSON object");
         if (retries < 0) throw std::invalid_argument("Retry count must not be negative");
-        auto guard = lock();
+        std::unique_lock<std::mutex> guard = lock();
         Json desired = {{"CommandType", "app"}, {"DeviceId", ""}, {"EnduserId", ""}};
         desired.update(data);
-        const auto payload = Json{{"state", {{"desired", desired}}}}.dump(-1, ' ', true);
+        const std::string payload = Json{{"state", {{"desired", desired}}}}.dump(-1, ' ', true);
         for (;;) {
             if (closed.load()) throw CancelledError();
             log("Setting /sys/dev/control");
-            const auto request = transport.request(2, "/sys/dev/control", encryption.encrypt(payload));
-            const auto response = transport.receive(request, options.control_timeout);
-            const auto result = Json::parse(response->payload);
+            const detail::Message request = transport.request(2, "/sys/dev/control", encryption.encrypt(payload));
+            const std::optional<detail::Message> response = transport.receive(request, options.control_timeout);
+            const Json result = Json::parse(response->payload);
             if (!result.is_object()) throw std::runtime_error("Invalid control response: expected JSON object");
             if (result.contains("status") && result["status"] == "success") return true;
             // As upstream: resync even after final rejection, if requested.

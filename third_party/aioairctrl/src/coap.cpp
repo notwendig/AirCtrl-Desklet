@@ -42,7 +42,7 @@ void check_response(const Message& message) {
     if (message.code / 32 != 2)
         throw std::runtime_error("CoAP error " + std::to_string(message.code / 32) + "." +
             std::to_string(message.code % 32) + ": " + message.payload);
-    for (const auto& option : message.options) {
+    for (const Option& option : message.options) {
         if (option.number == 23 || option.number == 27)
             throw std::runtime_error("Blockwise CoAP responses are not supported by this device-specific transport");
         if ((option.number & 1U) && option.number != 1 && option.number != 3 &&
@@ -63,11 +63,11 @@ Bytes random_bytes(std::size_t count) {
 }
 std::optional<std::uint32_t> Message::observe() const {
     std::optional<std::uint32_t> result;
-    for (const auto& option : options) {
+    for (const Option& option : options) {
         if (option.number != 6) continue;
         if (result || option.value.size() > 3) throw std::runtime_error("Invalid Observe option");
         std::uint32_t value = 0;
-        for (auto byte : option.value) value = (value << 8) | byte;
+        for (unsigned char byte : option.value) value = (value << 8) | byte;
         result = value;
     }
     return result;
@@ -80,12 +80,12 @@ Bytes encode(const Message& message) {
         static_cast<unsigned char>(message.mid)};
     result.insert(result.end(), message.token.begin(), message.token.end());
     unsigned previous = 0;
-    for (const auto& option : message.options) {
+    for (const Option& option : message.options) {
         if (option.number < previous || option.value.size() > 65804)
             throw std::invalid_argument("Invalid CoAP option ordering/length");
         Bytes delta_bytes, length_bytes;
-        const auto delta = extension(option.number - previous, delta_bytes);
-        const auto length = extension(static_cast<unsigned>(option.value.size()), length_bytes);
+        const unsigned delta = extension(option.number - previous, delta_bytes);
+        const unsigned length = extension(static_cast<unsigned>(option.value.size()), length_bytes);
         result.push_back(static_cast<unsigned char>((delta << 4) | length));
         result.insert(result.end(), delta_bytes.begin(), delta_bytes.end());
         result.insert(result.end(), length_bytes.begin(), length_bytes.end());
@@ -117,8 +117,8 @@ Message decode(const Bytes& wire) {
             result.payload.assign(wire.begin() + static_cast<std::ptrdiff_t>(pos), wire.end());
             break;
         }
-        const auto delta = read_extension(byte >> 4, wire, pos);
-        const auto length = read_extension(byte & 15, wire, pos);
+        const unsigned delta = read_extension(byte >> 4, wire, pos);
+        const unsigned length = read_extension(byte & 15, wire, pos);
         if (delta > 65535 || number > 65535 - delta || length > wire.size() - pos)
             throw std::runtime_error("Invalid CoAP option bounds");
         number += delta;
@@ -140,13 +140,13 @@ Transport::Transport(const std::string& host, std::uint16_t port, const std::ato
     hints.ai_socktype = SOCK_DGRAM;
     hints.ai_protocol = IPPROTO_UDP;
     addrinfo* raw = nullptr;
-    const auto service = std::to_string(port_);
+    const std::string service = std::to_string(port_);
     const int status = getaddrinfo(host_.c_str(), service.c_str(), &hints, &raw);
     if (status) throw std::runtime_error(std::string("Resolve host: ") + gai_strerror(status));
     std::unique_ptr<addrinfo, decltype(&freeaddrinfo)> addresses(raw, freeaddrinfo);
-    const auto random = random_bytes(2);
+    const Bytes random = random_bytes(2);
     mid_ = static_cast<std::uint16_t>((random[0] << 8) | random[1]);
-    for (auto* address = raw; address; address = address->ai_next) {
+    for (addrinfo* address = raw; address; address = address->ai_next) {
         fd_ = socket(address->ai_family, SOCK_DGRAM | SOCK_CLOEXEC, address->ai_protocol);
         if (fd_ < 0) continue;
         if (::connect(fd_, address->ai_addr, address->ai_addrlen) == 0) return;
@@ -170,8 +170,8 @@ Message Transport::request(unsigned code, const std::string& path, std::string p
     std::size_t start = 0;
     while (start < path.size()) {
         if (path[start] == '/') { ++start; continue; }
-        const auto end = path.find('/', start);
-        const auto segment = path.substr(start, end == std::string::npos ? end : end - start);
+        const std::string::size_type end = path.find('/', start);
+        const std::string segment = path.substr(start, end == std::string::npos ? end : end - start);
         message.options.push_back({11, Bytes(segment.begin(), segment.end())});
         if (end == std::string::npos) break;
         start = end + 1;
@@ -181,7 +181,7 @@ Message Transport::request(unsigned code, const std::string& path, std::string p
     return message;
 }
 void Transport::send(const Message& message) {
-    const auto bytes = encode(message);
+    const Bytes bytes = encode(message);
     if (bytes.size() > 65507) throw std::length_error("CoAP message exceeds UDP datagram limit");
     ssize_t sent;
     do { sent = ::send(fd_, bytes.data(), bytes.size(), 0); } while (sent < 0 && errno == EINTR);
@@ -190,13 +190,13 @@ void Transport::send(const Message& message) {
 }
 std::optional<Message> Transport::receive(const Message& request_message,
     std::chrono::milliseconds timeout, const Client::StopPredicate& stop) {
-    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    const std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::now() + timeout;
     for (;;) {
         if (closed_.load()) throw CancelledError();
         if (stop && stop()) return std::nullopt;
         int wait_ms = 100;
         if (timeout.count() > 0) {
-            const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+            const std::chrono::milliseconds::rep remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
                 deadline - std::chrono::steady_clock::now()).count();
             if (remaining <= 0) throw TimeoutError("CoAP response timed out");
             wait_ms = static_cast<int>(std::min<std::int64_t>(100, remaining));
@@ -206,10 +206,10 @@ std::optional<Message> Transport::receive(const Message& request_message,
         if (ready < 0) { if (errno == EINTR) continue; io_error("Poll UDP"); }
         if (ready == 0) continue;
         Bytes buffer(65536);
-        const auto size = recv(fd_, buffer.data(), buffer.size(), 0);
+        const ssize_t size = recv(fd_, buffer.data(), buffer.size(), 0);
         if (size < 0) { if (errno == EINTR) continue; io_error("Receive UDP"); }
         buffer.resize(static_cast<std::size_t>(size));
-        auto response = decode(buffer);
+        Message response = decode(buffer);
         if (response.type == 3) {
             if (response.mid == request_message.mid) throw std::runtime_error("CoAP request reset by peer");
             continue;

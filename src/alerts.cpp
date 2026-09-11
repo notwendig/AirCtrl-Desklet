@@ -11,6 +11,7 @@
 #include <QSet>
 #include <QStringList>
 #include <algorithm>
+#include <functional>
 
 DataFreshness dataFreshness(qint64 seconds, bool failed, int warningAfter, int staleAfter) {
     if(failed) return DataFreshness::Disconnected;
@@ -22,9 +23,9 @@ QList<Alert> deviceAlerts(const QJsonObject& status) {
     QList<Alert> result;
     // Stable, separate identities avoid both hourly repeat notifications and
     // one acknowledged filter hiding a newly due second filter.
-    for(const auto& filter:filterNotices(status))
+    for(const FilterNotice& filter:filterNotices(status))
         result.append({filter.key,filter.due ? AlertLevel::Error : AlertLevel::Warning,filter.message});
-    for(const auto& emblem:currentEmblems(status,true)) {
+    for(const EmblemState& emblem:currentEmblems(status,true)) {
         if(emblem.warning && emblem.id!="wifi" && emblem.id!="filter")
             result.append({"device-"+emblem.id,AlertLevel::Warning,emblem.description});
     }
@@ -32,12 +33,12 @@ QList<Alert> deviceAlerts(const QJsonObject& status) {
 }
 QString alertReport(const QList<Alert>& alerts) {
     QStringList lines;
-    for(const auto& alert:alerts)
+    for(const Alert& alert:alerts)
         lines.append((alert.level==AlertLevel::Error ? "FEHLER: " : "WARNUNG: ")+alert.message);
     return lines.isEmpty() ? QString("Keine aktiven Alarme.") : lines.join("\n\n");
 }
 QDBusMessage alarmNotification(const QString& message, bool critical) {
-    auto request=QDBusMessage::createMethodCall("org.freedesktop.Notifications","/org/freedesktop/Notifications",
+    QDBusMessage request=QDBusMessage::createMethodCall("org.freedesktop.Notifications","/org/freedesktop/Notifications",
         "org.freedesktop.Notifications","Notify");
     const QVariantMap hints{{"urgency",QVariant::fromValue(uchar(critical ? 2 : 1))},{"transient",true}};
     request.setArguments({"Philips AirControl",uint(0),"airctrl-desklet",
@@ -47,21 +48,21 @@ QDBusMessage alarmNotification(const QString& message, bool critical) {
 }
 QList<Alert> AlertLatch::update(const QList<Alert>& active) {
     QSet<QString> keys; QList<Alert> fresh;
-    for(const auto& alert:active) {
+    for(const Alert& alert:active) {
         keys.insert(alert.key);
-        const auto level=int(alert.level);
+        const int level=int(alert.level);
         if(level>notified_.value(alert.key,0)) fresh.append(alert);
         // A downgrade within the same unresolved incident does not re-arm.
         notified_[alert.key]=qMax(level,notified_.value(alert.key,0));
     }
-    for(auto i=notified_.begin();i!=notified_.end();) {
+    for(QMap<QString,int>::iterator i=notified_.begin();i!=notified_.end();) {
         if(!keys.contains(i.key())) { acknowledged_.remove(i.key()); i=notified_.erase(i); }
         else ++i;
     }
     return fresh;
 }
 void AlertLatch::acknowledge(const QList<Alert>& active) {
-    for(const auto& alert:active) acknowledged_[alert.key]=int(alert.level);
+    for(const Alert& alert:active) acknowledged_[alert.key]=int(alert.level);
 }
 bool AlertLatch::acknowledged(const Alert& alert) const {
     return acknowledged_.value(alert.key,0)>=int(alert.level);
@@ -90,13 +91,13 @@ QColor MonitorBar::ageColor() const {
     return QColor("#d8d8d8");
 }
 QColor MonitorBar::alarmColor() const {
-    for(const auto& alert:alerts_) if(alert.level==AlertLevel::Error) return QColor("#e74c3c");
+    for(const Alert& alert:alerts_) if(alert.level==AlertLevel::Error) return QColor("#e74c3c");
     return alerts_.isEmpty() ? QColor("#e4e4e4") : QColor("#f1c40f");
 }
 QString MonitorBar::alarmText() const {
     if(alerts_.isEmpty()) return "Keine Alarme";
     int errors=0;
-    for(const auto& alert:alerts_) if(alert.level==AlertLevel::Error) ++errors;
+    for(const Alert& alert:alerts_) if(alert.level==AlertLevel::Error) ++errors;
     const int warnings=alerts_.size()-errors;
     QString text;
     if(errors && warnings) text=QString::number(errors)+" F / "+QString::number(warnings)+" W";
@@ -107,7 +108,7 @@ QString MonitorBar::alarmText() const {
 }
 void MonitorBar::setState(qint64 seconds, DataFreshness freshness, const QList<Alert>& alerts,
                          bool acknowledged, const QString& detail) {
-    const auto old=sizeHint();
+    const QSize old=sizeHint();
     seconds_=seconds; freshness_=freshness; alerts_=alerts; acknowledged_=acknowledged;
     setAccessibleName("Datenalter: "+ageText()+" · "+alarmText());
     setAccessibleDescription(detail); setToolTip(detail+
@@ -117,11 +118,11 @@ void MonitorBar::setState(qint64 seconds, DataFreshness freshness, const QList<A
 }
 void MonitorBar::paintEvent(QPaintEvent*) {
     QPainter p(this); p.setRenderHint(QPainter::Antialiasing);
-    const auto age=ageCircle(), alarm=alarmCircle();
+    const QRectF age=ageCircle(), alarm=alarmCircle();
     const QColor ink("#151515");
     p.setPen(Qt::NoPen); p.setBrush(ageColor()); p.drawEllipse(age);
     p.setBrush(alarmColor()); p.drawEllipse(alarm);
-    const auto text=[&](const QString& value,const QRectF& area,qreal scale=1.0) {
+    const std::function<void(const QString&,const QRectF&,qreal)> text=[&](const QString& value,const QRectF& area,qreal scale) {
         QFont f=font();
         const qreal pixels=QFontMetricsF(f).height()*0.82*scale;
         f.setPixelSize(qMax(1,qRound(pixels)));
@@ -131,13 +132,13 @@ void MonitorBar::paintEvent(QPaintEvent*) {
         f.setPixelSize(qMax(1,qFloor(f.pixelSize()*ratio)));
         p.setFont(f); p.setPen(ink); p.drawText(area,Qt::AlignCenter,value);
     };
-    const auto zone=[](const QRectF& circle,qreal top,qreal h) {
+    const std::function<QRectF(const QRectF&,qreal,qreal)> zone=[](const QRectF& circle,qreal top,qreal h) {
         return QRectF(circle.left()+circle.width()*0.12,circle.top()+circle.height()*top,
                       circle.width()*0.76,circle.height()*h);
     };
     // One centered line remains legible in the smaller circle. Exact seconds
     // and their unit are also available in the tooltip and accessible name.
-    text(seconds_<0 ? QString("—") : QString::number(seconds_),zone(age,0.16,0.68));
+    text(seconds_<0 ? QString("—") : QString::number(seconds_),zone(age,0.16,0.68),1.0);
     // Native vectors keep the OK/bell symbols independent of installed fonts.
     p.save(); p.translate(alarm.topLeft()); p.scale(alarm.width()/40,alarm.height()/40);
     p.setPen(QPen(ink,1.8,Qt::SolidLine,Qt::RoundCap,Qt::RoundJoin)); p.setBrush(Qt::NoBrush);

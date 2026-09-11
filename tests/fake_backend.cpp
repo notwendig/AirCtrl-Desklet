@@ -16,6 +16,7 @@
 #include <csignal>
 #include <deque>
 #include <fcntl.h>
+#include <functional>
 #include <iostream>
 #include <optional>
 #include <stdexcept>
@@ -26,7 +27,7 @@ volatile std::sig_atomic_t stopped=0;
 void stop(int signal) { stopped=signal; }
 struct ExitMarker {
     ~ExitMarker() {
-        const auto path=qEnvironmentVariable("AIRCTRL_TEST_EXIT_FILE");
+        const QString path=qEnvironmentVariable("AIRCTRL_TEST_EXIT_FILE");
         if(stopped && !path.isEmpty()) { QFile marker(path); if(marker.open(QIODevice::WriteOnly)) marker.write(QByteArray::number(stopped)); }
     }
 };
@@ -36,12 +37,12 @@ bool waitMs(int ms) {
     return !stopped;
 }
 bool gate(const char* variable) {
-    const auto path=qEnvironmentVariable(variable);
+    const QString path=qEnvironmentVariable(variable);
     while(!stopped && !path.isEmpty() && !QFileInfo::exists(path)) QThread::msleep(5);
     return !stopped;
 }
 bool gateOpen(const char* variable) {
-    const auto path=qEnvironmentVariable(variable);
+    const QString path=qEnvironmentVariable(variable);
     return path.isEmpty() || QFileInfo::exists(path);
 }
 QJsonObject status() {
@@ -50,8 +51,8 @@ QJsonObject status() {
         {"mode","P"},{"om","s"},{"func","PH"},{"cl",false},{"aqil",100},{"uil","1"},{"dt",0}};
     QFile state(qEnvironmentVariable("AIRCTRL_TEST_STATE"));
     if(state.open(QIODevice::ReadOnly)) {
-        const auto saved=QJsonDocument::fromJson(state.readAll()).object();
-        for(auto i=saved.begin();i!=saved.end();++i) object[i.key()]=i.value();
+        const QJsonObject saved=QJsonDocument::fromJson(state.readAll()).object();
+        for(QJsonObject::const_iterator i=saved.begin();i!=saved.end();++i) object[i.key()]=i.value();
     }
     return object;
 }
@@ -74,17 +75,17 @@ void logControl(const QJsonObject& values) {
     QJsonArray call{"set"};
     const bool integers=!values.isEmpty() && values.begin().value().isDouble();
     if(integers) call.append("-I");
-    for(auto i=values.begin();i!=values.end();++i) {
-        const auto value=i.value();
-        const auto encoded=value.isBool() ? (value.toBool() ? "true" : "false") :
+    for(QJsonObject::const_iterator i=values.begin();i!=values.end();++i) {
+        const QJsonValue value=i.value();
+        const QString encoded=value.isBool() ? (value.toBool() ? "true" : "false") :
             value.isDouble() ? QString::number(value.toInt()) : value.toString();
         call.append(i.key()+"="+encoded);
     }
     appendLog(call);
 }
 bool saveValues(const QJsonObject& values) {
-    auto object=status();
-    for(auto i=values.begin();i!=values.end();++i) object[i.key()]=i.value();
+    QJsonObject object=status();
+    for(QJsonObject::const_iterator i=values.begin();i!=values.end();++i) object[i.key()]=i.value();
     QSaveFile state(qEnvironmentVariable("AIRCTRL_TEST_STATE"));
     if(!state.open(QIODevice::WriteOnly)) return false;
     state.write(QJsonDocument(object).toJson());
@@ -124,7 +125,7 @@ public:
     ~FakeServer() override { server_.close(); }
 private:
     void accept() {
-        while(auto* socket=server_.nextPendingConnection()) {
+        while(QTcpSocket* socket=server_.nextPendingConnection()) {
             clients_.append(socket); buffers_[socket]={};
             connect(socket,&QTcpSocket::readyRead,this,[this,socket]{ read(socket); });
             connect(socket,&QTcpSocket::disconnected,this,[this,socket]{
@@ -140,12 +141,12 @@ private:
         }
     }
     void read(QTcpSocket* socket) {
-        auto& buffer=buffers_[socket]; buffer+=socket->readAll();
+        QByteArray& buffer=buffers_[socket]; buffer+=socket->readAll();
         for(;;) {
-            const auto newline=buffer.indexOf('\n'); if(newline<0) break;
-            const auto line=buffer.left(newline).trimmed(); buffer.remove(0,newline+1);
-            const auto object=QJsonDocument::fromJson(line).object(); if(object.isEmpty()) continue;
-            const auto kind=object.value("_airctrl").toString();
+            const qsizetype newline=buffer.indexOf('\n'); if(newline<0) break;
+            const QByteArray line=buffer.left(newline).trimmed(); buffer.remove(0,newline+1);
+            const QJsonObject object=QJsonDocument::fromJson(line).object(); if(object.isEmpty()) continue;
+            const QString kind=object.value("_airctrl").toString();
             if(kind=="configure") send(socket,{{"_airctrl","error"},{"error","device settings are server-only"}});
             else if(kind=="refresh") scheduleRefresh();
             else if(kind=="control") control(socket,object);
@@ -169,7 +170,7 @@ private:
     }
     void step() {
         if(retryPending_ || clients_.isEmpty()) return;
-        const auto mode=currentMode();
+        const QString mode=currentMode();
         if(!firstStatus_) {
             if(mode=="failure" || mode=="failure-once") {
                 if(mode=="failure-once" && starts_>1) { emitStatus(status()); return; }
@@ -189,7 +190,7 @@ private:
         if(pending_) {
             if(!pending_->socket) pending_.reset();
             else if(mode!="write-timeout" && gateOpen("AIRCTRL_TEST_WRITE_GATE")) {
-                const auto command=*pending_; pending_.reset(); finishControl(command,mode);
+                const IpcCommand command=*pending_; pending_.reset(); finishControl(command,mode);
             }
             // A real I/O session pauses Observe while a device control is
             // pending. The fake server must not leak status packets here.
@@ -201,7 +202,7 @@ private:
         }
         const int interval=qEnvironmentVariableIntValue("AIRCTRL_TEST_TICK_MS");
         if(statusTick_.elapsed()>=(interval>0?interval:100)) {
-            const auto gate=qEnvironmentVariable("AIRCTRL_TEST_NOTIFY_GATE");
+            const QString gate=qEnvironmentVariable("AIRCTRL_TEST_NOTIFY_GATE");
             if(gate.isEmpty() || QFileInfo::exists(gate)) emitStatus(status());
             else statusTick_.restart();
         }
@@ -216,9 +217,9 @@ private:
         QTimer::singleShot(qMax(20,reconnectMs_),this,[this]{ retryPending_=false; beginAttempt(); });
     }
     void control(QTcpSocket* socket,const QJsonObject& object) {
-        const auto id=object.value("id").toVariant().toULongLong();
-        const auto values=object.value("values").toObject(); logControl(values);
-        const auto mode=currentMode();
+        const qulonglong id=object.value("id").toVariant().toULongLong();
+        const QJsonObject values=object.value("values").toObject(); logControl(values);
+        const QString mode=currentMode();
         IpcCommand command{socket,id,values};
         if(mode=="write-timeout" || !gateOpen("AIRCTRL_TEST_WRITE_GATE")) {
             pending_=command; return;
@@ -226,7 +227,7 @@ private:
         finishControl(command,mode);
     }
     void finishControl(const IpcCommand& command,const QString& mode) {
-        auto* socket=command.socket.data(); if(!socket) return;
+        QTcpSocket* socket=command.socket.data(); if(!socket) return;
         if(mode=="write-failure") { send(socket,{{"_airctrl","control"},{"id",static_cast<qint64>(command.id)},
             {"ok",false},{"error","Error: CoAP response timed out"}}); return; }
         if(!saveValues(command.values)) { send(socket,{{"_airctrl","control"},{"id",static_cast<qint64>(command.id)},
@@ -242,7 +243,7 @@ private:
         if(socket->state()==QAbstractSocket::ConnectedState)
             socket->write(QJsonDocument(object).toJson(QJsonDocument::Compact)+'\n');
     }
-    void broadcast(const QJsonObject& object) { for(auto* socket:clients_) send(socket,object); }
+    void broadcast(const QJsonObject& object) { for(QTcpSocket* socket:clients_) send(socket,object); }
 
     QString host_="AC2729-10"; int port_=5683,requestMs_=60000,idleMs_=90000,reconnectMs_=10000;
     QTcpServer server_; QList<QTcpSocket*> clients_; QHash<QTcpSocket*,QByteArray> buffers_;
@@ -263,10 +264,10 @@ int session(const QString& mode) {
     QElapsedTimer lifetime; lifetime.start();
     const int tickMs=qEnvironmentVariableIntValue("AIRCTRL_TEST_TICK_MS");
 
-    const auto pump=[&]() -> bool {
+    const std::function<bool()> pump=[&]() -> bool {
         char buffer[4096];
         for(;;) {
-            const auto count=::read(STDIN_FILENO,buffer,sizeof(buffer));
+            const ssize_t count=::read(STDIN_FILENO,buffer,sizeof(buffer));
             if(count>0) { input.append(buffer,count); continue; }
             if(count==0) return false;
             if(errno==EINTR) continue;
@@ -274,23 +275,23 @@ int session(const QString& mode) {
             return false;
         }
         for(;;) {
-            const auto newline=input.indexOf('\n');
+            const qsizetype newline=input.indexOf('\n');
             if(newline<0) break;
-            const auto line=input.left(newline).trimmed(); input.remove(0,newline+1);
-            const auto object=QJsonDocument::fromJson(line).object();
+            const QByteArray line=input.left(newline).trimmed(); input.remove(0,newline+1);
+            const QJsonObject object=QJsonDocument::fromJson(line).object();
             if(!object.isEmpty() && object.value("values").isObject())
                 commands.push_back({object.value("id").toVariant().toULongLong(),object.value("values").toObject()});
         }
         return true;
     };
-    const auto emitInitial=[&] {
+    const std::function<void()> emitInitial=[&] {
         if(firstStatus || !gateOpen("AIRCTRL_TEST_READ_GATE")) return;
         if(mode=="timeout") return;
         firstStatus=true; tick.restart();
         if(mode=="bad-json") std::cout<<"not JSON"<<std::endl;
         else if(mode=="oversized") std::cout<<std::string(1024*1024+1,'x')<<std::flush;
         else if(mode=="partial") {
-            const auto line=QJsonDocument(QJsonObject{{"_airctrl","status"},{"data",status()}}).toJson(QJsonDocument::Compact);
+            const QByteArray line=QJsonDocument(QJsonObject{{"_airctrl","status"},{"data",status()}}).toJson(QJsonDocument::Compact);
             std::cout.write(line.constData(),line.size()/2); std::cout.flush(); waitMs(100);
             std::cout.write(line.constData()+line.size()/2,line.size()-line.size()/2); std::cout<<std::endl;
         } else if(mode=="batch") {
@@ -307,7 +308,7 @@ int session(const QString& mode) {
         if(pending) {
             if(mode=="write-timeout") { waitMs(5); continue; }
             if(!gateOpen("AIRCTRL_TEST_WRITE_GATE")) { waitMs(5); continue; }
-            const auto command=*pending; pending.reset();
+            const Command command=*pending; pending.reset();
             if(mode=="write-failure") outputControl(command.id,false,"Error: CoAP response timed out");
             else {
                 if(!saveValues(command.values)) outputControl(command.id,false,"Could not save fake device state");
@@ -320,7 +321,7 @@ int session(const QString& mode) {
             waitMs(5); continue;
         }
         if(tick.elapsed()>=(tickMs>0 ? tickMs : 100)) {
-            const auto notifyGate=qEnvironmentVariable("AIRCTRL_TEST_NOTIFY_GATE");
+            const QString notifyGate=qEnvironmentVariable("AIRCTRL_TEST_NOTIFY_GATE");
             if(notifyGate.isEmpty() || QFileInfo::exists(notifyGate)) outputSessionStatus(status());
             tick.restart();
         }
@@ -334,15 +335,15 @@ int main(int argc,char** argv) {
     ExitMarker marker;
     std::signal(SIGTERM,stop); std::signal(SIGINT,stop);
     QCoreApplication app(argc,argv);
-    auto args=app.arguments(); args.removeFirst();
+    QStringList args=app.arguments(); args.removeFirst();
     bool portOk=false;
-    const auto serverPort=qEnvironmentVariable("AIRCTRL_TEST_SERVER_PORT").toUInt(&portOk);
+    const uint serverPort=qEnvironmentVariable("AIRCTRL_TEST_SERVER_PORT").toUInt(&portOk);
     if(portOk && serverPort>0 && serverPort<=65535) {
         try { FakeServer server(static_cast<quint16>(serverPort)); return app.exec(); }
         catch(const std::exception& error) { std::cerr<<error.what()<<'\n'; return 1; }
     }
     appendLog(QJsonArray::fromStringList(args));
-    const auto mode=qEnvironmentVariable("AIRCTRL_TEST_MODE");
+    const QString mode=qEnvironmentVariable("AIRCTRL_TEST_MODE");
     if(mode=="failure-once") {
         QFile records(qEnvironmentVariable("AIRCTRL_TEST_LOG"));
         if (!records.open(QIODevice::ReadOnly)) {
@@ -358,9 +359,9 @@ int main(int argc,char** argv) {
         if(mode=="write-timeout") { while(waitMs(100)) {} return 0; }
         if(mode=="write-failure") { std::cerr<<"Error: CoAP response timed out\n"; return 1; }
         QJsonObject values;
-        for(const auto& arg:args) {
-            const auto split=arg.indexOf('='); if(split<1) continue;
-            const auto key=arg.left(split), value=arg.mid(split+1);
+        for(const QString& arg:args) {
+            const qsizetype split=arg.indexOf('='); if(split<1) continue;
+            const QString key=arg.left(split), value=arg.mid(split+1);
             if(args.contains("-I")) values[key]=value.toInt();
             else if(value=="true" || value=="false") values[key]=value=="true";
             else values[key]=value;
@@ -372,7 +373,7 @@ int main(int argc,char** argv) {
     if(mode=="bad-json") { std::cout<<"not JSON"<<std::endl; while(waitMs(100)) {} return 0; }
     if(mode=="oversized") { std::cout<<std::string(1024*1024+1,'x')<<std::flush; while(waitMs(100)) {} return 0; }
     if(mode=="partial") {
-        const auto line=QJsonDocument(status()).toJson(QJsonDocument::Compact);
+        const QByteArray line=QJsonDocument(status()).toJson(QJsonDocument::Compact);
         std::cout.write(line.constData(),line.size()/2); std::cout.flush();
         if(!waitMs(100)) return 0;
         std::cout.write(line.constData()+line.size()/2,line.size()-line.size()/2); std::cout<<std::endl;
@@ -384,7 +385,7 @@ int main(int argc,char** argv) {
     if(mode=="idle" || mode=="partial" || mode=="batch") { while(waitMs(100)) {} return 0; }
     const int tick=qEnvironmentVariableIntValue("AIRCTRL_TEST_TICK_MS");
     while(waitMs(tick>0 ? tick : 100)) {
-        const auto notifyGate=qEnvironmentVariable("AIRCTRL_TEST_NOTIFY_GATE");
+        const QString notifyGate=qEnvironmentVariable("AIRCTRL_TEST_NOTIFY_GATE");
         if(!notifyGate.isEmpty() && !QFileInfo::exists(notifyGate)) continue;
         output(status());
     }

@@ -4,6 +4,7 @@
 #include <cerrno>
 #include <deque>
 #include <fcntl.h>
+#include <functional>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -45,13 +46,13 @@ long long integer(std::string_view value, const std::string& name) {
     // Python int accepts a leading plus; from_chars does not.
     if (!value.empty() && value.front() == '+') value.remove_prefix(1);
     long long result = 0;
-    const auto parsed = std::from_chars(value.data(), value.data() + value.size(), result);
+    const std::from_chars_result parsed = std::from_chars(value.data(), value.data() + value.size(), result);
     if (value.empty() || parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size())
         throw UsageError("Invalid integer for " + name + ": " + std::string(value));
     return result;
 }
 long long range(std::string_view value, const std::string& name, long long low, long long high) {
-    const auto result = integer(value, name);
+    const long long result = integer(value, name);
     if (result < low || result > high) throw UsageError(name + " out of range");
     return result;
 }
@@ -71,7 +72,7 @@ public:
     void pump() {
         char chunk[4096];
         for (;;) {
-            const auto size = ::read(STDIN_FILENO, chunk, sizeof(chunk));
+            const ssize_t size = ::read(STDIN_FILENO, chunk, sizeof(chunk));
             if (size > 0) {
                 buffer_.append(chunk, static_cast<std::size_t>(size));
                 if (buffer_.size() > 1024 * 1024)
@@ -88,20 +89,20 @@ public:
     bool eof() const { return eof_; }
     bool empty() const { return commands_.empty(); }
     SessionCommand pop() {
-        auto command = std::move(commands_.front());
+        SessionCommand command = std::move(commands_.front());
         commands_.pop_front();
         return command;
     }
 private:
     void parse_lines() {
         for (;;) {
-            const auto newline = buffer_.find('\n');
+            const std::string::size_type newline = buffer_.find('\n');
             if (newline == std::string::npos) return;
-            auto line = buffer_.substr(0, newline);
+            std::string line = buffer_.substr(0, newline);
             buffer_.erase(0, newline + 1);
             if (!line.empty() && line.back() == '\r') line.pop_back();
             if (line.empty()) continue;
-            const auto object = aioairctrl::Json::parse(line);
+            const aioairctrl::Json object = aioairctrl::Json::parse(line);
             if (!object.is_object() || !object.contains("id") || !object["id"].is_number_unsigned() ||
                 !object.contains("values") || !object["values"].is_object() || object["values"].empty())
                 throw std::runtime_error("Invalid session control command");
@@ -133,7 +134,7 @@ void run_session(aioairctrl::Client& client) {
             });
         if (stopped || input.eof()) break;
         while (!input.empty() && !stopped) {
-            auto command = input.pop();
+            SessionCommand command = input.pop();
             try {
                 const bool accepted = client.set_control_values(command.values, 0, false);
                 if (accepted) write_envelope({{"_airctrl", "control"}, {"id", command.id}, {"ok", true}});
@@ -160,7 +161,7 @@ int main(int argc, char** argv) {
         std::vector<std::string> pairs;
         for (int i = 1; i < argc; ++i) {
             const std::string arg = argv[i];
-            const auto next = [&]() -> std::string {
+            const std::function<std::string()> next = [&]() -> std::string {
                 if (++i >= argc) throw UsageError("Missing value for " + arg);
                 return argv[i];
             };
@@ -188,9 +189,9 @@ int main(int argc, char** argv) {
         aioairctrl::Json data = aioairctrl::Json::object();
         if (command == "set") {
             if (pairs.empty()) throw UsageError("set requires KEY=VALUE");
-            for (const auto& pair : pairs) {
-                const auto split = pair.find('=');
-                const auto key = pair.substr(0, split), value = pair.substr(split + 1);
+            for (const std::string& pair : pairs) {
+                const std::string::size_type split = pair.find('=');
+                const std::string key = pair.substr(0, split), value = pair.substr(split + 1);
                 if (key.empty()) throw UsageError("Control key must not be empty");
                 if (as_int) data[key] = value == "true" ? 1 : value == "false" ? 0 : integer(value, key);
                 else if (value == "true" || value == "false") data[key] = value == "true";
@@ -199,7 +200,7 @@ int main(int argc, char** argv) {
         }
         // Validate all CLI input before contacting the device.
         aioairctrl::Client client(host, options);
-        const auto output = [compact](const aioairctrl::Json& status) {
+        const aioairctrl::Client::StatusCallback output = [compact](const aioairctrl::Json& status) {
             std::cout << status.dump(compact ? -1 : 2) << std::endl;
             if (!std::cout) throw std::runtime_error("Could not write status output");
             return true;

@@ -14,7 +14,7 @@
 Controller::Controller(QString serverExecutable, QObject* parent)
     : QObject(parent), executable_(std::move(serverExecutable)),
       serverHost_(defaultAirctrlServerHost()), serverPort_(defaultAirctrlServerPort()) {
-    for (auto* timer : {&reconnect_, &connectWatchdog_, &writeWatchdog_, &confirmation_})
+    for (QTimer* timer : {&reconnect_, &connectWatchdog_, &writeWatchdog_, &confirmation_})
         timer->setSingleShot(true);
     connect(&reconnect_, &QTimer::timeout, this, &Controller::connectServer);
     connect(&connectWatchdog_, &QTimer::timeout, this, [this] {
@@ -55,7 +55,7 @@ Controller::Controller(QString serverExecutable, QObject* parent)
 Controller::~Controller() { stop(); }
 
 void Controller::configure(QString host, int port, int reconnectSeconds) {
-    const auto newHost=host.trimmed();
+    const QString newHost=host.trimmed();
     const bool endpointChanged=newHost!=serverHost_ || port!=serverPort_;
     serverHost_ = newHost;
     serverPort_ = port;
@@ -105,7 +105,7 @@ void Controller::stop() {
 }
 void Controller::connectServer() {
     if (!active_ || socket_.state() != QAbstractSocket::UnconnectedState) return;
-    const auto error = addressError();
+    const QString error = addressError();
     if (!error.isEmpty()) {
         connectionFailed(error);
         return;
@@ -159,18 +159,18 @@ void Controller::send(const QJsonObject& object) {
 void Controller::readServer() {
     stream_ += socket_.readAll();
     for (;;) {
-        const auto newline = stream_.indexOf('\n');
+        const qsizetype newline = stream_.indexOf('\n');
         if (newline < 0) break;
         if (newline > 1024 * 1024) {
             socket_.abort();
             connectionFailed("IPC-Nachricht des Servers ist zu groß.");
             return;
         }
-        const auto line = stream_.left(newline).trimmed();
+        const QByteArray line = stream_.left(newline).trimmed();
         stream_.remove(0, newline + 1);
         if (line.isEmpty()) continue;
         QJsonParseError error;
-        const auto document = QJsonDocument::fromJson(line, &error);
+        const QJsonDocument document = QJsonDocument::fromJson(line, &error);
         if (error.error != QJsonParseError::NoError || !document.isObject()) {
             socket_.abort();
             connectionFailed("Ungültige IPC-Nachricht des Servers.");
@@ -184,13 +184,13 @@ void Controller::readServer() {
     }
 }
 void Controller::handleEnvelope(const QJsonObject& envelope) {
-    const auto kind = envelope.value("_airctrl").toString();
+    const QString kind = envelope.value("_airctrl").toString();
     if (kind == "state") {
         observationStarts_ = envelope.value("starts").toVariant().toULongLong();
-        const auto state = envelope.value("state").toString();
+        const QString state = envelope.value("state").toString();
         if (state == "error") {
             hasStatus_ = false;
-            auto reason = envelope.value("error").toString().trimmed();
+            QString reason = envelope.value("error").toString().trimmed();
             if (busy_) failCommand("Geräte-I/O des Servers wurde während des Schaltbefehls unterbrochen · keine Wiederholung.");
             connectionFailed(reason.isEmpty() ? "Geräteverbindung des Servers fehlgeschlagen." : reason);
         } else if (state == "connecting") {
@@ -206,12 +206,12 @@ void Controller::handleEnvelope(const QJsonObject& envelope) {
         return;
     }
     if (kind == "control") {
-        const auto id = envelope.value("id").toVariant().toULongLong();
+        const qulonglong id = envelope.value("id").toVariant().toULongLong();
         if (!busy_ || id == 0 || id != pendingCommandId_) return;
         writeWatchdog_.stop();
         pendingCommandId_ = 0;
         if (!envelope.value("ok").toBool()) {
-            auto reason = envelope.value("error").toString().trimmed();
+            QString reason = envelope.value("error").toString().trimmed();
             failCommand(reason.isEmpty() ? "Schaltbefehl abgelehnt oder nicht bestätigt." : reason);
             return;
         }
@@ -225,7 +225,7 @@ void Controller::handleEnvelope(const QJsonObject& envelope) {
         connectionFailed("Unbekannte Meldung des AirControl-Servers.");
         return;
     }
-    const auto status = envelope.value("data").toObject();
+    const QJsonObject status = envelope.value("data").toObject();
     hasStatus_ = true;
     failureReported_ = false;
     ++statusCount_;
@@ -243,7 +243,7 @@ void Controller::setPower(bool on) { setPanelValues({{"pwr", on ? "1" : "0"}}); 
 void Controller::setHumidity(int percent) { setPanelValues({{"rhset", percent}}); }
 void Controller::setPanelValues(const QJsonObject& values) {
     if (busy_ || values.isEmpty()) return;
-    const auto problem = controlValuesError(values);
+    const QString problem = controlValuesError(values);
     if (!problem.isEmpty()) {
         failCommand(problem);
         return;
@@ -252,7 +252,7 @@ void Controller::setPanelValues(const QJsonObject& values) {
 }
 void Controller::launchWrite(const QJsonObject& values) {
     if (busy_) return;
-    const auto error = addressError();
+    const QString error = addressError();
     if (!error.isEmpty()) {
         failCommand(error);
         return;

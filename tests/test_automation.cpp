@@ -12,11 +12,11 @@ private slots:
     void exampleAndSandboxLoad() {
         QFile example(AUTOMATION_EXAMPLE_FILE);
         QVERIFY(example.open(QIODevice::ReadOnly));
-        const auto text=AutomationEngine::exampleScript();
+        const QString text=AutomationEngine::exampleScript();
         QCOMPARE(text.toUtf8(),example.readAll());
-        for(const auto& event:QStringList{"startup","time","connected","disconnected","status","alarm","command"})
+        for(const QString& event:QStringList{"startup","time","connected","disconnected","status","alarm","command"})
             QVERIFY2(text.contains("-- "+event),qPrintable("Ereignis fehlt in der Beispielreferenz: "+event));
-        for(const auto& field:QStringList{"pwr","cl","mode","om","func","uil","rhset","aqil","dt"})
+        for(const QString& field:QStringList{"pwr","cl","mode","om","func","uil","rhset","aqil","dt"})
             QVERIFY2(text.contains("-- "+field),qPrintable("Steuerwert fehlt in der Beispielreferenz: "+field));
         AutomationEngine engine(false);
         QVERIFY2(engine.loadScriptText(text),qPrintable(engine.lastError()));
@@ -28,7 +28,7 @@ private slots:
 
     void sandboxHidesHostAccess() {
         AutomationEngine engine(false);
-        const auto script=QStringLiteral(R"lua(
+        const QString script=QStringLiteral(R"lua(
             assert(io == nil and os == nil and package == nil and debug == nil)
             assert(dofile == nil and loadfile == nil and load == nil and require == nil)
             airctrl.log("info", "sandbox-ok")
@@ -45,12 +45,12 @@ private slots:
         )lua"));
         const QDateTime night(QDate(2026,9,7),QTime(22,1));
         engine.setConnected(true,{},night); QCOMPARE(actions.size(),1);
-        const auto first=actions.takeFirst();
+        const QList<QVariant> first=actions.takeFirst();
         QCOMPARE(first[0].toJsonObject(),QJsonObject({{"mode","S"},{"om","s"},{"uil","0"}}));
         QVERIFY(first[1].toString().contains("nacht")); QVERIFY(!first[2].toString().isEmpty());
         engine.actionAccepted(first[2].toString());
         engine.processTime(night.addSecs(60)); QCOMPARE(actions.size(),0);
-        const auto morning=QDateTime(QDate(2026,9,8),QTime(7,0));
+        const QDateTime morning=QDateTime(QDate(2026,9,8),QTime(7,0));
         engine.processTime(morning); QCOMPARE(actions.size(),1);
         QCOMPARE(actions.first()[0].toJsonObject(),QJsonObject({{"mode","P"},{"uil","1"}}));
     }
@@ -94,7 +94,7 @@ private slots:
         )lua"));
         engine.setConnected(true); engine.alertsEvent({{"water",AlertLevel::Warning,"Wasser"}});
         engine.setConnected(false,"Testfehler");
-        const auto log=engine.logEntries().join('\n');
+        const QString log=engine.logEntries().join('\n');
         QVERIFY(log.contains("online")); QVERIFY(log.contains("warning:1")); QVERIFY(log.contains("Testfehler"));
     }
 

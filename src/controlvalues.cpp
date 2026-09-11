@@ -9,10 +9,10 @@
 QString controlValuesError(const QJsonObject& values) {
     if (values.isEmpty()) return "Leerer Steuerauftrag.";
     const bool integers=values.begin().value().isDouble();
-    for(auto i=values.begin();i!=values.end();++i) {
-        const auto value=i.value();
-        const auto text=value.toString();
-        const auto number=value.toDouble(-1);
+    for(QJsonObject::const_iterator i=values.begin();i!=values.end();++i) {
+        const QJsonValue value=i.value();
+        const QString text=value.toString();
+        const double number=value.toDouble(-1);
         const bool valid=
             (i.key()=="pwr" && value.isString() && (text=="0" || text=="1")) ||
             (i.key()=="cl" && value.isBool()) ||
@@ -31,15 +31,15 @@ QString controlValuesError(const QJsonObject& values) {
 }
 
 QStringList controlValueArguments(const QJsonObject& values, QString* error) {
-    const auto problem=controlValuesError(values);
+    const QString problem=controlValuesError(values);
     if(error) *error=problem;
     if(!problem.isEmpty()) return {};
     const bool integers=values.begin().value().isDouble();
     QStringList args{"set"};
     if(integers) args<<"-I";
-    for(auto i=values.begin();i!=values.end();++i) {
-        const auto value=i.value();
-        const auto encoded=value.isBool() ? (value.toBool() ? "true" : "false") :
+    for(QJsonObject::const_iterator i=values.begin();i!=values.end();++i) {
+        const QJsonValue value=i.value();
+        const QString encoded=value.isBool() ? (value.toBool() ? "true" : "false") :
             integers ? QString::number(value.toInt()) : value.toString();
         args<<i.key()+"="+encoded;
     }

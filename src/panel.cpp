@@ -5,13 +5,14 @@
 #include "panel.hpp"
 #include <QPainter>
 #include <QPainterPath>
+#include <functional>
 
 namespace {
 void glyph(QPainter& p, PanelIcon icon, const QRectF& box, const QColor& color) {
     p.save(); p.translate(box.topLeft()); p.scale(box.width()/20, box.height()/20);
     p.setPen(QPen(color, 1.1, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin)); p.setBrush(Qt::NoBrush);
-    auto line = [&](double x, double y, double a, double b) { p.drawLine(QPointF(x,y),QPointF(a,b)); };
-    auto drop = [&](double x, double y, double size) {
+    const std::function<void(double,double,double,double)> line = [&](double x, double y, double a, double b) { p.drawLine(QPointF(x,y),QPointF(a,b)); };
+    const std::function<void(double,double,double)> drop = [&](double x, double y, double size) {
         QPainterPath q; q.moveTo(x,y); q.cubicTo(x-size,y+size*1.3,x-size,y+size*2,x,y+size*2);
         q.cubicTo(x+size,y+size*2,x+size,y+size*1.3,x,y); p.drawPath(q);
     };
@@ -52,7 +53,7 @@ PanelButton::PanelButton(PanelIcon icon, const QString& name, QWidget* parent)
 void PanelButton::paintEvent(QPaintEvent*) {
     QPainter p(this); p.setRenderHint(QPainter::Antialiasing);
     if((isEnabled() && (isDown() || underMouse())) || hasFocus()) {
-        auto highlight=foreground_; highlight.setAlpha(28); p.setPen(Qt::NoPen); p.setBrush(highlight);
+        QColor highlight=foreground_; highlight.setAlpha(28); p.setPen(Qt::NoPen); p.setBrush(highlight);
         p.drawRoundedRect(rect().adjusted(1,1,-1,-1),3,3);
     }
     // A filled status disc keeps white (off) visible even on a white background.

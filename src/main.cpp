@@ -35,16 +35,16 @@ int main(int argc, char** argv) {
     });
     parser.process(app);
     const bool demo = parser.isSet("demo") || parser.isSet("screenshot");
-    auto preferences = Preferences::load();
+    Preferences preferences = Preferences::load();
     if (parser.isSet("server")) preferences.serverHost = parser.value("server");
     if (parser.isSet("server-port")) {
-        bool ok = false; const auto port = parser.value("server-port").toInt(&ok);
+        bool ok = false; const int port = parser.value("server-port").toInt(&ok);
         if (!ok || port < 1 || port > 65535) { std::cerr << "Ungültiger TCP-Port\n"; return 2; }
         preferences.serverPort = port;
     }
     if (parser.isSet("window")) { preferences.desktop = false; preferences.hideDecoration = false; }
     if (parser.isSet("reset-position")) preferences.position = {-1,-1};
-    const auto configDir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+    const QString configDir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
     QDir().mkpath(configDir);
     QLockFile lock(configDir + "/instance.lock");
     lock.setStaleLockTime(30000);
@@ -63,7 +63,7 @@ int main(int argc, char** argv) {
     }
     widget.showAndPosition();
     if (parser.isSet("screenshot")) {
-        const auto path = parser.value("screenshot");
+        const QString path = parser.value("screenshot");
         QTimer::singleShot(200, &widget, [&widget, &app, path] {
             if (!widget.grab().save(path)) { std::cerr << "PNG konnte nicht gespeichert werden\n"; app.exit(1); }
             else app.quit();

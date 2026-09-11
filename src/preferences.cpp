@@ -44,7 +44,7 @@ Preferences Preferences::load() {
     }
     p.visibleValues = s.value("appearance/values", p.visibleValues).toStringList();
     const QStringList allowed{"rh", "rhset", "temp", "pm25", "iaql"};
-    for (auto i = p.visibleValues.begin(); i != p.visibleValues.end();) {
+    for (QStringList::iterator i = p.visibleValues.begin(); i != p.visibleValues.end();) {
         if (!allowed.contains(*i)) i = p.visibleValues.erase(i); else ++i;
     }
     p.visibleValues.removeDuplicates();
@@ -77,13 +77,13 @@ QString autostartPath() {
     return QStandardPaths::writableLocation(QStandardPaths::ConfigLocation) + "/autostart/airctrl-desklet.desktop";
 }
 bool setAutostart(bool enabled, QString* error) {
-    const auto path = autostartPath();
+    const QString path = autostartPath();
     if (!enabled) {
         if (!QFile::exists(path) || QFile::remove(path)) return true;
         if (error) *error = "Autostart-Datei konnte nicht entfernt werden.";
         return false;
     }
-    const auto executable = QCoreApplication::applicationFilePath();
+    const QString executable = QCoreApplication::applicationFilePath();
     QString escaped = executable;
     // Desktop Entry Exec quoting (not shell quoting); %% is a literal percent.
     escaped.replace('\\', "\\\\\\\\");
@@ -101,7 +101,7 @@ bool setAutostart(bool enabled, QString* error) {
         if (error) *error = file.errorString();
         return false;
     }
-    const auto content = QString("[Desktop Entry]\nType=Application\nName=Philips AirControl\n"
+    const QByteArray content = QString("[Desktop Entry]\nType=Application\nName=Philips AirControl\n"
         "Comment=Philips-Luftreiniger auf dem Desktop\nExec=\"%1\"\n"
         "Icon=airctrl-desklet\nTerminal=false\nX-GNOME-Autostart-enabled=true\n"
         "X-GNOME-Autostart-Delay=5\n").arg(escaped).toUtf8();

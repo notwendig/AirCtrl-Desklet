@@ -8,6 +8,7 @@
 #include <QPainterPath>
 #include <QStringList>
 #include <cmath>
+#include <functional>
 #include <optional>
 
 namespace {
@@ -15,26 +16,26 @@ std::optional<int> integer(const QJsonValue& value) {
     // Missing, null, booleans and malformed strings must never become zero.
     if(!value.isDouble() && !value.isString()) return {};
     bool ok = value.isDouble();
-    const auto n = ok ? value.toDouble() : value.toString().toDouble(&ok);
+    const double n = ok ? value.toDouble() : value.toString().toDouble(&ok);
     if(!ok || !std::isfinite(n) || n != std::floor(n) || n < -1000000 || n > 1000000) return {};
     return int(n);
 }
 bool isAc2729(const QJsonObject& status) {
-    const auto model = status.value("modelid").toString().toUpper();
+    const QString model = status.value("modelid").toString().toUpper();
     if(!model.isEmpty()) return model == "AC2729" || model.startsWith("AC2729/");
     return status.value("type").toString().toUpper() == "AC2729";
 }
 void drawGlyph(QPainter& p, EmblemIcon icon, const QColor& color, const QString& badge) {
     p.setPen(QPen(color, 1.25, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     p.setBrush(Qt::NoBrush);
-    const auto line = [&](double x, double y, double a, double b) { p.drawLine(QPointF(x,y),QPointF(a,b)); };
-    const auto drop = [&](double x, double y, double size, bool filled) {
+    const std::function<void(double,double,double,double)> line = [&](double x, double y, double a, double b) { p.drawLine(QPointF(x,y),QPointF(a,b)); };
+    const std::function<void(double,double,double,bool)> drop = [&](double x, double y, double size, bool filled) {
         QPainterPath q; q.moveTo(x,y);
         q.cubicTo(x-size,y+size*1.25,x-size,y+size*2,x,y+size*2);
         q.cubicTo(x+size,y+size*2,x+size,y+size*1.25,x,y);
         p.save(); p.setBrush(filled ? QBrush(color) : QBrush(Qt::NoBrush)); p.drawPath(q); p.restore();
     };
-    const auto text = [&](const QString& value, const QRectF& rect, int pixels, bool bold) {
+    const std::function<void(const QString&,const QRectF&,int,bool)> text = [&](const QString& value, const QRectF& rect, int pixels, bool bold) {
         QFont f=p.font(); f.setPixelSize(pixels); f.setBold(bold); p.setFont(f);
         p.drawText(rect, Qt::AlignCenter, value);
     };
@@ -108,11 +109,11 @@ QList<FilterNotice> filterNotices(const QJsonObject& status) {
         {"fltsts2","carbon","C7 · Aktivkohlefilter"},
         {"wicksts","wick","F1 · Befeuchtungsdocht"}
     };
-    for(const auto& filter:filters) {
-        const auto hours=integer(status.value(filter.tag));
+    for(const Filter& filter:filters) {
+        const std::optional<int> hours=integer(status.value(filter.tag));
         if(!hours || *hours<0 || *hours>FilterWarningHours) continue;
         const bool due=*hours==0;
-        const auto message=QString(due ? "Filterwechsel fällig: " : "Filterwechsel vorbereiten: ")+
+        const QString message=QString(due ? "Filterwechsel fällig: " : "Filterwechsel vorbereiten: ")+
             QString::fromUtf8(filter.label)+" · "+QString::number(*hours)+" Betriebsstunden Rest ("+
             filter.tag+")"+(due ? QString() : QString(" · lokale Vorwarngrenze: %1 h").arg(FilterWarningHours));
         result.append({"device-filter-"+QString(filter.key),message,due});
@@ -122,33 +123,34 @@ QList<FilterNotice> filterNotices(const QJsonObject& status) {
 
 QList<EmblemState> currentEmblems(const QJsonObject& status, bool connected) {
     QList<EmblemState> result;
-    const auto add = [&](const QString& id, EmblemIcon icon, const QString& description,
-                         const QString& badge=QString(), bool warning=false) {
+    const std::function<void(const QString&,EmblemIcon,const QString&,const QString&,bool)> add =
+        [&](const QString& id, EmblemIcon icon, const QString& description,
+            const QString& badge, bool warning) {
         result.append({id,icon,description,badge,warning});
     };
     if(status.value("cl").isBool() && status.value("cl").toBool())
-        add("lock",EmblemIcon::ChildLock,"Kindersicherung aktiv (cl=true)");
+        add("lock",EmblemIcon::ChildLock,"Kindersicherung aktiv (cl=true)",{},false);
     if(status.value("pwr")=="1") {
-        const auto mode=status.value("mode").toString();
-        if(mode=="P") add("mode",EmblemIcon::Auto,"Automatischer Modus (mode=P)");
-        else if(mode=="S") add("mode",EmblemIcon::Sleep,"Ruhemodus / Nacht (mode=S)");
-        else if(mode=="A") add("mode",EmblemIcon::Allergen,"Allergiemodus (mode=A)");
+        const QString mode=status.value("mode").toString();
+        if(mode=="P") add("mode",EmblemIcon::Auto,"Automatischer Modus (mode=P)",{},false);
+        else if(mode=="S") add("mode",EmblemIcon::Sleep,"Ruhemodus / Nacht (mode=S)",{},false);
+        else if(mode=="A") add("mode",EmblemIcon::Allergen,"Allergiemodus (mode=A)",{},false);
         else if(mode=="M") {
-            const auto fan=status.value("om").toString();
+            const QString fan=status.value("om").toString();
             if(fan=="1" || fan=="2" || fan=="3" || fan=="t")
                 add("mode",EmblemIcon::Fan,fan=="t" ? "Manuell · Turbo (om=t)" : "Manuell · Lüfterstufe "+fan,
-                    fan=="t" ? "T" : fan);
+                    fan=="t" ? "T" : fan,false);
         }
-        const auto function=status.value("func").toString();
-        if(function=="P") add("function",EmblemIcon::Purify,"Nur Luftreinigung (func=P)");
-        else if(function=="PH") add("function",EmblemIcon::Humidify,"2-in-1: Luftreinigung + Befeuchtung (func=PH)");
+        const QString function=status.value("func").toString();
+        if(function=="P") add("function",EmblemIcon::Purify,"Nur Luftreinigung (func=P)",{},false);
+        else if(function=="PH") add("function",EmblemIcon::Humidify,"2-in-1: Luftreinigung + Befeuchtung (func=PH)",{},false);
 
         // The image is an icon legend, not an alarm bitmask specification.
         // Restrict legacy alarm codes to this model; never decode arbitrary err bits.
         if(isAc2729(status)) {
-            const auto err=integer(status.value("err"));
+            const std::optional<int> err=integer(status.value("err"));
             QStringList replace, clean;
-            for(const auto& filter:filterNotices(status)) replace.append(filter.message);
+            for(const FilterNotice& filter:filterNotices(status)) replace.append(filter.message);
             if(!replace.isEmpty()) add("filter",EmblemIcon::Filter,replace.join("\n"),{},true);
             if(function=="PH" && (integer(status.value("wl"))==0 || err==49408))
                 add("water",EmblemIcon::Water,"Wasser nachfüllen: wl=0 oder bekannter Leerstandscode 49408",{},true);
@@ -158,12 +160,12 @@ QList<EmblemState> currentEmblems(const QJsonObject& status, bool connected) {
             if(!clean.isEmpty()) add("clean",EmblemIcon::Clean,
                 "Reinigung fällig: Vorfilter / Befeuchtungselement ("+clean.join(", ")+")",{},true);
         }
-        const auto display=integer(status.value("ddp"));
-        if(display==0) add("display",EmblemIcon::IAI,"Geräteanzeige: Innenraumallergenindex IAI (ddp=0)");
-        else if(display==1) add("display",EmblemIcon::PM25,"Geräteanzeige: Feinstaub PM2.5 (ddp=1)");
-        const auto hours=integer(status.value("dt"));
+        const std::optional<int> display=integer(status.value("ddp"));
+        if(display==0) add("display",EmblemIcon::IAI,"Geräteanzeige: Innenraumallergenindex IAI (ddp=0)",{},false);
+        else if(display==1) add("display",EmblemIcon::PM25,"Geräteanzeige: Feinstaub PM2.5 (ddp=1)",{},false);
+        const std::optional<int> hours=integer(status.value("dt"));
         if(hours && *hours>=1 && *hours<=12)
-            add("timer",EmblemIcon::Timer,"Abschalttimer eingestellt: "+QString::number(*hours)+" h (dt; keine Restzeit)",QString::number(*hours));
+            add("timer",EmblemIcon::Timer,"Abschalttimer eingestellt: "+QString::number(*hours)+" h (dt; keine Restzeit)",QString::number(*hours),false);
     }
     add("wifi",EmblemIcon::Wifi,connected ? "WLAN / Statusverbindung: verbunden" : "Keine aktuelle Statusverbindung",{},!connected);
     return result;

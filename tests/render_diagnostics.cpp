@@ -42,7 +42,7 @@ int main(int argc, char** argv) {
     });
     bool saved = false;
     QTimer::singleShot(100, &widget, [&] {
-        auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+        QDialog* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
         if (!dialog) return;
         dialog->resize(1060, 760);
         QTimer::singleShot(100, dialog, [&, dialog] {

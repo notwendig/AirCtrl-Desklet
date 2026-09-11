@@ -32,7 +32,7 @@ public:
     std::atomic<bool> failed{false};
 private:
     void send(const aioairctrl::detail::Message& message,const sockaddr_in& peer) {
-        const auto wire=aioairctrl::detail::encode(message);
+        const aioairctrl::detail::Bytes wire=aioairctrl::detail::encode(message);
         if(::sendto(fd_,wire.data(),wire.size(),0,reinterpret_cast<const sockaddr*>(&peer),sizeof(peer))<0)
             throw std::runtime_error("test send failed");
     }
@@ -42,21 +42,21 @@ private:
         try {
             sockaddr_in subscriber{}; detail::Bytes token; unsigned sequence=0; std::string power="1";
             int notificationsAtPreviousControl=-1;
-            auto next=steady_clock::now()+milliseconds(150);
+            steady_clock::time_point next=steady_clock::now()+milliseconds(150);
             while(!stopped_) {
                 pollfd descriptor{fd_,POLLIN,0};
                 if(::poll(&descriptor,1,10)>0) {
                     detail::Bytes bytes(65536); sockaddr_in peer{}; socklen_t size=sizeof(peer);
-                    const auto count=::recvfrom(fd_,bytes.data(),bytes.size(),0,reinterpret_cast<sockaddr*>(&peer),&size);
+                    const ssize_t count=::recvfrom(fd_,bytes.data(),bytes.size(),0,reinterpret_cast<sockaddr*>(&peer),&size);
                     if(count<0) throw std::runtime_error("test receive failed");
                     const int sourcePort=ntohs(peer.sin_port);
                     int expected=0;
                     if(!firstClientPort.compare_exchange_strong(expected,sourcePort) && expected!=sourcePort)
                         ++changedClientPorts;
-                    bytes.resize(count); const auto request=detail::decode(bytes);
+                    bytes.resize(static_cast<std::size_t>(count)); const detail::Message request=detail::decode(bytes);
                     if(!request.code) continue;
                     std::string path;
-                    for(const auto& option:request.options) if(option.number==11)
+                    for(const detail::Option& option:request.options) if(option.number==11)
                         path+="/"+std::string(option.value.begin(),option.value.end());
                     if(path=="/sys/dev/sync") {
                         ++syncs; send({1,69,request.mid,request.token,{},"11223344"},peer);
@@ -72,7 +72,7 @@ private:
                         if(earlierControls>0 && receivedStatuses<=notificationsAtPreviousControl)
                             ++controlsWithoutInterveningStatus;
                         notificationsAtPreviousControl=receivedStatuses;
-                        const auto desired=Json::parse(cipher_.decrypt(request.payload)).at("state").at("desired");
+                        const Json desired=Json::parse(cipher_.decrypt(request.payload)).at("state").at("desired");
                         power=desired.at("pwr").get<std::string>();
                         send({1,68,request.mid,request.token,{},R"({"status":"success"})"},peer);
                     } else throw std::runtime_error("unexpected test request");

@@ -21,6 +21,7 @@
 #include <QFontMetrics>
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <time.h>
 #include <QCloseEvent>
 #include <QContextMenuEvent>
@@ -55,7 +56,7 @@ QString metricText(const QString& key, const QJsonValue& value) {
     const double n=ok ? value.toDouble() : value.toString().toDouble(&ok);
     const bool humidity=key=="rh" || key=="rhset";
     ok=ok && std::isfinite(n) && n<=(humidity ? 100 : 999) && n>=(key=="temp" ? -100 : 0);
-    const auto number=ok ? QString::number(n,'f',n==std::floor(n) ? 0 : 1) : QString("—");
+    const QString number=ok ? QString::number(n,'f',n==std::floor(n) ? 0 : 1) : QString("—");
     if(key=="rh") return "Feuchte " + number + (ok ? " %" : "");
     if(key=="rhset") return "Ziel " + number + (ok ? " %" : "");
     if(key=="temp") return number + " °C";
@@ -63,7 +64,7 @@ QString metricText(const QString& key, const QJsonValue& value) {
     return "IAI " + number;
 }
 bool powerKnown(const QJsonObject& state) {
-    const auto v=state.value("pwr").toString(); return v=="0" || v=="1";
+    const QString v=state.value("pwr").toString(); return v=="0" || v=="1";
 }
 QString endpointText(QString host, int port) {
     host=host.trimmed();
@@ -99,22 +100,22 @@ Desklet::Desklet(Preferences preferences, QString backend, bool demo)
         QDialog QPushButton { color: #222222; background: #eeeeee; border: 1px solid #bdbdbd; padding: 5px 9px; }
         QDialog QLineEdit, QDialog QSpinBox, QPlainTextEdit { color: #222222; background: #ffffff; padding: 5px; }
     )");
-    auto* root=new QVBoxLayout(this); root->setContentsMargins(8,6,8,8); root->setSpacing(5);
-    auto* bar=new QWidget(this); bar->setObjectName("controlBar");
+    QVBoxLayout* root=new QVBoxLayout(this); root->setContentsMargins(8,6,8,8); root->setSpacing(5);
+    QWidget* bar=new QWidget(this); bar->setObjectName("controlBar");
     bar->installEventFilter(this);
-    auto* row=new QHBoxLayout(bar); row->setContentsMargins(0,0,0,0); row->setSpacing(0);
+    QHBoxLayout* row=new QHBoxLayout(bar); row->setContentsMargins(0,0,0,0); row->setSpacing(0);
     const QStringList names{"Ein / Aus","Kindersicherung","Automatikmodus","Lüfterstufe","Zielfeuchte","Beleuchtung","2-in-1-Modus","Timer"};
     const QStringList ids{"power","childLock","autoMode","fanSpeed","humidityTarget","light","function","timer"};
     for(int i=0;i<8;++i) {
-        auto* b=new PanelButton(static_cast<PanelIcon>(i),names[i],bar); controls_[i]=b;
+        PanelButton* b=new PanelButton(static_cast<PanelIcon>(i),names[i],bar); controls_[i]=b;
         b->setObjectName(ids[i]); b->setMinimumWidth(29); b->setFixedHeight(31); row->addWidget(b,1);
         b->installEventFilter(this);
         connect(b,&QPushButton::clicked,this,[this,i] { openControl(i); });
     }
     root->addWidget(bar);
-    auto* statusArea=new QWidget(this); statusArea->setObjectName("statusArea");
+    QWidget* statusArea=new QWidget(this); statusArea->setObjectName("statusArea");
     statusArea->installEventFilter(this);
-    auto* statusRow=new QHBoxLayout(statusArea);
+    QHBoxLayout* statusRow=new QHBoxLayout(statusArea);
     statusRow->setContentsMargins(0,0,0,0); statusRow->setSpacing(6);
     emblemBar_=new QWidget(statusArea); emblemBar_->setObjectName("emblemBar");
     emblemBar_->installEventFilter(this);
@@ -123,7 +124,7 @@ Desklet::Desklet(Preferences preferences, QString backend, bool demo)
     emblemLayout_->setAlignment(Qt::AlignCenter);
     const QStringList emblemIds{"lock","mode","function","filter","water","clean","display","timer","wifi"};
     for(int i=0;i<emblemIds.size();++i) {
-        auto* emblem=new Emblem(emblemBar_); emblems_[i]=emblem;
+        Emblem* emblem=new Emblem(emblemBar_); emblems_[i]=emblem;
         emblem->setObjectName("emblem_"+emblemIds[i]);
         emblem->installEventFilter(this);
     }
@@ -135,20 +136,20 @@ Desklet::Desklet(Preferences preferences, QString backend, bool demo)
     valueLayout_=new QGridLayout(valueArea_); valueLayout_->setContentsMargins(0,0,0,0);
     valueLayout_->setHorizontalSpacing(14); valueLayout_->setVerticalSpacing(3);
     for(int i=0;i<5;++i) {
-        auto* value=new QLabel(valueArea_); values_[i]=value;
+        QLabel* value=new QLabel(valueArea_); values_[i]=value;
         value->setObjectName("value_"+metricKeys[i]); value->setTextFormat(Qt::PlainText);
         value->setAlignment(Qt::AlignCenter); value->installEventFilter(this);
     }
     root->addWidget(valueArea_);
-    auto* contextShortcut=new QShortcut(QKeySequence("Shift+F10"),this);
+    QShortcut* contextShortcut=new QShortcut(QKeySequence("Shift+F10"),this);
     connect(contextShortcut,&QShortcut::activated,this,[this] { openMenu(mapToGlobal(rect().center())); });
-    auto* menuShortcut=new QShortcut(QKeySequence(Qt::Key_Menu),this);
+    QShortcut* menuShortcut=new QShortcut(QKeySequence(Qt::Key_Menu),this);
     connect(menuShortcut,&QShortcut::activated,this,[this] { openMenu(mapToGlobal(rect().center())); });
     connect(&controller_,&Controller::statusReceived,this,&Desklet::applyStatus);
     connect(&controller_,&Controller::statusPacketReceived,this,[this] { recordReception(); updateMonitoring(); });
     connect(&controller_,&Controller::failed,this,&Desklet::setConnectionError);
     connect(&controller_,&Controller::commandFailed,this,[this](const QString& error) {
-        const bool automated=pendingAutomation_; const auto source=pendingAutomationSource_;
+        const bool automated=pendingAutomation_; const QString source=pendingAutomationSource_;
         awaitingConfirmation_=false; pending_={}; notice_=error; commandError_=error;
         activeCommandError_=error; ++commandFailureId_;
         pendingAutomation_=false; pendingAutomationSource_.clear(); pendingOccurrenceKey_.clear();
@@ -168,16 +169,16 @@ Desklet::Desklet(Preferences preferences, QString backend, bool demo)
     connect(&automation_,&AutomationEngine::logMessage,this,[](const QString& message) {
         qInfo().noquote()<<"AirControl Lua:"<<message;
     });
-    auto* refresh=new QShortcut(QKeySequence("F5"),this);
+    QShortcut* refresh=new QShortcut(QKeySequence("F5"),this);
     connect(refresh,&QShortcut::activated,this,[this] { if(!demo_ && !awaitingConfirmation_) controller_.refresh(); });
-    auto* diagnostics=new QShortcut(QKeySequence("F1"),this);
+    QShortcut* diagnostics=new QShortcut(QKeySequence("F1"),this);
     connect(diagnostics,&QShortcut::activated,this,&Desklet::showDetails);
-    auto* timer=new QTimer(this); connect(timer,&QTimer::timeout,this,[this] {
+    QTimer* timer=new QTimer(this); connect(timer,&QTimer::timeout,this,[this] {
         automation_.processTime(); updateFooter();
     }); timer->start(1000);
     if(!demo_ && QSystemTrayIcon::isSystemTrayAvailable()) {
         tray_=new QSystemTrayIcon(windowIcon(),this); tray_->setToolTip("Philips AirControl");
-        auto* menu=new QMenu(this);
+        QMenu* menu=new QMenu(this);
         menu->addAction("Widget anzeigen",this,[this] { showAndPosition(); });
         menu->addAction("Menü / Darstellung …",this,[this] { requestMenu(QCursor::pos()); });
         menu->addAction("Einstellungen",this,&Desklet::showSettings);
@@ -194,7 +195,7 @@ Desklet::Desklet(Preferences preferences, QString backend, bool demo)
 }
 void Desklet::paintEvent(QPaintEvent*) {
     QPainter p(this); p.setCompositionMode(QPainter::CompositionMode_Source);
-    auto color=preferences_.background; color.setAlphaF((100-preferences_.transparency)/100.0);
+    QColor color=preferences_.background; color.setAlphaF((100-preferences_.transparency)/100.0);
     p.fillRect(rect(),color);
 }
 void Desklet::resizeToContent() {
@@ -202,16 +203,16 @@ void Desklet::resizeToContent() {
     setFixedSize(layout()->sizeHint().expandedTo(QSize(287,0)));
 }
 void Desklet::applyAppearance() {
-    while(auto* item=valueLayout_->takeAt(0)) delete item;
+    while(QLayoutItem* item=valueLayout_->takeAt(0)) delete item;
     int visible=0;
     for(int i=0;i<5;++i) {
-        auto* value=values_[i];
+        QLabel* value=values_[i];
         value->setFont(preferences_.valueFont);
         const bool show=preferences_.visibleValues.contains(metricKeys[i]); value->setVisible(show);
         if(show) { valueLayout_->addWidget(value,visible/2,visible%2); ++visible; }
     }
     valueArea_->setVisible(visible>0);
-    for(auto* button:controls_) { button->setForeground(preferences_.foreground); button->setFont(preferences_.valueFont); }
+    for(PanelButton* button:controls_) { button->setForeground(preferences_.foreground); button->setFont(preferences_.valueFont); }
     monitorBar_->setFont(preferences_.valueFont);
     monitorBar_->setFixedSize(monitorBar_->sizeHint());
     updateEmblems(); updateValues(); updateMonitoring(); update();
@@ -222,11 +223,11 @@ void Desklet::saveAppearance() {
     if(isVisible()) showAndPosition();
 }
 void Desklet::updateValues() {
-    auto color=preferences_.foreground;
+    QColor color=preferences_.foreground;
     if(!connected_ && updated_.isValid()) color.setAlpha(140);
     for(int i=0;i<5;++i) {
-        auto* value=values_[i]; value->setText(metricText(metricKeys[i],status_.value(metricKeys[i])));
-        auto palette=value->palette(); palette.setColor(QPalette::WindowText,color); value->setPalette(palette);
+        QLabel* value=values_[i]; value->setText(metricText(metricKeys[i],status_.value(metricKeys[i])));
+        QPalette palette=value->palette(); palette.setColor(QPalette::WindowText,color); value->setPalette(palette);
         value->setAccessibleName(metricNames[i]+": "+value->text());
     }
     resizeToContent();
@@ -236,11 +237,11 @@ void Desklet::updateEmblems() {
     const int side=qMax(24,QFontMetrics(preferences_.valueFont).height()+4);
     emblemBar_->setFixedHeight(2*side+4);
     emblemBar_->setMinimumWidth(6*side+5*4);
-    while(auto* item=emblemLayout_->takeAt(0)) delete item;
+    while(QLayoutItem* item=emblemLayout_->takeAt(0)) delete item;
     int index=0;
-    const auto active=currentEmblems(status_,connected_);
-    for(auto* emblem:emblems_) {
-        const auto found=std::find_if(active.begin(),active.end(),[&](const EmblemState& state) {
+    const QList<EmblemState> active=currentEmblems(status_,connected_);
+    for(Emblem* emblem:emblems_) {
+        const QList<EmblemState>::const_iterator found=std::find_if(active.begin(),active.end(),[&](const EmblemState& state) {
             return emblem->objectName()=="emblem_"+state.id;
         });
         if(found!=active.end()) emblem->configure(*found,preferences_.foreground,preferences_.valueFont,
@@ -263,7 +264,7 @@ void Desklet::sendAutomationValues(const QJsonObject& values, const QString& sou
         return;
     }
     bool already=true;
-    for(auto i=values.begin();i!=values.end();++i) if(status_.value(i.key())!=i.value()) already=false;
+    for(QJsonObject::const_iterator i=values.begin();i!=values.end();++i) if(status_.value(i.key())!=i.value()) already=false;
     if(already) {
         automation_.actionAccepted(occurrenceKey);
         automation_.commandEvent(source,true,"Gewünschter Zustand war bereits bestätigt.");
@@ -295,17 +296,17 @@ void Desklet::openControl(int index) {
     }
     if(index==1) { sendValues({{"cl",!status_["cl"].toBool()}}); return; }
     QMenu menu(this);
-    auto item=[&](const QString& name,const QJsonObject& values) {
-        auto* action=menu.addAction(name); action->setCheckable(true);
+    const std::function<void(const QString&,const QJsonObject&)> item=[&](const QString& name,const QJsonObject& values) {
+        QAction* action=menu.addAction(name); action->setCheckable(true);
         bool selected=true;
-        for(auto i=values.begin();i!=values.end();++i) if(status_.value(i.key())!=i.value()) selected=false;
+        for(QJsonObject::const_iterator i=values.begin();i!=values.end();++i) if(status_.value(i.key())!=i.value()) selected=false;
         action->setChecked(selected);
         connect(action,&QAction::triggered,this,[this,values] { sendValues(values); });
     };
     if(index==2) {
         item("Automatik",{{"mode","P"}}); item("Allergen",{{"mode","A"}}); item("Nacht",{{"mode","S"},{"om","s"}});
     } else if(index==3) {
-        for(const auto& s : {"1","2","3","t"}) item(QString(s)=="t" ? "Turbo" : "Stufe "+QString(s),{{"mode","M"},{"om",s}});
+        for(const char* s : {"1","2","3","t"}) item(QString(s)=="t" ? "Turbo" : "Stufe "+QString(s),{{"mode","M"},{"om",s}});
     } else if(index==4) {
         for(int n : {40,50,60,70}) item(QString::number(n)+" %",{{"rhset",n}});
     } else if(index==5) {
@@ -320,7 +321,7 @@ void Desklet::openControl(int index) {
     menu.exec(controls_[index]->mapToGlobal(QPoint(0,controls_[index]->height())));
 }
 void Desklet::applyStatus(const QJsonObject& status) {
-    const bool automated=pendingAutomation_; const auto automationSource=pendingAutomationSource_;
+    const bool automated=pendingAutomation_; const QString automationSource=pendingAutomationSource_;
     bool commandConfirmed=false;
     status_=status; connected_=true; error_.clear(); updated_=QDateTime::currentDateTime();
     recordReception();
@@ -328,7 +329,7 @@ void Desklet::applyStatus(const QJsonObject& status) {
     notice_="Status empfangen";
     if(awaitingConfirmation_) {
         bool confirmed=true;
-        for(auto i=pending_.begin();i!=pending_.end();++i) if(status.value(i.key())!=i.value()) confirmed=false;
+        for(QJsonObject::iterator i=pending_.begin();i!=pending_.end();++i) if(status.value(i.key())!=i.value()) confirmed=false;
         commandConfirmed=confirmed;
         notice_=confirmed ? "Änderung vom Gerät bestätigt." : "Gerät meldet noch den bisherigen Wert.";
         if(confirmed) activeCommandError_.clear();
@@ -356,7 +357,7 @@ void Desklet::updateControls() {
         status_.contains("mode") && status_.contains("om"),status_.contains("rhset"),
         status_.contains("aqil") || status_.contains("uil"),status_.contains("func"),status_.contains("dt")};
     for(int i=1;i<8;++i) controls_[i]->setEnabled(ready && available[i] && (i==1 || unlocked) && (i<=1 || on));
-    auto* power=controls_[0];
+    PanelButton* power=controls_[0];
     power->setEnabled(true);
     const bool known=connected_ && powerKnown(status_);
     power->setStatusColor(!known ? QColor("#ff9800") : on ? QColor("#2ecc71") : QColor("#ffffff"));
@@ -376,11 +377,11 @@ void Desklet::updateFooter() {
     if(lastDataAt_>=0) {
         age="Letzter Empfang vor "+QString::number(dataAgeSeconds())+" s";
     }
-    const auto connection=demo_ ? QString("Vorschau – keine Gerätesteuerung") : connected_ ? QString("Verbunden") : QString("Keine Verbindung");
-    const auto detail=connection+"\nServer "+endpointText(preferences_.serverHost,preferences_.serverPort)+"\n"+age+"\n"+notice_+
+    const QString connection=demo_ ? QString("Vorschau – keine Gerätesteuerung") : connected_ ? QString("Verbunden") : QString("Keine Verbindung");
+    const QString detail=connection+"\nServer "+endpointText(preferences_.serverHost,preferences_.serverPort)+"\n"+age+"\n"+notice_+
         "\nRechtsklick: Menü · Ziehen: Verschieben · F1: Diagnose";
     setToolTip(detail); setAccessibleDescription(detail);
-    for(auto* value:values_) {
+    for(QLabel* value:values_) {
         value->setToolTip(detail); value->setAccessibleDescription(detail);
     }
     updateMonitoring();
@@ -399,8 +400,8 @@ void Desklet::recordReception() {
     lastDataAt_=monotonicMs(); packetReceivedAt_=QDateTime::currentDateTime(); receptionFailed_=false;
 }
 void Desklet::updateMonitoring() {
-    const auto seconds=dataAgeSeconds();
-    const auto freshness=dataFreshness(seconds,receptionFailed_,preferences_.ageWarningSeconds,preferences_.ageStaleSeconds);
+    const qint64 seconds=dataAgeSeconds();
+    const DataFreshness freshness=dataFreshness(seconds,receptionFailed_,preferences_.ageWarningSeconds,preferences_.ageStaleSeconds);
     activeAlerts_=deviceAlerts(status_);
     if(receptionFailed_ || freshness==DataFreshness::Stale) {
         activeAlerts_.prepend({"reception",AlertLevel::Error,receptionFailed_ ?
@@ -414,11 +415,11 @@ void Desklet::updateMonitoring() {
     automation_.alertsEvent(activeAlerts_);
     if(!automationProblem_.isEmpty()) activeAlerts_.append({"automation",AlertLevel::Error,"Lua-Automatik: "+automationProblem_});
     bool acknowledged=!activeAlerts_.isEmpty();
-    for(const auto& alert:activeAlerts_) acknowledged=acknowledged && alarmLatch_.acknowledged(alert);
-    const auto state=freshness==DataFreshness::Waiting ? QString("Noch kein Datenempfang") :
+    for(const Alert& alert:activeAlerts_) acknowledged=acknowledged && alarmLatch_.acknowledged(alert);
+    const QString state=freshness==DataFreshness::Waiting ? QString("Noch kein Datenempfang") :
         freshness==DataFreshness::Fresh ? QString("OK") : freshness==DataFreshness::Aging ? QString("Achtung") :
         freshness==DataFreshness::Stale ? QString("Daten zu alt") : QString("Verbindung ausgefallen");
-    auto detail=state+" · Sekunden seit dem letzten gültigen Statuspaket\n"+
+    QString detail=state+" · Sekunden seit dem letzten gültigen Statuspaket\n"+
         QString("Grün: 0–%1 s · Gelb: %2–%3 s · Rot: ab %4 s oder Verbindungsfehler\n")
         .arg(preferences_.ageWarningSeconds-1).arg(preferences_.ageWarningSeconds)
         .arg(preferences_.ageStaleSeconds-1).arg(preferences_.ageStaleSeconds)+alertReport(activeAlerts_);
@@ -427,11 +428,11 @@ void Desklet::updateMonitoring() {
     if(alarmsPaused_) detail+="\nEmpfang für Verbindungseinstellungen pausiert; Benachrichtigungen ausgesetzt.";
     monitorBar_->setState(seconds,freshness,activeAlerts_,acknowledged,detail);
     if(alarmsPaused_) return;
-    const auto fresh=alarmLatch_.update(activeAlerts_);
+    const QList<Alert> fresh=alarmLatch_.update(activeAlerts_);
     if(!fresh.isEmpty()) {
         bool critical=false;
-        for(const auto& alert:fresh) critical=critical || alert.level==AlertLevel::Error;
-        const auto message=alertReport(fresh);
+        for(const Alert& alert:fresh) critical=critical || alert.level==AlertLevel::Error;
+        const QString message=alertReport(fresh);
         emit alarmRaised(message,critical);
         if(!demo_) deliverAlarm(message,critical);
     }
@@ -444,8 +445,8 @@ void Desklet::deliverAlarm(const QString& message, bool critical) {
        qEnvironmentVariable("AIRCTRL_TEST_PRIVATE_DBUS")!="1") return;
     if(preferences_.alarmSound) QApplication::beep();
     if(!preferences_.desktopAlarms) return;
-    const auto request=alarmNotification(message,critical);
-    auto* pending=new QDBusPendingCallWatcher(QDBusConnection::sessionBus().asyncCall(request),this);
+    const QDBusMessage request=alarmNotification(message,critical);
+    QDBusPendingCallWatcher* pending=new QDBusPendingCallWatcher(QDBusConnection::sessionBus().asyncCall(request),this);
     connect(pending,&QDBusPendingCallWatcher::finished,this,[this,pending] {
         const QDBusPendingReply<uint> reply=*pending;
         if(reply.isError() && !notificationFailureLogged_) {
@@ -462,16 +463,16 @@ void Desklet::acknowledgeAlarms() {
 }
 void Desklet::showAlarms() {
     QDialog dialog(this); dialog.setObjectName("alarmsDialog"); dialog.setWindowTitle("AirControl – aktive Alarme");
-    dialog.resize(580,320); auto* layout=new QVBoxLayout(&dialog);
-    auto* report=new QPlainTextEdit(&dialog); report->setObjectName("activeAlarmReport"); report->setReadOnly(true);
+    dialog.resize(580,320); QVBoxLayout* layout=new QVBoxLayout(&dialog);
+    QPlainTextEdit* report=new QPlainTextEdit(&dialog); report->setObjectName("activeAlarmReport"); report->setReadOnly(true);
     layout->addWidget(report);
-    const auto refresh=[&] {
+    const std::function<void()> refresh=[&] {
         updateMonitoring();
         QString text=monitorBar_->accessibleDescription();
         if(report->toPlainText()!=text) report->setPlainText(text);
     };
-    auto* buttons=new QDialogButtonBox(QDialogButtonBox::Close,&dialog);
-    auto* acknowledge=buttons->addButton("Quittieren",QDialogButtonBox::ActionRole);
+    QDialogButtonBox* buttons=new QDialogButtonBox(QDialogButtonBox::Close,&dialog);
+    QPushButton* acknowledge=buttons->addButton("Quittieren",QDialogButtonBox::ActionRole);
     acknowledge->setObjectName("acknowledgeAlarms");
     connect(acknowledge,&QPushButton::clicked,&dialog,[&] { acknowledgeAlarms(); refresh(); });
     buttons->button(QDialogButtonBox::Close)->setText("Schließen");
@@ -480,7 +481,7 @@ void Desklet::showAlarms() {
 }
 void Desklet::showAlarmSettings() {
     QDialog dialog(this); dialog.setObjectName("alarmSettings"); dialog.setWindowTitle("Datenalter und Alarme");
-    auto* layout=new QVBoxLayout(&dialog); auto* form=new QFormLayout;
+    QVBoxLayout* layout=new QVBoxLayout(&dialog); QFormLayout* form=new QFormLayout;
     QSpinBox warning,stale; warning.setObjectName("ageWarningSeconds"); stale.setObjectName("ageStaleSeconds");
     warning.setRange(5,3599); warning.setSuffix(" s"); warning.setValue(preferences_.ageWarningSeconds);
     stale.setRange(warning.value()+1,7200); stale.setSuffix(" s"); stale.setValue(preferences_.ageStaleSeconds);
@@ -490,10 +491,10 @@ void Desklet::showAlarmSettings() {
     desktop.setObjectName("desktopAlarms"); sound.setObjectName("alarmSound");
     desktop.setChecked(preferences_.desktopAlarms); sound.setChecked(preferences_.alarmSound);
     layout->addWidget(&desktop); layout->addWidget(&sound);
-    auto* note=new QLabel("Meldung einmal pro Alarm, erneut bei Verschärfung oder nach zwischenzeitlicher Behebung.\n"
+    QLabel* note=new QLabel("Meldung einmal pro Alarm, erneut bei Verschärfung oder nach zwischenzeitlicher Behebung.\n"
         "Diese Grenzen ändern nicht den 90-s-Verbindungstimeout. Ohne Desktopdienst bleiben Alarme im Widget sichtbar.");
     note->setWordWrap(true); layout->addWidget(note);
-    auto* buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel,&dialog);
+    QDialogButtonBox* buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel,&dialog);
     buttons->button(QDialogButtonBox::Save)->setText("Speichern"); buttons->button(QDialogButtonBox::Cancel)->setText("Abbrechen");
     connect(buttons,&QDialogButtonBox::accepted,&dialog,&QDialog::accept);
     connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject); layout->addWidget(buttons);
@@ -507,30 +508,30 @@ void Desklet::showAutomationSettings() {
     if(demo_) return;
     QDialog dialog(this); dialog.setObjectName("automationSettings");
     dialog.setWindowTitle("AirControl – Lua-Automatik"); dialog.resize(760,610);
-    auto* layout=new QVBoxLayout(&dialog);
-    auto* enabled=new QCheckBox("Lua-Automatik aktivieren",&dialog);
+    QVBoxLayout* layout=new QVBoxLayout(&dialog);
+    QCheckBox* enabled=new QCheckBox("Lua-Automatik aktivieren",&dialog);
     enabled->setObjectName("automationEnabled"); enabled->setChecked(preferences_.automationEnabled);
     layout->addWidget(enabled);
-    auto* path=new QLabel("Skript: "+AutomationEngine::scriptPath(),&dialog);
+    QLabel* path=new QLabel("Skript: "+AutomationEngine::scriptPath(),&dialog);
     path->setTextInteractionFlags(Qt::TextSelectableByMouse); path->setWordWrap(true); layout->addWidget(path);
-    auto* note=new QLabel("Zeitpläne und Ereignisse steuern nur die bekannten AirControl-Felder. "
+    QLabel* note=new QLabel("Zeitpläne und Ereignisse steuern nur die bekannten AirControl-Felder. "
         "Das Skript hat keinen Datei-, Netzwerk-, Shell- oder Prozesszugriff. "
         "Eine geplante Schaltung wird höchstens einmal je Termin versucht.",&dialog);
     note->setWordWrap(true); layout->addWidget(note);
-    auto* editor=new QPlainTextEdit(&dialog); editor->setObjectName("automationScript");
+    QPlainTextEdit* editor=new QPlainTextEdit(&dialog); editor->setObjectName("automationScript");
     editor->setLineWrapMode(QPlainTextEdit::NoWrap);
     editor->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
     QFile file(AutomationEngine::scriptPath());
     if(file.open(QIODevice::ReadOnly)) editor->setPlainText(QString::fromUtf8(file.readAll()));
     else editor->setPlainText(AutomationEngine::exampleScript());
     layout->addWidget(editor,1);
-    auto* status=new QLabel(&dialog); status->setObjectName("automationStatus"); status->setWordWrap(true);
+    QLabel* status=new QLabel(&dialog); status->setObjectName("automationStatus"); status->setWordWrap(true);
     status->setText(automation_.lastError().isEmpty() ?
         QString("%1 · %2 Zeitpläne geladen").arg(automation_.enabled() ? "Aktiv" : "Deaktiviert").arg(automation_.scheduleCount()) :
         "Fehler: "+automation_.lastError());
     layout->addWidget(status);
-    auto* buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel,&dialog);
-    auto* example=buttons->addButton("Tag/Nacht-Beispiel",QDialogButtonBox::ResetRole);
+    QDialogButtonBox* buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel,&dialog);
+    QPushButton* example=buttons->addButton("Tag/Nacht-Beispiel",QDialogButtonBox::ResetRole);
     example->setObjectName("automationExample");
     buttons->button(QDialogButtonBox::Save)->setText("Speichern und neu laden");
     buttons->button(QDialogButtonBox::Cancel)->setText("Abbrechen"); layout->addWidget(buttons);
@@ -584,13 +585,13 @@ void Desklet::showAndPosition() {
     if (waylandSession_) { show(); return; } // The compositor owns global placement.
     const QPoint desired = preferences_.position;
     QScreen* target = nullptr;
-    for (auto* screen : QGuiApplication::screens()) {
+    for (QScreen* screen : QGuiApplication::screens()) {
         if (screen->availableGeometry().contains(desired)) { target = screen; break; }
     }
     if (!target) target = QGuiApplication::primaryScreen();
     if (target) {
-        const auto available = target->availableGeometry();
-        auto point = desired;
+        const QRect available = target->availableGeometry();
+        QPoint point = desired;
         if (!available.contains(point)) point = available.topRight() - QPoint(width()+24, -24);
         point.setX(qBound(available.left(), point.x(), qMax(available.left(), available.right()-width()+1)));
         point.setY(qBound(available.top(), point.y(), qMax(available.top(), available.bottom()-height()+1)));
@@ -603,13 +604,13 @@ bool Desklet::eventFilter(QObject* watched, QEvent* event) {
         // Native context events may arrive on press or release; a right-button
         // sequence is handled on release below and must only open one menu.
         if (!rightPressed_) {
-            const auto* context=static_cast<QContextMenuEvent*>(event);
+            const QContextMenuEvent* context=static_cast<QContextMenuEvent*>(event);
             requestMenu(context->reason()==QContextMenuEvent::Keyboard ? mapToGlobal(rect().center()) : context->globalPos());
         }
         return true;
     }
     if (event->type() == QEvent::MouseButtonPress) {
-        const auto* mouse=static_cast<QMouseEvent*>(event);
+        const QMouseEvent* mouse=static_cast<QMouseEvent*>(event);
         if (mouse->button()==Qt::RightButton) { rightPressed_=true; return true; }
         // Device buttons keep their left-click action. Values and free space
         // use the left button only for moving; menus are right-click only.
@@ -619,7 +620,7 @@ bool Desklet::eventFilter(QObject* watched, QEvent* event) {
             return true;
         }
     } else if (event->type()==QEvent::MouseMove && leftPressed_) {
-        const auto global=static_cast<QMouseEvent*>(event)->globalPosition().toPoint();
+        const QPoint global=static_cast<QMouseEvent*>(event)->globalPosition().toPoint();
         mouseMoved_=mouseMoved_ || (global-pressPosition_).manhattanLength()>=QApplication::startDragDistance();
         if (mouseMoved_ && !preferences_.locked && (preferences_.desktop || preferences_.hideDecoration)) {
             if (waylandSession_) {
@@ -631,7 +632,7 @@ bool Desklet::eventFilter(QObject* watched, QEvent* event) {
         }
         return true;
     } else if (event->type()==QEvent::MouseButtonRelease) {
-        const auto* mouse=static_cast<QMouseEvent*>(event);
+        const QMouseEvent* mouse=static_cast<QMouseEvent*>(event);
         if (mouse->button()==Qt::RightButton) {
             rightPressed_=false; requestMenu(mouse->globalPosition().toPoint()); return true;
         }
@@ -666,39 +667,39 @@ void Desklet::openMenu(const QPoint& point) {
     QScopedValueRollback<bool> guard(menuOpen_,true);
     qInfo("AirControl: Kontextmenü angefordert");
     QMenu menu(this); menu.setObjectName("deskletContextMenu");
-    const auto connection=demo_ ? QString("Vorschau") : connected_ ? QString("Verbunden") : QString("Keine Verbindung");
+    const QString connection=demo_ ? QString("Vorschau") : connected_ ? QString("Verbunden") : QString("Keine Verbindung");
     menu.addSection(status_.value("name").toString("AirControl")+" · "+connection);
-    auto* decoration=menu.addAction("Fensterdekoration ausblenden");
+    QAction* decoration=menu.addAction("Fensterdekoration ausblenden");
     decoration->setObjectName("hideWindowDecoration"); decoration->setCheckable(true);
     decoration->setChecked(preferences_.hideDecoration);
     connect(decoration,&QAction::triggered,this,[this](bool hidden) {
         // Changing native flags hides/recreates the window. Do it after menu exec.
         QTimer::singleShot(0,this,[this,hidden] { setDecorationHidden(hidden); });
     });
-    auto* appearance=menu.addMenu("Darstellung");
+    QMenu* appearance=menu.addMenu("Darstellung");
     appearance->addAction("Hintergrundfarbe …",this,[this] {
-        const auto color=QColorDialog::getColor(preferences_.background,this,"Hintergrundfarbe");
+        const QColor color=QColorDialog::getColor(preferences_.background,this,"Hintergrundfarbe");
         if(color.isValid()) { preferences_.background=color; saveAppearance(); }
     });
-    auto* transparency=appearance->addAction("Hintergrundtransparenz …",this,[this] {
+    QAction* transparency=appearance->addAction("Hintergrundtransparenz …",this,[this] {
         bool ok=false;
-        const auto percent=QInputDialog::getInt(this,"Hintergrundtransparenz", "Transparenz in % (0 = deckend, 100 = durchsichtig):",
+        const int percent=QInputDialog::getInt(this,"Hintergrundtransparenz", "Transparenz in % (0 = deckend, 100 = durchsichtig):",
                                                preferences_.transparency,0,100,5,&ok);
         if(ok) { preferences_.transparency=percent; saveAppearance(); }
     });
     transparency->setObjectName("appearanceTransparency");
     appearance->addAction("Vordergrundfarbe …",this,[this] {
-        const auto color=QColorDialog::getColor(preferences_.foreground,this,"Farbe der Werte und Symbole");
+        const QColor color=QColorDialog::getColor(preferences_.foreground,this,"Farbe der Werte und Symbole");
         if(color.isValid()) { preferences_.foreground=color; saveAppearance(); }
     });
     appearance->addAction("Schriftart und Schriftschnitt …",this,[this] {
         bool ok=false;
-        auto font=QFontDialog::getFont(&ok,preferences_.valueFont,this,"Schrift der Messwerte");
+        QFont font=QFontDialog::getFont(&ok,preferences_.valueFont,this,"Schrift der Messwerte");
         if(ok) { font.setPointSizeF(qBound(6.0,font.pointSizeF()>0 ? font.pointSizeF() : 10.0,48.0)); preferences_.valueFont=font; saveAppearance(); }
     });
     appearance->addAction("Schriftgröße …",this,[this] {
         bool ok=false;
-        const auto size=QInputDialog::getInt(this,"Schriftgröße","Größe in Punkt:",qRound(preferences_.valueFont.pointSizeF()),6,48,1,&ok);
+        const int size=QInputDialog::getInt(this,"Schriftgröße","Größe in Punkt:",qRound(preferences_.valueFont.pointSizeF()),6,48,1,&ok);
         if(ok) { preferences_.valueFont.setPointSize(size); saveAppearance(); }
     });
     appearance->addSeparator();
@@ -708,9 +709,9 @@ void Desklet::openMenu(const QPoint& point) {
         preferences_.transparency=defaults.transparency; preferences_.valueFont=defaults.valueFont;
         saveAppearance();
     });
-    auto* values=menu.addMenu("Angezeigte Werte");
+    QMenu* values=menu.addMenu("Angezeigte Werte");
     for(int i=0;i<5;++i) {
-        auto* action=values->addAction(metricNames[i]); action->setCheckable(true);
+        QAction* action=values->addAction(metricNames[i]); action->setCheckable(true);
         action->setChecked(preferences_.visibleValues.contains(metricKeys[i]));
         connect(action,&QAction::toggled,this,[this,i](bool on) {
             if(on) preferences_.visibleValues.append(metricKeys[i]); else preferences_.visibleValues.removeAll(metricKeys[i]);
@@ -718,36 +719,36 @@ void Desklet::openMenu(const QPoint& point) {
         });
     }
     menu.addSeparator();
-    auto* alarms=menu.addAction("Aktive Alarme …",this,&Desklet::showAlarms); alarms->setObjectName("showAlarms");
-    auto* acknowledge=menu.addAction("Alarme quittieren",this,&Desklet::acknowledgeAlarms);
+    QAction* alarms=menu.addAction("Aktive Alarme …",this,&Desklet::showAlarms); alarms->setObjectName("showAlarms");
+    QAction* acknowledge=menu.addAction("Alarme quittieren",this,&Desklet::acknowledgeAlarms);
     acknowledge->setObjectName("acknowledgeAlarms"); acknowledge->setEnabled(!activeAlerts_.isEmpty());
-    auto* alarmSettings=menu.addAction("Datenalter und Alarme …",this,&Desklet::showAlarmSettings);
+    QAction* alarmSettings=menu.addAction("Datenalter und Alarme …",this,&Desklet::showAlarmSettings);
     alarmSettings->setObjectName("alarmSettings");
-    auto* automationSettings=menu.addAction(QString("Lua-Automatik … [%1]")
+    QAction* automationSettings=menu.addAction(QString("Lua-Automatik … [%1]")
         .arg(automation_.enabled() ? automation_.loaded() ? "aktiv" : "Fehler" : "aus"),this,&Desklet::showAutomationSettings);
     automationSettings->setObjectName("automationSettingsAction");
     menu.addSeparator();
-    auto* refresh=menu.addAction("Statusverbindung neu starten (F5)",this,[this] { controller_.refresh(); });
+    QAction* refresh=menu.addAction("Statusverbindung neu starten (F5)",this,[this] { controller_.refresh(); });
     refresh->setEnabled(!controller_.busy() && !awaitingConfirmation_ && !demo_);
-    auto* settings=menu.addAction("Verbindung und Autostart …",this,&Desklet::showSettings);
+    QAction* settings=menu.addAction("Verbindung und Autostart …",this,&Desklet::showSettings);
     settings->setEnabled(!controller_.busy() && !awaitingConfirmation_ && !demo_);
     // Let the popup release its input grab before opening the focused dialog.
     menu.addAction("Diagnose / Gerätedaten (F1) …",this,[this] { QTimer::singleShot(0,this,&Desklet::showDetails); });
     if (!waylandSession_) menu.addAction("Position festlegen …",this,&Desklet::showPositionDialog);
-    auto* locked=menu.addAction("Position sperren"); locked->setCheckable(true); locked->setChecked(preferences_.locked);
+    QAction* locked=menu.addAction("Position sperren"); locked->setCheckable(true); locked->setChecked(preferences_.locked);
     connect(locked,&QAction::toggled,this,[this](bool value) { preferences_.locked=value; rememberPosition(); });
     menu.addSeparator(); menu.addAction("Beenden",this,&QWidget::close); menu.exec(point);
 }
 void Desklet::showPositionDialog() {
     if (waylandSession_) return;
     QDialog dialog(this); dialog.setWindowTitle("Widget-Position"); dialog.setObjectName("positionDialog");
-    auto* layout=new QVBoxLayout(&dialog); auto* form=new QFormLayout;
+    QVBoxLayout* layout=new QVBoxLayout(&dialog); QFormLayout* form=new QFormLayout;
     QSpinBox horizontal, vertical;
     horizontal.setObjectName("positionX"); vertical.setObjectName("positionY");
     horizontal.setRange(-32768,32767); vertical.setRange(-32768,32767);
     horizontal.setValue(x()); vertical.setValue(y());
     form->addRow("Horizontal (X):",&horizontal); form->addRow("Vertikal (Y):",&vertical); layout->addLayout(form);
-    auto* buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);
+    QDialogButtonBox* buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);
     buttons->button(QDialogButtonBox::Ok)->setText("Übernehmen");
     buttons->button(QDialogButtonBox::Cancel)->setText("Abbrechen"); layout->addWidget(buttons);
     connect(buttons,&QDialogButtonBox::accepted,&dialog,&QDialog::accept);
@@ -761,7 +762,7 @@ void Desklet::showSettings() {
     QScopedValueRollback<bool> paused(alarmsPaused_,true);
     controller_.stop(); // no old-host reply can arrive during a modal configuration change
     QDialog dialog(this); dialog.setWindowTitle("AirControl – Einstellungen");
-    auto* layout = new QVBoxLayout(&dialog); auto* form = new QFormLayout;
+    QVBoxLayout* layout = new QVBoxLayout(&dialog); QFormLayout* form = new QFormLayout;
     QLineEdit host(preferences_.serverHost); host.setObjectName("serverHost"); host.setMinimumWidth(240);
     host.setPlaceholderText("nadhh");
     host.setToolTip("Hostname oder IP-Adresse des AirControl-Servers; nicht die Adresse des Luftreinigers.");
@@ -773,7 +774,7 @@ void Desklet::showSettings() {
     interval.setToolTip("Pause vor einem neuen TCP-Verbindungsversuch zum Server. Geräte-Timeouts stehen ausschließlich in /etc/airctrld.cfg.");
     form->addRow("AirControl-Server", &host); form->addRow("TCP-Port", &port); form->addRow("Server erneut verbinden", &interval);
     layout->addLayout(form); layout->addWidget(&desktop); layout->addWidget(&autostart);
-    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel);
+    QDialogButtonBox* buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel);
     buttons->button(QDialogButtonBox::Save)->setText("Speichern"); buttons->button(QDialogButtonBox::Cancel)->setText("Abbrechen");
     layout->addWidget(buttons);
     connect(buttons, &QDialogButtonBox::accepted, &dialog, [&] {
@@ -803,26 +804,27 @@ void Desklet::showDetails() {
     QDialog dialog(this,Qt::Dialog); dialog.setObjectName("diagnosticsDialog");
     dialog.setWindowTitle("AirControl – Diagnose"); dialog.resize(860,620);
     dialog.setMinimumSize(640,420);
-    auto* layout = new QVBoxLayout(&dialog);
-    auto* tabs = new QTabWidget(&dialog); tabs->setObjectName("diagnosticTabs");
-    const auto deviceName=status_.value("name").toString("unbekannt")+" · "+
+    QVBoxLayout* layout = new QVBoxLayout(&dialog);
+    QTabWidget* tabs = new QTabWidget(&dialog); tabs->setObjectName("diagnosticTabs");
+    const QString deviceName=status_.value("name").toString("unbekannt")+" · "+
         status_.value("modelid").toString("Modell unbekannt");
-    const auto serverEndpoint=endpointText(preferences_.serverHost,preferences_.serverPort);
-    const auto heading = QString("AirControl %1\nGerät laut Status: %2\nPlattform: %3\n"
+    const QString serverEndpoint=endpointText(preferences_.serverHost,preferences_.serverPort);
+    const QString heading = QString("AirControl %1\nGerät laut Status: %2\nPlattform: %3\n"
                                  "Server: %4\nIPC: TCP\nEmpfang: Server mit einer CoAP-I/O-Sitzung\n"
                                  "Geräteziel und Geräte-Timeouts: /etc/airctrld.cfg\nLetzter Empfang: %5\n\n")
         .arg(QCoreApplication::applicationVersion(),deviceName,QGuiApplication::platformName(),
             serverEndpoint,updated_.isValid() ? updated_.toString(Qt::ISODate) : "noch keiner");
-    const auto session=QString("Desktopsitzung: %1\nWayland-Behandlung: %2\n\n")
+    const QString session=QString("Desktopsitzung: %1\nWayland-Behandlung: %2\n\n")
         .arg(qEnvironmentVariable("XDG_SESSION_TYPE","unbekannt"),waylandSession_ ? "ja" : "nein");
-    const auto errorText=(error_.isEmpty() ? QString() : "Letzter Verbindungsfehler:\n"+error_+"\n\n")+
+    const QString errorText=(error_.isEmpty() ? QString() : "Letzter Verbindungsfehler:\n"+error_+"\n\n")+
         (commandError_.isEmpty() ? QString() : "Letzter Schaltfehler:\n"+commandError_+"\n\n");
-    const auto automationText="LUA-AUTOMATIK\n"+automation_.diagnostics()+"\n";
-    const auto rawJson=QString::fromUtf8(QJsonDocument(status_).toJson(QJsonDocument::Indented));
-    const auto deviceFields=describeDeviceFields(status_);
-    const auto table=[&](const QList<DiagnosticField>& fields,const QString& name,bool hex=false) {
+    const QString automationText="LUA-AUTOMATIK\n"+automation_.diagnostics()+"\n";
+    const QString rawJson=QString::fromUtf8(QJsonDocument(status_).toJson(QJsonDocument::Indented));
+    const QList<DiagnosticField> deviceFields=describeDeviceFields(status_);
+    const std::function<QTableWidget*(const QList<DiagnosticField>&,const QString&,bool)> table=
+        [&](const QList<DiagnosticField>& fields,const QString& name,bool hex) {
         const int descriptionColumn=hex ? 3 : 2;
-        auto* result=new QTableWidget(fields.size(),descriptionColumn+1,&dialog); result->setObjectName(name);
+        QTableWidget* result=new QTableWidget(fields.size(),descriptionColumn+1,&dialog); result->setObjectName(name);
         result->setHorizontalHeaderLabels(hex ? QStringList{"Tag","Empfangener Wert","Code (Hex)","Bedeutung"}
                                              : QStringList{"Tag","Empfangener Wert","Bedeutung"});
         result->setAlternatingRowColors(true); result->setWordWrap(true);
@@ -834,16 +836,16 @@ void Desklet::showDetails() {
         result->horizontalHeader()->setSectionResizeMode(1,QHeaderView::ResizeToContents);
         if(hex) result->horizontalHeader()->setSectionResizeMode(2,QHeaderView::ResizeToContents);
         result->horizontalHeader()->setSectionResizeMode(descriptionColumn,QHeaderView::Stretch);
-        const auto fixed=QFontDatabase::systemFont(QFontDatabase::FixedFont);
+        const QFont fixed=QFontDatabase::systemFont(QFontDatabase::FixedFont);
         for(int row=0;row<fields.size();++row) {
-            auto* tag=new QTableWidgetItem(fields[row].tag); tag->setFont(fixed);
-            auto* value=new QTableWidgetItem(fields[row].value); value->setFont(fixed);
-            auto* description=new QTableWidgetItem(fields[row].description);
+            QTableWidgetItem* tag=new QTableWidgetItem(fields[row].tag); tag->setFont(fixed);
+            QTableWidgetItem* value=new QTableWidgetItem(fields[row].value); value->setFont(fixed);
+            QTableWidgetItem* description=new QTableWidgetItem(fields[row].description);
             tag->setToolTip(fields[row].tag); value->setToolTip(fields[row].value);
             description->setToolTip(fields[row].description);
             result->setItem(row,0,tag); result->setItem(row,1,value); result->setItem(row,descriptionColumn,description);
             if(hex) {
-                auto* code=new QTableWidgetItem(fields[row].hex); code->setFont(fixed);
+                QTableWidgetItem* code=new QTableWidgetItem(fields[row].hex); code->setFont(fixed);
                 code->setToolTip(fields[row].hex.isEmpty() ? "Kein numerischer Fehler-/Statuscode." : "Hexadezimale Darstellung: "+fields[row].hex);
                 result->setItem(row,2,code);
             }
@@ -886,25 +888,25 @@ void Desklet::showDetails() {
     };
     if(!error_.isEmpty()) connectionFields.append({"Letzter Fehler",error_,"Unveränderte letzte Fehlermeldung des Servers bzw. der IPC-Verbindung."});
     if(!commandError_.isEmpty()) connectionFields.append({"Letzter Schaltfehler",commandError_,"Ein Schaltfehler bedeutet nicht automatisch, dass die weiterhin aktive Beobachtung offline ist."});
-    tabs->addTab(table(connectionFields,"connectionFields"),"Verbindung erklärt");
-    auto* raw = new QPlainTextEdit(&dialog); raw->setObjectName("rawDiagnostics"); raw->setReadOnly(true);
+    tabs->addTab(table(connectionFields,"connectionFields",false),"Verbindung erklärt");
+    QPlainTextEdit* raw = new QPlainTextEdit(&dialog); raw->setObjectName("rawDiagnostics"); raw->setReadOnly(true);
     raw->setAccessibleName("Unveränderte Verbindungsdiagnose und Geräte-Rohdaten");
     raw->setPlainText(heading+session+errorText+automationText+rawJson); tabs->addTab(raw,"Rohdaten");
-    const auto reportText=heading+session+errorText+automationText+"ERKLÄRTE VERBINDUNGSFELDER\n"+
+    const QString reportText=heading+session+errorText+automationText+"ERKLÄRTE VERBINDUNGSFELDER\n"+
         diagnosticFieldReport(connectionFields)+"\nERKLÄRTE GERÄTEWERTE\n"+diagnosticFieldReport(deviceFields)+
         "\nUNVERÄNDERTE ROHDATEN\n"+rawJson;
-    auto* report=new QPlainTextEdit(&dialog); report->setObjectName("diagnosticReport");
+    QPlainTextEdit* report=new QPlainTextEdit(&dialog); report->setObjectName("diagnosticReport");
     report->setReadOnly(true); report->setPlainText(reportText);
     report->setAccessibleName("Vollständiger Diagnosebericht zum Markieren und Kopieren");
     tabs->addTab(report,"Kopierbericht");
     layout->addWidget(tabs);
-    auto* note=new QLabel("Code (Hex): Fehler-/Statuscodes zusätzlich hexadezimal. Rohwerte bleiben unverändert; unbekannte Codes werden nicht als gesicherter Wartungsalarm bewertet.",&dialog);
+    QLabel* note=new QLabel("Code (Hex): Fehler-/Statuscodes zusätzlich hexadezimal. Rohwerte bleiben unverändert; unbekannte Codes werden nicht als gesicherter Wartungsalarm bewertet.",&dialog);
     note->setWordWrap(true); layout->addWidget(note);
-    auto* copyStatus=new QLabel("Einfügen: Strg+V · im Terminal: Strg+Umschalt+V",&dialog);
+    QLabel* copyStatus=new QLabel("Einfügen: Strg+V · im Terminal: Strg+Umschalt+V",&dialog);
     copyStatus->setObjectName("reportCopyStatus"); copyStatus->setTextFormat(Qt::PlainText);
     copyStatus->setWordWrap(true); layout->addWidget(copyStatus);
-    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close,&dialog);
-    auto* copy = buttons->addButton("Bericht kopieren", QDialogButtonBox::ActionRole);
+    QDialogButtonBox* buttons = new QDialogButtonBox(QDialogButtonBox::Close,&dialog);
+    QPushButton* copy = buttons->addButton("Bericht kopieren", QDialogButtonBox::ActionRole);
     copy->setObjectName("copyDiagnosticReport"); copy->setAutoDefault(false);
     copy->setShortcut(QKeySequence("Ctrl+Shift+C"));
     copy->setToolTip("Vollständigen Bericht kopieren (Strg+Umschalt+C), ohne vorheriges Markieren.");
@@ -915,7 +917,7 @@ void Desklet::showDetails() {
             copyStatus->setText("Keine aktive Diagnose: Fenster anklicken und nochmals kopieren.");
             return;
         }
-        auto* clipboard=QApplication::clipboard();
+        QClipboard* clipboard=QApplication::clipboard();
         clipboard->setText(reportText,QClipboard::Clipboard);
         if(clipboard->supportsSelection()) clipboard->setText(reportText,QClipboard::Selection);
         if(clipboard->text(QClipboard::Clipboard)==reportText)

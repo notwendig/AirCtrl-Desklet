@@ -71,7 +71,7 @@ QString hexCode(const QString& tag,const QJsonValue& value) {
         if(!decimal.match(value.toString()).hasMatch()) return {};
         bool ok=false; number=value.toString().toULongLong(&ok,10); if(!ok) return {};
     } else if(value.isDouble()) {
-        const auto n=value.toDouble();
+        const double n=value.toDouble();
         if(!std::isfinite(n) || n<0 || std::floor(n)!=n || n>9007199254740991.0) return {};
         number=static_cast<qulonglong>(n);
     } else return {};
@@ -81,9 +81,9 @@ QString hexCode(const QString& tag,const QJsonValue& value) {
 
 QList<DiagnosticField> describeDeviceFields(const QJsonObject& status) {
     QList<DiagnosticField> fields;
-    for(auto entry=status.begin(); entry!=status.end(); ++entry) {
+    for(QJsonObject::const_iterator entry=status.begin(); entry!=status.end(); ++entry) {
         // Wrapping in an array lets Qt serialize any JSON value, even scalars.
-        const auto json=QJsonDocument(QJsonArray{entry.value()}).toJson(QJsonDocument::Compact);
+        const QByteArray json=QJsonDocument(QJsonArray{entry.value()}).toJson(QJsonDocument::Compact);
         fields.append({entry.key(),QString::fromUtf8(json.mid(1,json.size()-2)),
             descriptions.value(entry.key(),"Nicht dokumentiertes Philips-Feld. Der Rohwert bleibt unverändert; keine gesicherte Bedeutung oder Einheit verfügbar."),
             hexCode(entry.key(),entry.value())});
@@ -93,7 +93,7 @@ QList<DiagnosticField> describeDeviceFields(const QJsonObject& status) {
 
 QString diagnosticFieldReport(const QList<DiagnosticField>& fields) {
     QString text;
-    for(const auto& field:fields)
+    for(const DiagnosticField& field:fields)
         text+=field.tag+" = "+field.value+(field.hex.isEmpty() ? QString() : " ["+field.hex+"]")+"\n  "+field.description+"\n";
     return text;
 }

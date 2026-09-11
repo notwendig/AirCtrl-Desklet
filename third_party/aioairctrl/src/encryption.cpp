@@ -45,7 +45,7 @@ std::string crypt(std::string_view input, std::string_view key, bool encrypt) {
     if (input.size() > static_cast<std::size_t>(INT_MAX - EVP_MAX_BLOCK_LENGTH))
         throw std::length_error("Payload too large");
     // IMPORTANT: uppercase ASCII MD5 halves, NOT the raw MD5 bytes.
-    const auto material = digest("JiangPan" + std::string(key), EVP_md5());
+    const std::string material = digest("JiangPan" + std::string(key), EVP_md5());
     std::unique_ptr<EVP_CIPHER_CTX, decltype(&EVP_CIPHER_CTX_free)>
         ctx(EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);
     if (!ctx || !EVP_CipherInit_ex(ctx.get(), EVP_aes_128_cbc(), nullptr,
@@ -77,22 +77,22 @@ std::string EncryptionContext::encrypt(std::string_view payload) {
     ++*client_key_;
     std::ostringstream stream;
     stream << std::uppercase << std::hex << std::setfill('0') << std::setw(8) << *client_key_;
-    const auto key = stream.str();
-    const auto ciphertext = crypt(payload, key, true);
-    const auto body = key + hex(reinterpret_cast<const unsigned char*>(ciphertext.data()), ciphertext.size());
+    const std::string key = stream.str();
+    const std::string ciphertext = crypt(payload, key, true);
+    const std::string body = key + hex(reinterpret_cast<const unsigned char*>(ciphertext.data()), ciphertext.size());
     return body + digest(body, EVP_sha256());
 }
 
 std::string EncryptionContext::decrypt(std::string_view encrypted) const {
     if (encrypted.size() < 104 || (encrypted.size() - 72) % 32 != 0)
         throw std::invalid_argument("Invalid encrypted payload length");
-    const auto key = encrypted.substr(0, 8);
+    const std::string_view key = encrypted.substr(0, 8);
     for (char c : key) (void)nibble(c);
-    const auto body = encrypted.substr(0, encrypted.size() - 64);
-    const auto calculated = digest(body, EVP_sha256());
+    const std::string_view body = encrypted.substr(0, encrypted.size() - 64);
+    const std::string calculated = digest(body, EVP_sha256());
     if (CRYPTO_memcmp(calculated.data(), encrypted.data() + body.size(), 64) != 0)
         throw DigestMismatchException();
-    const auto bytes = unhex(encrypted.substr(8, encrypted.size() - 72));
+    const std::vector<unsigned char> bytes = unhex(encrypted.substr(8, encrypted.size() - 72));
     return crypt(std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()), key, false);
 }
 } // namespace aioairctrl
