@@ -1,6 +1,6 @@
 /**
  * @file ipc.cpp
- * @brief Documented production defaults with isolated test overrides.
+ * @brief Client endpoint defaults with isolated test overrides.
  */
 #include "ipc.hpp"
 

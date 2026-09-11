@@ -33,7 +33,13 @@ REQUIRED = ROOT_FILES + (
     "docs/PROTOCOL_VALIDATION_2026-09-08.md",
     "docs/images/README.md", "docs/images/desklet-dark.png",
     "docs/images/desklet-light.png", "docs/images/diagnostics-demo.png",
-    "docs/images/alarms-demo.png", "src/version.hpp.in", "src/automation_example.hpp.in",
+    "docs/images/alarms-demo.png", "src/common/version.hpp.in",
+    "src/server/CMakeLists.txt",
+    "src/server/main.cpp", "src/client/CMakeLists.txt",
+    "src/client/controlvalues.cpp", "src/client/controlvalues.hpp",
+    "src/client/ipc.cpp", "src/client/ipc.hpp",
+    "src/client/automation_example.hpp.in", "src/client/desklet_main.cpp",
+    "src/client/cli_main.cpp",
     "third_party/aioairctrl/LICENSE", "third_party/aioairctrl/ORIGIN.md",
     "third_party/lua/LICENSE", "third_party/lua/ORIGIN.md", "third_party/lua/src/lua.h",
     "examples/automation.lua", "tests/test_automation.cpp",
@@ -41,7 +47,7 @@ REQUIRED = ROOT_FILES + (
 )
 ALLOWED_SUFFIXES = {".md", ".c", ".h", ".cpp", ".hpp", ".in", ".py", ".sh", ".lua", ".png", ".html", ".cfg",
                     ".svg", ".qrc", ".desktop", ".yml", ".yaml", ".json"}
-ALLOWED_NAMES = {"Doxyfile", "LICENSE", "README", "Makefile"}
+ALLOWED_NAMES = {"CMakeLists.txt", "Doxyfile", "LICENSE", "README", "Makefile"}
 IGNORED_DIRS = {"__pycache__", ".pytest_cache"}
 LINK = re.compile(r"!?\[[^\]]*\]\(([^\s)]+)(?:\s+\"[^\"]*\")?\)")
 DEVICE_ID = re.compile(r"(?:DeviceId|ProductId)[^\n]{0,40}?[\"'][0-9a-f]{32}[\"']", re.I)

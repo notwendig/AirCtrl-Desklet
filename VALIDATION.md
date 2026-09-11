@@ -2,6 +2,16 @@
 
 Stand: 2026-09-10.
 
+Nachtrag 2026-09-11: Die physische Trennung in `src/server` und `src/client`
+sowie die vier Buildpfade wurden durch die Repositorytests geprüft. Der neue
+Server wurde ohne Qt direkt mit GCC 13.3.0 und `-Werror` sowie über seinen
+eigenen CMake-Zweig gebaut. `--version`, `--help`, `--check-config` und ein
+TCP-Laufzeittest für `state`, `ping/pong` und ungültiges JSON waren erfolgreich.
+`ldd` zeigt keine Qt-Bibliothek. Ein erneuter vollständiger Client-/Qt-Build
+dieses Nachtrags steht in dieser Umgebung noch aus.
+Ein eigener CI-Job baut den Server zusätzlich mit deaktivierter Qt-Suche und
+installiert dafür ausschließlich die Server-Abhängigkeiten.
+
 ## Dokumentation und Veröffentlichung
 
 - Alle eigenen Header unter `src/` besitzen englische Doxygen-Datei- und

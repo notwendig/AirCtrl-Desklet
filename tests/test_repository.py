@@ -51,21 +51,46 @@ class RepositoryTests(unittest.TestCase):
 
     def test_server_client_install_contract(self):
         cmake = (self.root / "CMakeLists.txt").read_text()
-        install_line = next(line for line in cmake.splitlines()
-                            if line.startswith("install(TARGETS airctrl-desklet"))
-        self.assertIn("airctrl-server", install_line)
-        self.assertIn("airctrl-client", install_line)
-        self.assertNotIn("airctrl-backend", install_line)
-        self.assertIn("src/server.cpp", cmake)
-        self.assertIn("src/client_main.cpp", cmake)
+        server_cmake = (self.root / "src" / "server" / "CMakeLists.txt").read_text()
+        client_cmake = (self.root / "src" / "client" / "CMakeLists.txt").read_text()
+        presets = json.loads((self.root / "CMakePresets.json").read_text())
+        self.assertIn("install(TARGETS airctrl-server", cmake)
+        self.assertIn("install(TARGETS airctrl-desklet airctrl-client", cmake)
+        self.assertNotIn("airctrl-backend", cmake)
+        self.assertIn("add_executable(airctrl-server main.cpp)", server_cmake)
+        self.assertIn("add_executable(airctrl-client cli_main.cpp)", client_cmake)
         self.assertIn("config/airctrld.cfg", cmake)
+        locations = {preset["name"]: preset.get("binaryDir")
+                     for preset in presets["configurePresets"]}
+        self.assertEqual("${sourceDir}/build/DEBUG/server", locations["debug-server"])
+        self.assertEqual("${sourceDir}/build/DEBUG/client", locations["debug-client"])
+        self.assertEqual("${sourceDir}/build/RELEASE/server", locations["release-server"])
+        self.assertEqual("${sourceDir}/build/RELEASE/client", locations["release-client"])
         config = (self.root / "config" / "airctrld.cfg").read_text()
         self.assertIn("host=AC2729-10", config)
         self.assertIn("port=5683", config)
         self.assertIn("port=5680", config)
-        server = (self.root / "src" / "server.cpp").read_text()
+        server = (self.root / "src" / "server" / "main.cpp").read_text()
         self.assertIn("QTcpServer", server)
         self.assertNotIn("QLocalServer", server)
+
+    def test_server_and_client_sources_are_physically_separated(self):
+        server_sources = "\n".join(
+            path.read_text() for path in (self.root / "src" / "server").rglob("*.cpp"))
+        client_sources = "\n".join(
+            path.read_text() for path in (self.root / "src" / "client").rglob("*.cpp"))
+        common_sources = "\n".join(
+            path.read_text() for path in (self.root / "src" / "common").rglob("*.cpp"))
+        self.assertIn("aioairctrl/client.hpp", server_sources)
+        self.assertNotIn("aioairctrl", client_sources)
+        self.assertNotIn("QWidget", server_sources)
+        self.assertNotIn("aioairctrl", common_sources)
+        self.assertNotIn("QWidget", common_sources)
+
+    def test_diagnostic_report_iterates_diagnostic_fields(self):
+        diagnostics = (self.root / "src" / "client" / "diagnostics.cpp").read_text()
+        self.assertIn("for(const DiagnosticField& field:fields)", diagnostics)
+        self.assertNotIn("for(const QString& field:fields)", diagnostics)
 
     def test_desklet_suite_has_slow_machine_timeout(self):
         cmake = (self.root / "CMakeLists.txt").read_text()
@@ -75,7 +100,7 @@ class RepositoryTests(unittest.TestCase):
             "set_tests_properties(desklet PROPERTIES TIMEOUT 90)", cmake)
 
     def test_tcp_watchdog_is_armed_before_connect(self):
-        controller = (self.root / "src" / "controller.cpp").read_text()
+        controller = (self.root / "src" / "client" / "controller.cpp").read_text()
         start = controller.index("void Controller::connectServer()")
         end = controller.index("void Controller::launchServer()", start)
         connect_body = controller[start:end]
@@ -86,12 +111,12 @@ class RepositoryTests(unittest.TestCase):
         self.assertIn("if(pending_) return", fake)
 
     def test_detached_servers_do_not_keep_ctest_pipes_open(self):
-        controller = (self.root / "src" / "controller.cpp").read_text()
+        controller = (self.root / "src" / "client" / "controller.cpp").read_text()
         self.assertIn("server.setStandardOutputFile(QProcess::nullDevice())", controller)
         self.assertIn("server.setStandardErrorFile(QProcess::nullDevice())", controller)
 
     def test_synthetic_alarms_do_not_reach_real_desktop(self):
-        desklet = (self.root / "src" / "desklet.cpp").read_text()
+        desklet = (self.root / "src" / "client" / "desklet.cpp").read_text()
         tests = (self.root / "tests" / "test_desklet.cpp").read_text()
         self.assertIn("AIRCTRL_TEST_SUPPRESS_DESKTOP_ALARMS", desklet)
         self.assertIn('qputenv("AIRCTRL_TEST_SUPPRESS_DESKTOP_ALARMS","1")', tests)
@@ -112,7 +137,7 @@ class RepositoryTests(unittest.TestCase):
         self.assertIn('"tests/parent_probe.cpp"', script)
         self.assertIn('cmake -E remove_directory "$test_build"', script)
         self.assertLess(script.index('cmake -E remove_directory "$test_build"'),
-                        script.index('cmake -S "$source_dir" -B "$test_build"'))
+                        script.index('cmake -S "$source_dir" -B "$server_test_build"'))
         self.assertNotIn('push --force', script)
         self.assertNotIn('reset --hard', script)
 
@@ -124,7 +149,7 @@ class RepositoryTests(unittest.TestCase):
     def test_cpp_api_is_doxygen_documented(self):
         self.assertIn("OUTPUT_LANGUAGE        = English",
                       (self.root / "Doxyfile").read_text())
-        for header in (self.root / "src").glob("*.hpp"):
+        for header in (self.root / "src").rglob("*.hpp"):
             with self.subTest(header=header.name):
                 self.assertIn("@file", header.read_text())
 

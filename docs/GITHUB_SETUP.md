@@ -38,9 +38,11 @@ bestehenden Git-Arbeitskopie. Im enthaltenen Ordner `AirCtrl-Desklet`:
 ```bash
 python3 scripts/check_repository.py
 python3 -m unittest discover -s tests -p 'test_repository.py' -v
-cmake --preset ci
-cmake --build --preset ci --parallel 2
-ctest --preset ci
+cmake --preset release-server
+cmake --build --preset release-server --parallel 2
+cmake --preset release-client
+cmake --build --preset release-client --parallel 2
+ctest --preset release-client
 ```
 
 Installationsabhängigkeiten: [DEVELOPMENT.md](DEVELOPMENT.md).

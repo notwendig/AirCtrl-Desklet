@@ -70,9 +70,10 @@ airctrl-client refresh
 Clients use line-delimited JSON over TCP. This protocol has no authentication
 or encryption; expose port 5680 only to trusted hosts on the local network.
 
-Dependencies: C and C++17 compilers, CMake ≥ 3.16, Qt ≥ 6.2
-(Core/Gui/Widgets/DBus/Network), OpenSSL Crypto, nlohmann/json ≥ 3.9. Presets
-additionally require CMake ≥ 3.21 and Ninja.
+Server dependencies: a C++17 compiler, CMake ≥ 3.16, OpenSSL Crypto,
+nlohmann/json ≥ 3.9 and Threads; **Qt is not required**. The client additionally
+needs a C compiler and Qt ≥ 6.2 (Core/Gui/Widgets/DBus/Network). Presets require
+CMake ≥ 3.21 and Ninja.
 [Build instructions and other distributions](docs/DEVELOPMENT.md)
 
 ## Controls and warnings
@@ -143,9 +144,11 @@ Other Philips models are not claimed compatible.
 not a claim of an already successful CI run.
 
 ```bash
-cmake --preset dev
-cmake --build --preset dev --parallel 2
-ctest --preset dev
+cmake --preset debug-server
+cmake --build --preset debug-server --parallel 2
+cmake --preset debug-client
+cmake --build --preset debug-client --parallel 2
+ctest --preset debug-client
 python3 scripts/check_repository.py
 ```
 

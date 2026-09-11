@@ -14,6 +14,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  server-without-qt:
+    name: Ubuntu 24.04 / server without Qt
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install server-only dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build libssl-dev nlohmann-json3-dev
+      - name: Build with Qt discovery disabled
+        run: |
+          cmake --preset release-server -DCMAKE_DISABLE_FIND_PACKAGE_Qt6=TRUE
+          cmake --build --preset release-server --parallel 2
+          ./build/RELEASE/server/airctrl-server --check-config --config config/airctrld.cfg
+          if ldd ./build/RELEASE/server/airctrl-server | grep -q Qt; then exit 1; fi
+
   ubuntu:
     name: Ubuntu 24.04 / ${{ matrix.compiler }}
     runs-on: ubuntu-24.04
@@ -49,16 +68,19 @@ jobs:
           bash -n install.sh uninstall.sh
       - name: Configure, build and test
         run: |
-          cmake --preset ci -DAIRCTRL_TEST_WITH_DBUS=ON
-          cmake --build --preset ci --parallel 2
-          ctest --preset ci
+          cmake --preset release-server
+          cmake --build --preset release-server --parallel 2
+          cmake --preset release-client -DAIRCTRL_TEST_WITH_DBUS=ON
+          cmake --build --preset release-client --parallel 2
+          ctest --preset release-client
       - name: Install and render demo without a device
         run: |
-          cmake --install build/ci --prefix "$RUNNER_TEMP/airctrl-install"
+          cmake --install build/RELEASE/server --prefix "$RUNNER_TEMP/airctrl-install"
+          cmake --install build/RELEASE/client --prefix "$RUNNER_TEMP/airctrl-install"
           "$RUNNER_TEMP/airctrl-install/bin/airctrl-desklet" --version
           "$RUNNER_TEMP/airctrl-install/bin/airctrl-desklet" --screenshot "$RUNNER_TEMP/desklet-demo.png"
           test -s "$RUNNER_TEMP/desklet-demo.png"
-          ./build/ci/diagnostics-preview "$RUNNER_TEMP/diagnostics-demo.png"
+          ./build/RELEASE/client/diagnostics-preview "$RUNNER_TEMP/diagnostics-demo.png"
           test -s "$RUNNER_TEMP/diagnostics-demo.png"
       - name: Save test logs and demo
         if: always()
@@ -66,7 +88,7 @@ jobs:
         with:
           name: ubuntu-${{ matrix.compiler }}-test-results
           path: |
-            build/ci/Testing/Temporary/LastTest.log
+            build/RELEASE/client/Testing/Temporary/LastTest.log
             ${{ runner.temp }}/desklet-demo.png
             ${{ runner.temp }}/diagnostics-demo.png
           if-no-files-found: ignore
@@ -96,16 +118,19 @@ jobs:
           bash -n install.sh uninstall.sh
       - name: Configure, build and test
         run: |
-          cmake --preset ci
-          cmake --build --preset ci --parallel 2
-          ctest --preset ci
+          cmake --preset release-server
+          cmake --build --preset release-server --parallel 2
+          cmake --preset release-client
+          cmake --build --preset release-client --parallel 2
+          ctest --preset release-client
       - name: Install and render demo without a device
         run: |
-          cmake --install build/ci --prefix /tmp/airctrl-ci-install
+          cmake --install build/RELEASE/server --prefix /tmp/airctrl-ci-install
+          cmake --install build/RELEASE/client --prefix /tmp/airctrl-ci-install
           /tmp/airctrl-ci-install/bin/airctrl-desklet --version
           /tmp/airctrl-ci-install/bin/airctrl-desklet --screenshot /tmp/airctrl-ci-demo.png
           test -s /tmp/airctrl-ci-demo.png
-          ./build/ci/diagnostics-preview /tmp/airctrl-ci-diagnostics.png
+          ./build/RELEASE/client/diagnostics-preview /tmp/airctrl-ci-diagnostics.png
           test -s /tmp/airctrl-ci-diagnostics.png
       - name: Save test logs and demo
         if: always()
@@ -113,7 +138,7 @@ jobs:
         with:
           name: fedora-gcc-test-results
           path: |
-            build/ci/Testing/Temporary/LastTest.log
+            build/RELEASE/client/Testing/Temporary/LastTest.log
             /tmp/airctrl-ci-demo.png
             /tmp/airctrl-ci-diagnostics.png
           if-no-files-found: ignore

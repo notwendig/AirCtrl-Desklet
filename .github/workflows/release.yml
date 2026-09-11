@@ -40,10 +40,13 @@ jobs:
         run: |
           python3 scripts/check_repository.py
           python3 -m unittest discover -s tests -p 'test_repository.py' -v
-          cmake --preset ci -DAIRCTRL_TEST_WITH_DBUS=ON
-          cmake --build --preset ci --parallel 2
-          ctest --preset ci
-          cmake --install build/ci --prefix "$RUNNER_TEMP/airctrl-install"
+          cmake --preset release-server
+          cmake --build --preset release-server --parallel 2
+          cmake --preset release-client -DAIRCTRL_TEST_WITH_DBUS=ON
+          cmake --build --preset release-client --parallel 2
+          ctest --preset release-client
+          cmake --install build/RELEASE/server --prefix "$RUNNER_TEMP/airctrl-install"
+          cmake --install build/RELEASE/client --prefix "$RUNNER_TEMP/airctrl-install"
           "$RUNNER_TEMP/airctrl-install/bin/airctrl-desklet" --version
           "$RUNNER_TEMP/airctrl-install/bin/airctrl-desklet" --screenshot "$RUNNER_TEMP/desklet-demo.png"
           test -s "$RUNNER_TEMP/desklet-demo.png"

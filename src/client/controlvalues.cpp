@@ -1,6 +1,6 @@
 /**
  * @file controlvalues.cpp
- * @brief Shared allow-list and value-family validation for control commands.
+ * @brief Client-side allow-list and value-family validation for controls.
  */
 #include "controlvalues.hpp"
 

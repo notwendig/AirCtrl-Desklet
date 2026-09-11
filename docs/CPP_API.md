@@ -1,6 +1,6 @@
 # C++-API-Dokumentation
 
-Die eigenen C++-Schnittstellen in `src/*.hpp` sind auf Englisch im Doxygen-
+Die eigenen C++-Schnittstellen unter `src/**/*.hpp` sind auf Englisch im Doxygen-
 Stil dokumentiert. Die Kommentare beschreiben Zuständigkeit, Parameter,
 Rückgabewerte und wichtige Zustands- oder Sicherheitsgrenzen. Insbesondere ist
 festgehalten, dass `Controller`, `Desklet` und `AutomationEngine` ausschließlich

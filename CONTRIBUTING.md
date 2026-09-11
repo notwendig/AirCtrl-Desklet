@@ -18,9 +18,11 @@ Die vollständige Einrichtung steht in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md
 Kurzform mit CMake ab 3.21 und Ninja:
 
 ```bash
-cmake --preset dev
-cmake --build --preset dev --parallel 2
-ctest --preset dev
+cmake --preset debug-server
+cmake --build --preset debug-server --parallel 2
+cmake --preset debug-client
+cmake --build --preset debug-client --parallel 2
+ctest --preset debug-client
 python3 scripts/check_repository.py
 python3 -m unittest discover -s tests -p 'test_repository.py' -v
 ```

@@ -5,24 +5,31 @@ JavaScript-Erweiterung. Die Oberfläche bleibt deutsch; C++-Bezeichner sind engl
 
 | Baustein | Zuständigkeit |
 |---|---|
-| `src/main.cpp` | Anwendung, Kommandozeile, Demo und Vorschau |
-| `src/desklet.*` | Fenster, Kontextmenü, Werte, Einstellungen und Diagnosefenster |
-| `src/panel.*` | Acht Gerätetasten und ihre bestätigten Zustände |
-| `src/emblems.*` | Statussymbole und modellbezogene Filterhinweise |
-| `src/alerts.*` | Datenalter, Warnungsidentitäten, Quittierung und Benachrichtigung |
-| `src/diagnostics.*` | Rohwert-Erklärungen, Hexcodes und Kopierbericht |
-| `src/preferences.*` | Benutzereinstellungen und Autostart |
-| `src/automation.*` | Eingebettete Lua-Sandbox, Ereignisse, Zeitpläne und Skriptprotokoll |
+| `src/client/desklet_main.cpp` | Desklet-Anwendung, Kommandozeile, Demo und Vorschau |
+| `src/client/desklet.*` | Fenster, Kontextmenü, Werte, Einstellungen und Diagnosefenster |
+| `src/client/panel.*` | Acht Gerätetasten und ihre bestätigten Zustände |
+| `src/client/emblems.*` | Statussymbole und modellbezogene Filterhinweise |
+| `src/client/alerts.*` | Datenalter, Warnungsidentitäten, Quittierung und Benachrichtigung |
+| `src/client/diagnostics.*` | Rohwert-Erklärungen, Hexcodes und Kopierbericht |
+| `src/client/preferences.*` | Benutzereinstellungen und Autostart |
+| `src/client/automation.*` | Eingebettete Lua-Sandbox, Ereignisse, Zeitpläne und Skriptprotokoll |
 | `examples/automation.lua` | Kanonische Editorvorlage und kommentierte Lua-/Statusreferenz |
-| `src/controlvalues.*` | Gemeinsame Positivliste und Kodierung erlaubter Steuerwerte |
-| `src/server.cpp` | Einziger Geräteprozess, Clientverwaltung, Befehlswarteschlange und I/O-Wiederaufbau |
-| `src/ipc.*` | Gemeinsame TCP-Standardwerte für Server und Clients |
-| `src/controller.*` | Reiner Desklet-Client, IPC-Zustand und Befehlsbestätigung |
-| `src/client_main.cpp` | Kommandozeilen-Client für Status, Beobachtung, Schalten und F5-Ersatz |
+| `src/common/version.hpp.in` | Einzige, Qt-freie gemeinsame Versionsvorlage |
+| `src/client/controlvalues.*` | Qt-seitige Positivliste und Kodierung erlaubter Steuerwerte |
+| `src/client/ipc.*` | Qt-seitige TCP-Standardwerte für Desklet und CLI |
+| `src/server/main.cpp` | Qt-freier POSIX-TCP-Server, Befehlswarteschlange und Geräte-I/O |
+| `src/client/controller.*` | Reiner Desklet-Client, IPC-Zustand und Befehlsbestätigung |
+| `src/client/cli_main.cpp` | Kommandozeilen-Client für Status, Beobachtung, Schalten und F5-Ersatz |
 | `third_party/aioairctrl` | Nur vom Server verwendete C++-Implementierung des Philips-CoAP-Protokolls |
 | `third_party/lua` | Verifizierter offizieller Lua-5.4.9-Quellstand |
 | `tests/` | Qt-Oberflächen-/Clientprüfungen, Fake-Server, Mehrclient- und UDP-Simulator |
 | `Doxyfile`, `docs/CPP_API.md` | Englische C++-Schnittstellenreferenz und Erzeugungsanleitung |
+
+Die Produktionsquellen sind damit physisch getrennt: Der Server-Unterbaum und
+sein CMake-Zweig enthalten keinerlei Qt-Abhängigkeit. Der Server verwendet
+C++17, POSIX-Sockets, nlohmann/json, OpenSSL und Threads. Der Client-Unterbaum
+enthält keine Geräte-/CoAP-Quelle; seine Qt-Helfer gehören ausschließlich zum
+Target `airctrl_client_common`. Gemeinsam ist nur die generierte Versionsnummer.
 
 ## Server, Clients und Geräte-I/O
 

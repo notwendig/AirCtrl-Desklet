@@ -6,35 +6,61 @@
       "name": "base",
       "hidden": true,
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": { "AIRCTRL_TEST_WITH_DBUS": "OFF" }
     },
     {
-      "name": "dev",
-      "displayName": "Debug + tests",
+      "name": "debug-server",
+      "displayName": "Debug / server",
       "inherits": "base",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "BUILD_TESTING": "ON" }
+      "binaryDir": "${sourceDir}/build/DEBUG/server",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "AIRCTRL_COMPONENT": "server",
+        "BUILD_TESTING": "OFF"
+      }
     },
     {
-      "name": "release",
-      "displayName": "Release application",
+      "name": "debug-client",
+      "displayName": "Debug / client",
       "inherits": "base",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "BUILD_TESTING": "OFF" }
+      "binaryDir": "${sourceDir}/build/DEBUG/client",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "AIRCTRL_COMPONENT": "client",
+        "BUILD_TESTING": "ON"
+      }
     },
     {
-      "name": "ci",
-      "displayName": "Release + tests",
+      "name": "release-server",
+      "displayName": "Release / server",
       "inherits": "base",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "BUILD_TESTING": "ON" }
+      "binaryDir": "${sourceDir}/build/RELEASE/server",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "AIRCTRL_COMPONENT": "server",
+        "BUILD_TESTING": "OFF"
+      }
+    },
+    {
+      "name": "release-client",
+      "displayName": "Release / client",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build/RELEASE/client",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "AIRCTRL_COMPONENT": "client",
+        "BUILD_TESTING": "ON"
+      }
     }
   ],
   "buildPresets": [
-    { "name": "dev", "configurePreset": "dev" },
-    { "name": "release", "configurePreset": "release" },
-    { "name": "ci", "configurePreset": "ci" }
+    { "name": "debug-server", "configurePreset": "debug-server" },
+    { "name": "debug-client", "configurePreset": "debug-client" },
+    { "name": "release-server", "configurePreset": "release-server" },
+    { "name": "release-client", "configurePreset": "release-client" }
   ],
   "testPresets": [
-    { "name": "dev", "configurePreset": "dev", "output": { "outputOnFailure": true } },
-    { "name": "ci", "configurePreset": "ci", "output": { "outputOnFailure": true } }
+    { "name": "debug-client", "configurePreset": "debug-client", "output": { "outputOnFailure": true } },
+    { "name": "release-client", "configurePreset": "release-client", "output": { "outputOnFailure": true } }
   ]
 }

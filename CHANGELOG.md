@@ -2,6 +2,12 @@
 
 ## v1.06 – 2026-09-10
 
+- Produktionsquellen physisch in `src/server` und `src/client` getrennt. Der
+  Server ist vollständig Qt-frei; gemeinsam bleibt nur die Versionsvorlage.
+- TCP-Ereignisschleife, INI-Leser und JSON-Behandlung des Servers verwenden
+  C++17/POSIX und nlohmann/json statt Qt Core/Network.
+- Separate CMake-Konfigurationen erzeugen Debug- und Release-Buildbäume unter
+  `build/{DEBUG|RELEASE}/{server|client}`.
 - Geräteadresse, UDP-Port und Gerätefristen aus allen Clients entfernt und in
   `/etc/airctrld.cfg` zentralisiert.
 - Server-/Client-Verbindung vollständig auf TCP umgestellt; Standardserver im

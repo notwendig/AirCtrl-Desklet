@@ -4,8 +4,10 @@
 
 ## Voraussetzungen
 
-Linux, C++17-Compiler, CMake ab 3.16, Qt ab 6.2 (Core, Gui, Widgets, DBus, Network; zusätzlich
-Test für Tests), OpenSSL Crypto, nlohmann/json ab 3.9 und Threads.
+Für den Server: Linux, C++17-Compiler, CMake ab 3.16, OpenSSL Crypto,
+nlohmann/json ab 3.9 und Threads; Qt wird weder gesucht noch gelinkt. Der Client
+benötigt zusätzlich einen C-Compiler und Qt ab 6.2 (Core, Gui, Widgets, DBus,
+Network; zusätzlich Test für Tests).
 Die optionalen CMake-Presets benötigen **CMake ab 3.21** und Ninja.
 Die Repository-/Paketprüfungen verwenden Python ab 3.9 und nur die Standardbibliothek.
 Lua 5.4.9 wird aus `third_party/lua` statisch gebaut; ein systemweites
@@ -36,14 +38,18 @@ Plugin installiert ist, bedeutet nicht, dass ein Wayland-Display verfügbar ist.
 Alle Befehle im Projektverzeichnis ausführen:
 
 ```bash
-cmake --preset dev
-cmake --build --preset dev --parallel 2
-ctest --preset dev
-./build/dev/airctrl-desklet --demo
+cmake --preset debug-server
+cmake --build --preset debug-server --parallel 2
+cmake --preset debug-client
+cmake --build --preset debug-client --parallel 2
+ctest --preset debug-client
+./build/DEBUG/client/airctrl-desklet --demo
 ```
 
-`dev` ist Debug mit Tests; `release` ist Release ohne Tests; `ci` ist Release mit
-Tests. Die Buildverzeichnisse sind voneinander getrennt. Lokale SDK-Pfade gehören
+Die Presets `debug-server`, `debug-client`, `release-server` und
+`release-client` erzeugen getrennte Buildbäume unter
+`build/{DEBUG|RELEASE}/{server|client}`. Der Client-Testlauf erwartet den zuvor
+gebauten Server im benachbarten Server-Buildbaum. Lokale SDK-Pfade gehören
 in ein nicht eingechecktes `CMakeUserPresets.json` oder in `-DCMAKE_PREFIX_PATH=…`.
 Die Versionsnummer des Widgets stammt aus `project(... VERSION ...)` in der
 obersten CMake-Datei. `airctrl-server` ist der einzige installierte Nutzer der
@@ -60,9 +66,13 @@ sind Buildartefakte und dürfen nicht eingecheckt werden.
 Klassisch, ohne Presets/Ninja:
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
-cmake --build build --parallel 2
-ctest --test-dir build --output-on-failure
+cmake -S . -B build/RELEASE/server -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DAIRCTRL_COMPONENT=server -DBUILD_TESTING=OFF
+cmake --build build/RELEASE/server --parallel 2
+cmake -S . -B build/RELEASE/client -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DAIRCTRL_COMPONENT=client -DBUILD_TESTING=ON
+cmake --build build/RELEASE/client --parallel 2
+ctest --test-dir build/RELEASE/client --output-on-failure
 ```
 
 Qt Creator: `CMakeLists.txt` öffnen, ein Qt-6-Desktop-Kit auswählen und für erste
@@ -100,9 +110,11 @@ privat und werden vom Repositoryprüfer als öffentliche Quelldatei abgelehnt.
 Optional kann der D-Bus-Test in einer isolierten Testsitzung laufen:
 
 ```bash
-cmake --preset ci -DAIRCTRL_TEST_WITH_DBUS=ON
-cmake --build --preset ci --parallel 2
-ctest --preset ci
+cmake --preset release-server
+cmake --build --preset release-server --parallel 2
+cmake --preset release-client -DAIRCTRL_TEST_WITH_DBUS=ON
+cmake --build --preset release-client --parallel 2
+ctest --preset release-client
 ```
 
 Dafür muss `dbus-run-session` installiert und das Anlegen eines lokalen
@@ -133,11 +145,11 @@ Push erfolgt atomar über den ausdrücklich gesetzten SSH-Remote und niemals mit
 ## Server und Clients lokal prüfen
 
 ```bash
-./build/dev/airctrl-server --config /etc/airctrld.cfg
-./build/dev/airctrl-client --host nadhh --port 5680 server-status
-./build/dev/airctrl-client --host nadhh --port 5680 status
-./build/dev/airctrl-client --host nadhh --port 5680 watch
-./build/dev/airctrl-client --host nadhh --port 5680 set pwr=1
+./build/DEBUG/server/airctrl-server --config /etc/airctrld.cfg
+./build/DEBUG/client/airctrl-client --host nadhh --port 5680 server-status
+./build/DEBUG/client/airctrl-client --host nadhh --port 5680 status
+./build/DEBUG/client/airctrl-client --host nadhh --port 5680 watch
+./build/DEBUG/client/airctrl-client --host nadhh --port 5680 set pwr=1
 ```
 
 `airctrl-server` bleibt beim Schließen eines Clients aktiv. `airctrl-client refresh`
@@ -147,8 +159,8 @@ Das Nachrichtenformat steht in [IPC_PROTOCOL.md](IPC_PROTOCOL.md).
 ## Vorschauen ohne Gerät
 
 ```bash
-QT_QPA_PLATFORM=offscreen ./build/dev/airctrl-desklet --screenshot /tmp/airctrl-demo.png
-QT_QPA_PLATFORM=offscreen ./build/dev/diagnostics-preview /tmp/airctrl-diagnostics.png
+QT_QPA_PLATFORM=offscreen ./build/DEBUG/client/airctrl-desklet --screenshot /tmp/airctrl-demo.png
+QT_QPA_PLATFORM=offscreen ./build/DEBUG/client/diagnostics-preview /tmp/airctrl-diagnostics.png
 ```
 
 `--screenshot` verwendet Demo-Werte. `diagnostics-preview` wird nur mit Tests

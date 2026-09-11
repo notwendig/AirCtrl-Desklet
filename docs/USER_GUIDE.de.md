@@ -537,37 +537,41 @@ keine Einstellungen und kommuniziert weder mit Server noch Gerät.
 ## Bauen, testen und Diagnose
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
-cmake --build build --parallel
-ctest --test-dir build --output-on-failure
-./build/airctrl-desklet
+cmake --preset release-server
+cmake --build --preset release-server --parallel
+cmake --preset release-client
+cmake --build --preset release-client --parallel
+ctest --preset release-client
+./build/RELEASE/client/airctrl-desklet
 ```
 
 Optionaler D-Bus-Integrationstest in einer eigenen, isolierten Testsitzung:
 
 ```bash
-cmake -S . -B build -DBUILD_TESTING=ON -DAIRCTRL_TEST_WITH_DBUS=ON
-cmake --build build --parallel
-ctest --test-dir build --output-on-failure
+cmake --preset release-server
+cmake --build --preset release-server --parallel
+cmake --preset release-client -DAIRCTRL_TEST_WITH_DBUS=ON
+cmake --build --preset release-client --parallel
+ctest --preset release-client
 ```
 
 Benötigt `dbus-run-session` und die Erlaubnis zum Anlegen lokaler D-Bus-Sockets.
 Ohne diese Option wird nur dieser Integrationstest übersprungen; Nachrichtenaufbau
 und Alarmzustandswechsel werden weiterhin ohne Desktopdienst geprüft.
 
-Qt Creator kann die oberste `CMakeLists.txt` direkt öffnen. `airctrl-desklet`,
-`airctrl-server` und `airctrl-client` müssen nach Build bzw. Installation
-nebeneinander liegen. Normalerweise startet systemd den Server; fehlt er, startet
-das Desklet ihn einmalig über `QProcess` ohne Shell.
+Qt Creator kann die oberste `CMakeLists.txt` direkt öffnen. Im Buildbaum liegt
+der Server getrennt unter `build/RELEASE/server`, Desklet und CLI-Client liegen
+unter `build/RELEASE/client`. Nach der Installation liegen die drei Programme
+gemeinsam im Binärverzeichnis. Normalerweise startet systemd den Server.
 
 ```bash
 # Status über den zentralen Server prüfen
-./build/airctrl-client status
-./build/airctrl-client watch
-./build/airctrl-client set pwr=1
+./build/RELEASE/client/airctrl-client status
+./build/RELEASE/client/airctrl-client watch
+./build/RELEASE/client/airctrl-client set pwr=1
 
 # Echte Qt-Oberfläche als PNG rendern, ohne Gerätezugriff
-QT_QPA_PLATFORM=offscreen ./build/airctrl-desklet --screenshot /tmp/airctrl-demo.png
+QT_QPA_PLATFORM=offscreen ./build/RELEASE/client/airctrl-desklet --screenshot /tmp/airctrl-demo.png
 ```
 
 Die automatisierten Prüfungen verwenden einen simulierten Server bzw. einen
@@ -586,7 +590,8 @@ Programme, Menüeintrag, Icon und eigenen Autostart. Persönliche Einstellungen 
 MIT, siehe `LICENSE`. CoAP-Code: C++-Port von
 [betaboon/aioairctrl](https://github.com/betaboon/aioairctrl), Original-Commit
 `c97640b054c14c0d02739fdfa2564cd85f8216ea`, Copyright 2020 betaboon.
-Qt, OpenSSL und nlohmann/json werden über installierte Bibliotheken eingebunden.
+Der Qt-freie Server bindet OpenSSL und nlohmann/json ein. Nur Desklet und
+CLI-Client binden die installierten Qt-Bibliotheken ein.
 Lua 5.4.9 ist mit Lizenz- und Herkunftshinweisen als Quellcode enthalten.
 Das ZIP enthält keine Qt-Binärdateien. Die Tastensymbole werden im Qt-Code gezeichnet. Für die Werte werden
 die auf deinem System installierten Schriftarten verwendet.

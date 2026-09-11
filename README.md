@@ -44,8 +44,10 @@ Ausgegraute Gerätetasten sind in der Demo absichtlich nicht bedienbar.*
 
 ## Schnellstart auf Fedora
 
-Voraussetzungen: C- und C++17-Compiler, CMake ≥ 3.16, Qt ≥ 6.2 (Core/Gui/Widgets/DBus/Network),
-OpenSSL Crypto, nlohmann/json ≥ 3.9 und Python 3 für den Installer.
+Server-Voraussetzungen: C++17-Compiler, CMake ≥ 3.16, OpenSSL Crypto,
+nlohmann/json ≥ 3.9 und Threads – **kein Qt**. Der Client benötigt zusätzlich
+einen C-Compiler und Qt ≥ 6.2 (Core/Gui/Widgets/DBus/Network). Python 3 wird vom
+Installer verwendet.
 
 ```bash
 sudo dnf install -y gcc-c++ cmake make qt6-qtbase-devel qt6-qtsvg \
@@ -214,9 +216,11 @@ ist noch kein erfolgreicher GitHub-Lauf.
 ## Entwickeln und beitragen
 
 ```bash
-cmake --preset dev
-cmake --build --preset dev --parallel 2
-ctest --preset dev
+cmake --preset debug-server
+cmake --build --preset debug-server --parallel 2
+cmake --preset debug-client
+cmake --build --preset debug-client --parallel 2
+ctest --preset debug-client
 python3 scripts/check_repository.py
 ```
 

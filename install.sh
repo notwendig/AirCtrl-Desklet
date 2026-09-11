@@ -6,12 +6,20 @@ if [[ "$install_prefix" != /* ]]; then
     printf '%s\n' 'Der Installationspfad muss absolut sein.' >&2
     exit 2
 fi
-cmake -S "$project_dir" -B "$project_dir/build" \
-    -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$install_prefix" -DBUILD_TESTING=OFF
-cmake --build "$project_dir/build" --parallel --clean-first
+server_build="$project_dir/build/RELEASE/server"
+client_build="$project_dir/build/RELEASE/client"
+cmake -S "$project_dir" -B "$server_build" -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release -DAIRCTRL_COMPONENT=server \
+    -DCMAKE_INSTALL_PREFIX="$install_prefix" -DBUILD_TESTING=OFF
+cmake --build "$server_build" --parallel --clean-first
+cmake -S "$project_dir" -B "$client_build" -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release -DAIRCTRL_COMPONENT=client \
+    -DCMAKE_INSTALL_PREFIX="$install_prefix" -DBUILD_TESTING=OFF
+cmake --build "$client_build" --parallel --clean-first
 pkill -x airctrl-backend 2>/dev/null || true
 pkill -x airctrl-server 2>/dev/null || true
-cmake --install "$project_dir/build"
+cmake --install "$server_build"
+cmake --install "$client_build"
 
 # The daemon owns all device parameters. Preserve an existing administrator
 # configuration; create the system file only on the first v1.06 installation.

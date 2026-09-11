@@ -22,12 +22,18 @@ done
 # einem Build- oder Testfehler unverändert.
 python3 "$source_dir/scripts/check_repository.py" --root "$source_dir"
 python3 -m unittest discover -s "$source_dir/tests" -p 'test_repository.py' -v
-test_build="$source_dir/build/v1.06-package-test"
-[[ "$test_build" == "$source_dir/build/v1.06-package-test" ]] || fail "Unerwartetes Test-Buildverzeichnis."
+test_build="$source_dir/build"
+[[ "$test_build" == "$source_dir/build" ]] || fail "Unerwartetes Test-Buildverzeichnis."
 cmake -E remove_directory "$test_build"
-cmake -S "$source_dir" -B "$test_build" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
-cmake --build "$test_build" --parallel 2
-ctest --test-dir "$test_build" --output-on-failure
+server_test_build="$test_build/RELEASE/server"
+client_test_build="$test_build/RELEASE/client"
+cmake -S "$source_dir" -B "$server_test_build" -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release -DAIRCTRL_COMPONENT=server -DBUILD_TESTING=OFF
+cmake --build "$server_test_build" --parallel 2
+cmake -S "$source_dir" -B "$client_test_build" -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release -DAIRCTRL_COMPONENT=client -DBUILD_TESTING=ON
+cmake --build "$client_test_build" --parallel 2
+ctest --test-dir "$client_test_build" --output-on-failure
 
 [[ -d "$project_dir/.git" ]] || fail "Kein Git-Original gefunden: $project_dir"
 project_dir="$(cd -- "$project_dir" && pwd -P)"
