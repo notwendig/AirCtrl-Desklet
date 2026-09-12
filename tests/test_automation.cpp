@@ -67,6 +67,45 @@ private slots:
         engine.processTime(QDateTime(QDate(2026,9,8),QTime(7,0))); QCOMPARE(actions.size(),1);
     }
 
+    void daytimeWindowRequiresMatchingStatus() {
+        AutomationEngine engine(false); QSignalSpy actions(&engine,&AutomationEngine::actionRequested);
+        QVERIFY2(engine.loadScriptText(R"lua(
+            airctrl.schedule {
+                name="tag", days={1,2,3,4,5,6,7}, between="07:00-22:00",
+                ["if"]={mode="S", om="s", uil="0"}, catch_up=true,
+                set={mode="P", uil="1"}
+            }
+        )lua"),qPrintable(engine.lastError()));
+        const QDateTime morning(QDate(2026,9,8),QTime(8,0));
+        engine.statusEvent({{"mode","P"},{"om","s"},{"uil","0"}},morning);
+        QCOMPARE(actions.size(),0);
+        engine.statusEvent({{"mode","S"},{"om","s"},{"uil","0"}},morning.addSecs(60));
+        QCOMPARE(actions.size(),1);
+        QCOMPARE(actions.first()[0].toJsonObject(),QJsonObject({{"mode","P"},{"uil","1"}}));
+        const QString occurrence=actions.first()[2].toString();
+        QVERIFY(occurrence.contains("2026-09-08T07:00"));
+        engine.actionAccepted(occurrence); actions.clear();
+        engine.statusEvent({{"mode","S"},{"om","s"},{"uil","0"}},morning.addSecs(120));
+        QCOMPARE(actions.size(),0);
+    }
+
+    void windowEndsExclusivelyAndCanCrossMidnight() {
+        AutomationEngine daytime(false); QSignalSpy dayActions(&daytime,&AutomationEngine::actionRequested);
+        QVERIFY(daytime.loadScriptText(R"lua(
+            airctrl.schedule{name="tag",between="07:00-22:00",set={mode="P"}}
+        )lua"));
+        daytime.setConnected(true,{},QDateTime(QDate(2026,9,8),QTime(22,0)));
+        QCOMPARE(dayActions.size(),0);
+
+        AutomationEngine night(false); QSignalSpy nightActions(&night,&AutomationEngine::actionRequested);
+        QVERIFY(night.loadScriptText(R"lua(
+            airctrl.schedule{name="nacht",between="22:00-07:00",set={mode="S"}}
+        )lua"));
+        night.setConnected(true,{},QDateTime(QDate(2026,9,9),QTime(1,0)));
+        QCOMPARE(nightActions.size(),1);
+        QVERIFY(nightActions.first()[2].toString().contains("2026-09-08T22:00"));
+    }
+
     void statusEventContainsChangedValues() {
         AutomationEngine engine(false); QSignalSpy actions(&engine,&AutomationEngine::actionRequested);
         QVERIFY(engine.loadScriptText(R"lua(
@@ -129,6 +168,18 @@ private slots:
         QVERIFY(!wrongCatchUp.loadScriptText(
             "airctrl.schedule{name='x',at='07:00',catch_up='no',set={mode='P'}}"));
         QVERIFY(wrongCatchUp.lastError().contains("Boolean"));
+        AutomationEngine invalidWindow(false);
+        QVERIFY(!invalidWindow.loadScriptText(
+            "airctrl.schedule{name='x',between='07:00/22:00',set={mode='P'}}"));
+        QVERIFY(invalidWindow.lastError().contains("HH:MM-HH:MM"));
+        AutomationEngine atAndWindow(false);
+        QVERIFY(!atAndWindow.loadScriptText(
+            "airctrl.schedule{name='x',at='07:00',between='07:00-22:00',set={mode='P'}}"));
+        QVERIFY(atAndWindow.lastError().contains("genau eines"));
+        AutomationEngine invalidCondition(false);
+        QVERIFY(!invalidCondition.loadScriptText(
+            "airctrl.schedule{name='x',between='07:00-22:00',['if']={evil='x'},set={mode='P'}}"));
+        QVERIFY(invalidCondition.lastError().contains("schedule.if"));
         AutomationEngine tooMany(false);
         QVERIFY(!tooMany.loadScriptText(R"lua(
             for i=1,65 do

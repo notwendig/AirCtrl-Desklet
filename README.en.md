@@ -88,9 +88,11 @@ The alarm circle is independent of data freshness. Both are 26 px at the default
 ## Lua automation
 
 Open **right-click → Lua-Automatik** to edit and enable the local script. It is
-disabled by default. The supplied example schedules night mode at 22:00 and
-automatic day mode at 07:00. Its comments also form a complete event, status-field
-and control-value reference. `on_event(event)` receives `startup`, `time`,
+disabled by default. The supplied example schedules night mode at 22:00 and,
+between 07:00 and 22:00, conditionally corrects the confirmed night state to
+automatic day mode. Schedule rules support `at`, `between`, and status conditions
+through `["if"]`. Their comments also form a complete event, status-field and
+control-value reference. `on_event(event)` receives `startup`, `time`,
 `connected`, `disconnected`, `status`, `alarm` and `command`; status events expose
 both `event.status` and `event.changed`. `airctrl.set { ... }` uses the same field
 allow-list, local IPC connection and confirmed-state command path as the UI.

@@ -57,8 +57,12 @@ class RepositoryTests(unittest.TestCase):
         self.assertIn("install(TARGETS airctrl-server", cmake)
         self.assertIn("install(TARGETS airctrl-desklet airctrl-client", cmake)
         self.assertNotIn("airctrl-backend", cmake)
-        self.assertIn("add_executable(airctrl-server main.cpp)", server_cmake)
+        self.assertIn("main.cpp", server_cmake)
+        self.assertIn("server.cpp", server_cmake)
+        self.assertIn("server.h", server_cmake)
         self.assertIn("add_executable(airctrl-client cli_main.cpp)", client_cmake)
+        self.assertNotIn("Qt6", server_cmake)
+        self.assertIn("airctrl_client_common", client_cmake)
         self.assertIn("config/airctrld.cfg", cmake)
         locations = {preset["name"]: preset.get("binaryDir")
                      for preset in presets["configurePresets"]}
@@ -70,22 +74,42 @@ class RepositoryTests(unittest.TestCase):
         self.assertIn("host=AC2729-10", config)
         self.assertIn("port=5683", config)
         self.assertIn("port=5680", config)
-        server = (self.root / "src" / "server" / "main.cpp").read_text()
-        self.assertIn("QTcpServer", server)
-        self.assertNotIn("QLocalServer", server)
+        server = (self.root / "src" / "server" / "server.cpp").read_text()
+        server_header = (self.root / "src" / "server" / "server.h").read_text()
+        self.assertIn("<poll.h>", server)
+        self.assertIn("aioairctrl::Json", server_header)
+        self.assertIn("class AirCtrlServer final", server_header)
+        self.assertNotIn("class AirCtrlServer final", server)
+        self.assertIn("AirCtrlServer::run()", server)
+        self.assertNotIn("#include <Q", server)
+        self.assertNotIn("QTcpServer", server)
 
     def test_server_and_client_sources_are_physically_separated(self):
         server_sources = "\n".join(
             path.read_text() for path in (self.root / "src" / "server").rglob("*.cpp"))
+        server_header = (self.root / "src" / "server" / "server.h").read_text()
         client_sources = "\n".join(
             path.read_text() for path in (self.root / "src" / "client").rglob("*.cpp"))
         common_sources = "\n".join(
             path.read_text() for path in (self.root / "src" / "common").rglob("*.cpp"))
-        self.assertIn("aioairctrl/client.hpp", server_sources)
+        self.assertIn("aioairctrl/client.hpp", server_header)
         self.assertNotIn("aioairctrl", client_sources)
-        self.assertNotIn("QWidget", server_sources)
+        self.assertNotIn("#include <Q", server_sources)
+        self.assertNotIn("#include <Q", server_header)
+        self.assertNotIn("Qt6", server_sources)
         self.assertNotIn("aioairctrl", common_sources)
-        self.assertNotIn("QWidget", common_sources)
+        self.assertNotIn("#include <Q", common_sources)
+        self.assertFalse((self.root / "src" / "common" / "CMakeLists.txt").exists())
+        self.assertTrue((self.root / "src" / "client" / "controlvalues.cpp").is_file())
+        self.assertTrue((self.root / "src" / "client" / "ipc.cpp").is_file())
+
+    def test_server_cmake_branch_does_not_discover_qt(self):
+        cmake = (self.root / "CMakeLists.txt").read_text()
+        server_branch = cmake[cmake.index('if(AIRCTRL_COMPONENT STREQUAL "server")'):
+                              cmake.index('if(CMAKE_CXX_COMPILER_ID')]
+        self.assertLess(server_branch.index("add_subdirectory(src/server)"),
+                        server_branch.index("find_package(Qt6"))
+        self.assertIn("else()", server_branch)
 
     def test_diagnostic_report_iterates_diagnostic_fields(self):
         diagnostics = (self.root / "src" / "client" / "diagnostics.cpp").read_text()

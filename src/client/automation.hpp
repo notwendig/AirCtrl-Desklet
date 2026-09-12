@@ -81,8 +81,11 @@ private:
     struct Schedule {
         QString name;
         QTime at;
+        QTime until;
         QSet<int> days;
+        QJsonObject conditions;
         QJsonObject values;
+        bool hasWindow = false;
         bool catchUp = true;
     };
     struct PendingAction {
@@ -112,6 +115,7 @@ private:
     void flushActions();
     void evaluateSchedules(const QDateTime& now);
     QString occurrenceFor(const Schedule& schedule, const QDateTime& now, QDateTime* when = nullptr) const;
+    bool conditionsMatch(const Schedule& schedule) const;
     bool occurrenceHandled(const QString& key) const;
     void rememberOccurrence(const QString& key);
 

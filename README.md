@@ -122,8 +122,8 @@ Die Kreise messen bei Standardschrift 26 px und wachsen mit der Schriftgröße.
 Unter **Rechtsklick → Lua-Automatik** öffnet sich der integrierte Skripteditor.
 Die Automatik ist nach Installation zunächst ausgeschaltet. Das mitgelieferte
 Beispiel enthält als Kommentare die vollständige Ereignis-, Statusfeld- und
-Steuerwertreferenz. Aktiv schaltet es täglich um 22:00 Uhr auf Nacht und um
-07:00 Uhr auf Tag:
+Steuerwertreferenz. Aktiv schaltet es täglich um 22:00 Uhr auf Nacht. Zwischen
+07:00 und 22:00 Uhr korrigiert es den bestätigten Nachtzustand auf Tag:
 
 ```lua
 airctrl.schedule {
@@ -133,7 +133,10 @@ airctrl.schedule {
 }
 
 airctrl.schedule {
-    name = "tag", at = "07:00",
+    name = "tag", between = "07:00-22:00",
+    days = {1, 2, 3, 4, 5, 6, 7},
+    ["if"] = { mode = "S", om = "s", uil = "0" },
+    catch_up = true,
     set = { mode = "P", uil = "1" }
 }
 ```
@@ -142,8 +145,10 @@ airctrl.schedule {
 `status`, `alarm` und `command`. Statusereignisse enthalten den vollständigen
 bestätigten Zustand in `event.status` sowie Änderungen in `event.changed`.
 `airctrl.set { ... }` verwendet dieselbe Positivliste, IPC-Verbindung und
-Bestätigungslogik wie die Gerätetasten. Pro Zeitplantermin gibt es höchstens einen Schaltversuch;
-bereits passende Zustände erzeugen keinen Netzwerkbefehl.
+Bestätigungslogik wie die Gerätetasten. `between` beschreibt ein aktives
+Zeitfenster; `["if"]` verlangt übereinstimmende bestätigte Statuswerte. Pro
+Zeitplantermin oder Fenster gibt es höchstens einen Schaltversuch; bereits
+passende Zielzustände erzeugen keinen Netzwerkbefehl.
 
 Lua 5.4.9 wird aus dem geprüften offiziellen Quellstand eingebettet. Die Sandbox
 stellt nur Basis-, Tabellen-, String-, Mathematik- und UTF-8-Funktionen bereit:

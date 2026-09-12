@@ -227,14 +227,17 @@ Diese Optionen verändern das Widget; die Lichttaste oben steuert das reale Ger�
 ## Lua-Automatik
 
 **Rechtsklick → Lua-Automatik** öffnet Editor, Aktivierung und Ladezustand. Die
-Taste **Tag/Nacht-Beispiel** setzt einen Entwurf mit Nachtmodus um 22:00 Uhr und
-Automatikmodus um 07:00 Uhr ein. Seine Kommentare erklären sämtliche Ereignisse,
-bekannten Statusfelder und erlaubten Steuerwerte. Erst **Speichern und neu laden** übernimmt ihn.
+Taste **Tag/Nacht-Beispiel** setzt einen Entwurf mit Nachtmodus um 22:00 Uhr ein.
+Zwischen 07:00 und 22:00 Uhr korrigiert er den bestätigten Nachtzustand auf
+Automatikmodus. Seine Kommentare erklären sämtliche Ereignisse, bekannten
+Statusfelder und erlaubten Steuerwerte. Erst **Speichern und neu laden** übernimmt ihn.
 
 Lua kann auf Statusänderungen, Verbindung, Alarme, Befehlsresultate und den
 Minutentakt reagieren. Zeitpläne werden lokal ausgewertet. Ist das Widget beim
 Termin nicht aktiv, wird beim nächsten Start nur der jüngste fällige Zustand
-nachgeholt. Ein übergebener Geräteauftrag wird nicht automatisch wiederholt.
+nachgeholt. Regeln können mit `between` ein Zeitfenster und mit `["if"]`
+erforderliche bestätigte Statuswerte festlegen. Ein übergebener Geräteauftrag
+wird nicht automatisch wiederholt.
 
 Die Automatik ist nach der Installation aus. Skripte haben keinen Datei-,
 Netzwerk-, Shell- oder Prozesszugriff; Speicher und Ausführung sind begrenzt.

@@ -140,10 +140,13 @@
 -- ZEITPLÄNE
 -- ==========================================================================
 -- name      eindeutiger Name: 1..64 Zeichen aus A-Z, a-z, 0-9, _ . -
--- at        lokale Rechnerzeit exakt als "HH:MM"
+-- at        lokaler Zeitpunkt exakt als "HH:MM"
+-- between   alternativ zu at: lokales Zeitfenster "HH:MM-HH:MM"; das Ende
+--           gehört nicht mehr zum Fenster, Zeitfenster über Mitternacht sind erlaubt
 -- days      optional: 1=Montag ... 7=Sonntag; ohne days täglich
+-- ["if"]    optional: nur ausführen, wenn alle bestätigten Statuswerte passen
 -- catch_up  optionaler Boolean, Standard true:
---           true  = nach einem Start nur jüngsten fälligen Termin nachholen
+--           true  = nach einem Start den jüngsten Termin bzw. das aktive Fenster nachholen
 --           false = ausschließlich in der exakten Minute ausführen
 -- set       erlaubte Steuerwerte aus der Liste oben
 --
@@ -160,8 +163,9 @@ airctrl.schedule {
 
 airctrl.schedule {
     name = "tag",
-    at = "07:00",
     days = {1, 2, 3, 4, 5, 6, 7},
+    between = "07:00-22:00",
+    ["if"] = { mode = "S", om = "s", uil = "0" },
     catch_up = true,
     set = { mode = "P", uil = "1" }
 }

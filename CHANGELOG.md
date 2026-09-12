@@ -21,6 +21,8 @@
   Serverkonfiguration; der v1.05-Mischzustand aus Unix-Socket und TCP ist entfernt.
 - Wiederholte Lua-Warnereignisse bei unverändertem Alarm werden verhindert,
   indem die stabile Alarmkennung statt des wechselnden Meldungstextes verglichen wird.
+- Lua-Zeitpläne unterstützen neben `at` nun Zeitfenster mit `between` und
+  bedingte Ausführung anhand bestätigter Statuswerte über `["if"]`.
 - Eigene C++-Schnittstellen auf Englisch im Doxygen-Stil dokumentiert; optionales
   `Doxyfile` erzeugt die HTML-Referenz außerhalb des Quellbaums.
 - CI-Branchfilter vom nicht verwendeten `main` auf den veröffentlichten Branch

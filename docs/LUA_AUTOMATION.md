@@ -29,18 +29,30 @@ airctrl.schedule {
 
 airctrl.schedule {
     name = "tag",
-    at = "07:00",
     days = {1, 2, 3, 4, 5, 6, 7},
+    between = "07:00-22:00",
+    ["if"] = { mode = "S", om = "s", uil = "0" },
+    catch_up = true,
     set = { mode = "P", uil = "1" }
 }
 ```
 
-`at` ist lokale Rechnerzeit im Format `HH:MM`. Die Wochentage sind Montag `1`
-bis Sonntag `7`; ohne `days` gilt der Termin täglich. `catch_up` ist standardmäßig
-`true`: Startet das Widget nach dem Termin, wird nur der **jüngste** fällige
-Zeitplan berücksichtigt. Mit `catch_up=false` gilt die Regel ausschließlich in
-der exakten Minute. Zwei Zeitpläne dürfen sich an denselben Wochentagen nicht zur
-gleichen Uhrzeit überschneiden.
+`at` ist lokale Rechnerzeit im Format `HH:MM`. Alternativ beschreibt `between`
+ein Zeitfenster als `HH:MM-HH:MM`; dessen Ende gehört nicht mehr zum Fenster.
+Auch Fenster über Mitternacht sind erlaubt. Dabei beziehen sich die Wochentage
+auf den Tag, an dem das Fenster beginnt. Die Wochentage sind Montag `1` bis
+Sonntag `7`; ohne `days` gilt die Regel täglich.
+
+Die optionale Tabelle `["if"]` vergleicht alle genannten Werte mit dem zuletzt
+bestätigten Gerätestatus. Die Schaltung erfolgt nur bei vollständiger
+Übereinstimmung. Die eckige Schreibweise ist erforderlich, weil `if` in Lua ein
+reserviertes Wort ist.
+
+`catch_up` ist standardmäßig `true`: Startet das Widget nach einem Termin oder
+innerhalb eines Fensters, wird nur der **jüngste** fällige Zeitplan berücksichtigt.
+Mit `catch_up=false` gilt auch eine Fensterregel ausschließlich in der exakten
+Startminute. Zwei Zeitpläne dürfen sich an denselben Wochentagen nicht zur
+gleichen Startzeit überschneiden.
 
 Ein Termin wird dauerhaft als behandelt gespeichert, sobald sein Auftrag an die
 Gerätesteuerung übergeben wurde. Ein fehlgeschlagener Geräteauftrag wird nicht
@@ -101,10 +113,12 @@ Abstand verwenden.
 
 ### `airctrl.schedule { ... }`
 
-Registriert beim Laden einen Zeitplan mit `name`, `at`, optional `days`, optional
-`catch_up` und der Steuerwerttabelle `set`. `name` darf 1–64 Zeichen aus
-`A–Z`, `a–z`, `0–9`, `_`, `.`, `-` enthalten und muss eindeutig sein. Pro
-Skript sind höchstens 64 Zeitpläne erlaubt; `catch_up` ist ein Boolean.
+Registriert beim Laden einen Zeitplan mit `name`, genau einem von `at` oder
+`between`, optional `days`, optional `["if"]`, optional `catch_up` und der
+Steuerwerttabelle `set`. `name` darf 1–64 Zeichen aus `A–Z`, `a–z`, `0–9`, `_`,
+`.`, `-` enthalten und muss eindeutig sein. Pro Skript sind höchstens 64
+Zeitpläne erlaubt; `catch_up` ist ein Boolean. Bedingungen und Zielwerte
+verwenden dieselben geprüften Felder und Werttypen.
 
 ### `airctrl.status()`
 

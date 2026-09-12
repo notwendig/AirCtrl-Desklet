@@ -251,11 +251,28 @@ int AutomationEngine::luaSchedule(lua_State* state) {
     if(self->schedules_.size()>=64) return luaL_error(state,"höchstens 64 Zeitpläne erlaubt");
     const int table=lua_absindex(state,1);
     const std::function<QString(const char*)> fieldString=[&](const char* name) { lua_getfield(state,table,name); const QString result=luaString(state,-1); lua_pop(state,1); return result; };
-    Schedule schedule; schedule.name=fieldString("name"); const QString at=fieldString("at");
+    Schedule schedule; schedule.name=fieldString("name");
+    const QString at=fieldString("at"); const QString between=fieldString("between");
     static const QRegularExpression validName("^[A-Za-z0-9_.-]{1,64}$");
     if(!validName.match(schedule.name).hasMatch()) return luaL_error(state,"schedule.name: 1-64 Zeichen aus A-Z, a-z, 0-9, _.- erwartet");
-    schedule.at=QTime::fromString(at,"HH:mm");
-    if(!schedule.at.isValid() || schedule.at.toString("HH:mm")!=at) return luaL_error(state,"schedule.at: HH:MM erwartet");
+    if(at.isEmpty()==between.isEmpty())
+        return luaL_error(state,"schedule: genau eines von at oder between erwartet");
+    if(!at.isEmpty()) {
+        schedule.at=QTime::fromString(at,"HH:mm");
+        if(!schedule.at.isValid() || schedule.at.toString("HH:mm")!=at)
+            return luaL_error(state,"schedule.at: HH:MM erwartet");
+    } else {
+        static const QRegularExpression validWindow("^([0-9]{2}:[0-9]{2})-([0-9]{2}:[0-9]{2})$");
+        const QRegularExpressionMatch match=validWindow.match(between);
+        if(!match.hasMatch()) return luaL_error(state,"schedule.between: HH:MM-HH:MM erwartet");
+        schedule.at=QTime::fromString(match.captured(1),"HH:mm");
+        schedule.until=QTime::fromString(match.captured(2),"HH:mm");
+        if(!schedule.at.isValid() || !schedule.until.isValid() ||
+           schedule.at.toString("HH:mm")!=match.captured(1) ||
+           schedule.until.toString("HH:mm")!=match.captured(2) || schedule.at==schedule.until)
+            return luaL_error(state,"schedule.between: zwei verschiedene Uhrzeiten als HH:MM-HH:MM erwartet");
+        schedule.hasWindow=true;
+    }
     for(const Schedule& existing:self->schedules_) if(existing.name==schedule.name)
         return luaL_error(state,"doppelter Zeitplanname: %s",schedule.name.toUtf8().constData());
     lua_getfield(state,table,"days");
@@ -276,6 +293,12 @@ int AutomationEngine::luaSchedule(lua_State* state) {
         lua_pop(state,1); return luaL_error(state,"schedule.catch_up: Boolean erwartet");
     }
     if(!lua_isnil(state,-1)) schedule.catchUp=lua_toboolean(state,-1);
+    lua_pop(state,1);
+    lua_getfield(state,table,"if");
+    if(!lua_isnil(state,-1)) {
+        QString error; schedule.conditions=simpleTable(state,-1,&error);
+        if(!error.isEmpty()) { lua_pop(state,1); return luaL_error(state,"schedule.if: %s",error.toUtf8().constData()); }
+    }
     lua_pop(state,1);
     lua_getfield(state,table,"set"); QString error; schedule.values=simpleTable(state,-1,&error); lua_pop(state,1);
     if(!error.isEmpty()) return luaL_error(state,"schedule.set: %s",error.toUtf8().constData());
@@ -355,6 +378,20 @@ void AutomationEngine::commandEvent(const QString& source, bool ok, const QStrin
 }
 
 QString AutomationEngine::occurrenceFor(const Schedule& schedule, const QDateTime& now, QDateTime* when) const {
+    if(schedule.hasWindow) {
+        const bool overnight=schedule.until<schedule.at;
+        QDate startDate=now.date();
+        if(overnight && now.time()<schedule.until) startDate=startDate.addDays(-1);
+        if(!schedule.days.contains(startDate.dayOfWeek())) return {};
+        const QDateTime start(startDate,schedule.at,now.timeZone());
+        const QDateTime end(startDate.addDays(overnight ? 1 : 0),schedule.until,now.timeZone());
+        if(!start.isValid() || !end.isValid() || now<start || now>=end) return {};
+        if(!schedule.catchUp &&
+           (now.date()!=start.date() || now.time().hour()!=start.time().hour() ||
+            now.time().minute()!=start.time().minute())) return {};
+        if(when) *when=start;
+        return schedule.name+"|"+start.toString(Qt::ISODate);
+    }
     for(int back=0;back<=7;++back) {
         const QDate date=now.date().addDays(-back); if(!schedule.days.contains(date.dayOfWeek())) continue;
         const QDateTime candidate(date,schedule.at,now.timeZone());
@@ -366,6 +403,12 @@ QString AutomationEngine::occurrenceFor(const Schedule& schedule, const QDateTim
         return schedule.name+"|"+candidate.toString(Qt::ISODate);
     }
     return {};
+}
+
+bool AutomationEngine::conditionsMatch(const Schedule& schedule) const {
+    for(QJsonObject::const_iterator i=schedule.conditions.begin();i!=schedule.conditions.end();++i)
+        if(!latestStatus_.contains(i.key()) || latestStatus_.value(i.key())!=i.value()) return false;
+    return true;
 }
 
 bool AutomationEngine::occurrenceHandled(const QString& key) const { return handledOccurrences_.contains(key); }
@@ -386,7 +429,7 @@ void AutomationEngine::evaluateSchedules(const QDateTime& now) {
         if(key.isEmpty()) continue;
         if(!selected || when>selectedTime) { selected=&schedule; selectedTime=when; selectedKey=key; }
     }
-    if(!selected || occurrenceHandled(selectedKey)) return;
+    if(!selected || occurrenceHandled(selectedKey) || !conditionsMatch(*selected)) return;
     lastAction_="Zeitplan "+selected->name+" fällig · "+selectedTime.toString(Qt::ISODate);
     emit actionRequested(selected->values,"Lua-Zeitplan "+selected->name,selectedKey);
 }
