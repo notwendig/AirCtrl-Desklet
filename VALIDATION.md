@@ -1,8 +1,25 @@
-# Validierung – v1.08
+# Validierung – v1.09
 
 Stand: 2026-09-14.
 
-## Prüfungen in v1.08
+## Prüfungen in v1.09
+
+- Frische Server- und Client-Debug-Builds mit GCC 13.3.0, Qt 6.8.3 und
+  `-Wall -Wextra -Wpedantic` bestehen ohne C++-Warnung.
+- Serverseitig bestehen `coap`, `statuslog` und `automation`: **3/3** in
+  0,27 s. Clientseitig bestehen `coap`, `statuslog` und `desklet`: **3/3** in
+  40,15 s.
+- Der Automationstest bestätigt, dass die manuelle Sperre keine Lua-Aktion
+  zulässt, einen Serverneustart übersteht und nach der Freigabe den aktuellen
+  Status sofort neu auswertet.
+- Der Zwei-Client-Integrationstest bestätigt die serverweite Meldung der Sperre.
+  `cl`, `uil` und `aqil` lösen sie nicht aus; `mode`/`om` lösen sie aus.
+- Das Desklet zeigt die Sperre als langsames Blinken der Power-Taste. Die
+  Freigabenachricht hebt sie auf beiden Clients auf, ohne einen Geräte- oder
+  Power-Auftrag zu erzeugen.
+- Der Repositoryprüfer und alle **24 Python-Repositorytests** bestehen.
+
+## Historischer Stand v1.08
 
 - Ein frischer Server-Debug-Build mit GCC 13.3.0 und den strikten Warnoptionen
   besteht ohne Warnung. `coap`, `statuslog` und `automation` bestehen: **3/3**.

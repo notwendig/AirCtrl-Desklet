@@ -40,7 +40,10 @@ private:
         using namespace aioairctrl;
         using namespace std::chrono;
         try {
-            sockaddr_in subscriber{}; detail::Bytes token; unsigned sequence=0; std::string power="1";
+            sockaddr_in subscriber{}; detail::Bytes token; unsigned sequence=0;
+            Json reported={{"pwr","1"},{"rh",50},{"mode","P"},{"om","s"},
+                           {"func","PH"},{"cl",false},{"uil","1"},{"aqil",100},
+                           {"rhset",50},{"dt",0}};
             int notificationsAtPreviousControl=-1;
             steady_clock::time_point next=steady_clock::now()+milliseconds(150);
             while(!stopped_) {
@@ -73,13 +76,14 @@ private:
                             ++controlsWithoutInterveningStatus;
                         notificationsAtPreviousControl=receivedStatuses;
                         const Json desired=Json::parse(cipher_.decrypt(request.payload)).at("state").at("desired");
-                        power=desired.at("pwr").get<std::string>();
+                        for(Json::const_iterator item=desired.begin();item!=desired.end();++item)
+                            reported[item.key()]=item.value();
                         send({1,68,request.mid,request.token,{},R"({"status":"success"})"},peer);
                     } else throw std::runtime_error("unexpected test request");
                 }
                 if(notificationsEnabled.load() && !token.empty() && steady_clock::now()>=next) {
                     detail::Message response{1,69,77,token,{{6,{static_cast<unsigned char>(sequence++%256)}}},{}};
-                    response.payload=cipher_.encrypt(Json{{"state",{{"reported",{{"pwr",power},{"rh",50}}}}}}.dump());
+                    response.payload=cipher_.encrypt(Json{{"state",{{"reported",reported}}}}.dump());
                     ++notifications;
                     send(response,subscriber); next=steady_clock::now()+milliseconds(150);
                 }

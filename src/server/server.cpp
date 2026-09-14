@@ -248,6 +248,14 @@ bool unsignedValue(const Json& value, std::uint64_t* result) {
     return true;
 }
 
+bool affectsAutomation(const Json& values) {
+    // Illumination (aqil/uil) and child lock (cl) remain independent convenience
+    // controls. Every other panel setting represents a manual operating choice.
+    for (const char* key : {"pwr", "mode", "om", "func", "rhset", "dt"})
+        if (values.contains(key)) return true;
+    return false;
+}
+
 int setNonBlocking(int descriptor) {
     const int flags = fcntl(descriptor, F_GETFL, 0);
     return flags < 0 ? -1 : fcntl(descriptor, F_SETFL, flags | O_NONBLOCK);
@@ -541,6 +549,14 @@ void AirCtrlServer::handle(std::uint64_t client, const Json& request) {
         if (owned) broadcastAutomationState();
         return;
     }
+    if (kind == "automation_resume") {
+        const bool wasOverridden = automation_.manualOverride();
+        automation_.setManualOverride(false);
+        if (wasOverridden && lastStatus_.is_object() && !lastStatus_.empty())
+            automation_.reevaluate(lastStatus_);
+        broadcastAutomationState();
+        return;
+    }
     if (kind == "configure") {
         send(client, {{"_airctrl", "error"},
             {"error", "Geräteeinstellungen gehören ausschließlich in /etc/airctrld.cfg."}});
@@ -576,6 +592,9 @@ void AirCtrlServer::handle(std::uint64_t client, const Json& request) {
                 {"error", "Der Server hat noch keine aktive Geräteverbindung."}});
             return;
         }
+        if (automation_.enabled() && affectsAutomation(values) &&
+            automation_.setManualOverride(true, "Manuelle Einstellung an einem Client"))
+            broadcastAutomationState();
         {
             std::lock_guard<std::mutex> lock(commandMutex_);
             DeviceCommand command;

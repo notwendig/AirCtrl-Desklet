@@ -53,8 +53,15 @@ public:
     Json stateJson() const;
     std::uint64_t revision() const { return revision_; }
     const std::string& scriptPath() const { return config_.scriptPath; }
+    bool enabled() const { return enabled_; }
+    bool manualOverride() const { return manualOverride_; }
 
     void setActionHandler(ActionHandler handler) { actionHandler_ = std::move(handler); }
+    /** Suspend or resume all Lua actions after a manual client command. */
+    bool setManualOverride(bool active, const std::string& reason = {});
+    /** Re-run status rules and the currently applicable schedule immediately. */
+    void reevaluate(const Json& status,
+                    std::chrono::system_clock::time_point now = std::chrono::system_clock::now());
     void setConnected(bool connected, const std::string& reason = {});
     void statusEvent(const Json& status);
     void commandEvent(const std::string& source, bool ok, const std::string& message);
@@ -101,7 +108,7 @@ private:
     void appendLog(const std::string& level, const std::string& message);
     bool callEvent(const std::string& type, Json detail = Json::object());
     void flushActions();
-    void evaluateSchedules(std::chrono::system_clock::time_point now);
+    void evaluateSchedules(std::chrono::system_clock::time_point now, bool force = false);
     std::string occurrenceFor(const Schedule& schedule,
                               std::chrono::system_clock::time_point now,
                               std::chrono::system_clock::time_point* when) const;
@@ -112,6 +119,8 @@ private:
     lua_State* state_ = nullptr;
     MemoryLimit memory_;
     bool enabled_ = false;
+    bool manualOverride_ = false;
+    std::string manualOverrideReason_;
     bool connected_ = false;
     bool dispatching_ = false;
     bool validating_ = false;

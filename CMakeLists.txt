@@ -8,9 +8,9 @@ if(NOT AIRCTRL_COMPONENT STREQUAL "server" AND NOT AIRCTRL_COMPONENT STREQUAL "c
         "debug-server, debug-client, release-server or release-client.")
 endif()
 if(AIRCTRL_COMPONENT STREQUAL "server")
-    project(airctrl_desklet VERSION 1.08 LANGUAGES C CXX)
+    project(airctrl_desklet VERSION 1.09 LANGUAGES C CXX)
 else()
-    project(airctrl_desklet VERSION 1.08 LANGUAGES CXX)
+    project(airctrl_desklet VERSION 1.09 LANGUAGES CXX)
 endif()
 
 set(CMAKE_CXX_STANDARD 17)

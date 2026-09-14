@@ -2,7 +2,7 @@
 
 **Dein Philips-Luftreiniger. Direkt auf dem Linux-Desktop.**
 
-C++17 · Qt 6 · Lua 5.4 · TCP-Server/Clients · MIT · Version **v1.08**
+C++17 · Qt 6 · Lua 5.4 · TCP-Server/Clients · MIT · Version **v1.09**
 
 [English](README.en.md) · [Bedienung](docs/USER_GUIDE.de.md) · [Entwicklung](docs/DEVELOPMENT.md) · [C++-API](docs/CPP_API.md) · [Änderungen](CHANGELOG.md)
 
@@ -40,6 +40,9 @@ Die Oberfläche ist derzeit deutschsprachig.
 - Serverseitige Lua-Automatik für Status-, Verbindungs-, Alarm- und
   Zeitereignisse einschließlich vollständiger `between`-Tag/Nacht-Regeln;
   exklusiver Editor auf den Clients.
+- Manuelle Betriebsänderungen sperren die Lua-Automatik serverweit. Die langsam
+  blinkende Power-Taste zeigt dies auf allen Clients und gibt sie mit einem Klick
+  wieder frei. Licht und Kindersicherung beeinflussen die Automatik nicht.
 
 ![Helle Standarddarstellung des Widgets](docs/images/desklet-light.png)
 

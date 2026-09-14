@@ -55,6 +55,8 @@ public slots:
     void setHumidity(int percent);
     /** @brief Submit an allow-listed set of panel values. */
     void setPanelValues(const QJsonObject& values);
+    /** @brief Clear the server-wide manual override and re-evaluate Lua immediately. */
+    void resumeAutomation();
     /** Acquire the server-wide edit lock and download the current Lua script. */
     void beginAutomationEdit();
     /** Upload, validate and activate the edited script on the server. */

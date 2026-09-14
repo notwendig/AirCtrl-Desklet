@@ -341,10 +341,13 @@ Json AutomationEngine::stateJson() const {
     std::set<std::string> ruleNames;
     for (const Schedule& schedule : schedules_) ruleNames.insert(schedule.name);
     Json result = {{"enabled", enabled_}, {"loaded", state_ != nullptr && lastError_.empty()},
+                   {"manual_override", manualOverride_},
                    {"revision", revision_}, {"schedule_count", ruleNames.size()},
                    {"lua_version", LUA_RELEASE}, {"script_path", config_.scriptPath},
                    {"last_event", lastEvent_}, {"last_action", lastAction_}};
     if (!lastError_.empty()) result["error"] = lastError_;
+    if (manualOverride_ && !manualOverrideReason_.empty())
+        result["manual_override_reason"] = manualOverrideReason_;
     result["log"] = logEntries_;
     return result;
 }
@@ -358,6 +361,10 @@ bool AutomationEngine::loadPersistentState(std::string* error) {
         file >> state;
         if (!state.is_object()) throw std::runtime_error("JSON-Objekt erwartet");
         if (state.contains("enabled") && state["enabled"].is_boolean()) enabled_ = state["enabled"].get<bool>();
+        if (state.contains("manual_override") && state["manual_override"].is_boolean())
+            manualOverride_ = state["manual_override"].get<bool>();
+        if (state.contains("manual_override_reason") && state["manual_override_reason"].is_string())
+            manualOverrideReason_ = cleanLine(state["manual_override_reason"].get<std::string>(), 200U);
         if (state.contains("revision") && state["revision"].is_number_unsigned())
             revision_ = std::max<std::uint64_t>(1U, state["revision"].get<std::uint64_t>());
         if (state.contains("handled_occurrences") && state["handled_occurrences"].is_array()) {
@@ -373,7 +380,8 @@ bool AutomationEngine::loadPersistentState(std::string* error) {
 }
 
 bool AutomationEngine::savePersistentState(std::string* error) const {
-    const Json state = {{"enabled", enabled_}, {"revision", revision_},
+    const Json state = {{"enabled", enabled_}, {"manual_override", manualOverride_},
+                        {"manual_override_reason", manualOverrideReason_}, {"revision", revision_},
                         {"handled_occurrences", handledOccurrences_}};
     return writeAtomic(config_.statePath, state.dump(2) + "\n", error);
 }
@@ -692,7 +700,7 @@ int AutomationEngine::luaStatus(lua_State* state) {
 }
 
 bool AutomationEngine::callEvent(const std::string& type, Json detail) {
-    if (state_ == nullptr || dispatching_ || !lastError_.empty()) return false;
+    if (state_ == nullptr || dispatching_ || !lastError_.empty() || manualOverride_) return false;
     lua_getglobal(state_, "on_event");
     if (lua_isnil(state_, -1)) {
         lua_pop(state_, 1);
@@ -734,6 +742,34 @@ void AutomationEngine::flushActions() {
                         std::move(action.occurrenceKey)});
 }
 
+bool AutomationEngine::setManualOverride(bool active, const std::string& reason) {
+    if (manualOverride_ == active) return false;
+    manualOverride_ = active;
+    manualOverrideReason_ = active ? cleanLine(reason, 200U) : std::string{};
+    lastEvent_ = active ? "Automatik manuell gesperrt" : "Automatik-Sperre aufgehoben";
+    appendLog("info", active
+        ? "Lua-Automatik durch eine manuelle Geräteeinstellung gesperrt."
+        : "Manuelle Automatik-Sperre aufgehoben; Skript wird neu ausgewertet.");
+    std::string error;
+    if (!savePersistentState(&error)) appendLog("error", error);
+    return true;
+}
+
+void AutomationEngine::reevaluate(const Json& status,
+                                  std::chrono::system_clock::time_point now) {
+    if (manualOverride_ || state_ == nullptr || !lastError_.empty()) return;
+    latestStatus_ = status;
+    Json changed = Json::object();
+    for (Json::const_iterator item = status.begin(); item != status.end(); ++item)
+        changed[item.key()] = {{"old", item.value()}, {"new", item.value()}};
+    callEvent("status", {{"status", status}, {"changed", changed},
+                         {"first", false}, {"reevaluation", true}});
+    const std::time_t value = std::chrono::system_clock::to_time_t(now);
+    lastMinute_ = formatLocal(value, "%Y-%m-%dT%H:%M");
+    callEvent("time", timeDetail(now));
+    evaluateSchedules(now, true);
+}
+
 void AutomationEngine::setConnected(bool connected, const std::string& reason) {
     if (connected_ == connected) return;
     connected_ = connected;
@@ -756,6 +792,7 @@ void AutomationEngine::statusEvent(const Json& status) {
     const bool first = latestStatus_.empty();
     latestStatus_ = status;
     if (!connected_) setConnected(true);
+    if (manualOverride_) return;
     callEvent("status", {{"status", status}, {"changed", changed}, {"first", first}});
     publishDeviceAlerts(status);
     evaluateSchedules(std::chrono::system_clock::now());
@@ -854,8 +891,8 @@ void AutomationEngine::actionAccepted(const std::string& occurrenceKey) {
     if (!savePersistentState(&error)) appendLog("error", error);
 }
 
-void AutomationEngine::evaluateSchedules(std::chrono::system_clock::time_point now) {
-    if (state_ == nullptr || !lastError_.empty() || !connected_ || schedules_.empty()) return;
+void AutomationEngine::evaluateSchedules(std::chrono::system_clock::time_point now, bool force) {
+    if (state_ == nullptr || !lastError_.empty() || manualOverride_ || !connected_ || schedules_.empty()) return;
     const Schedule* selected = nullptr;
     std::chrono::system_clock::time_point selectedTime{};
     std::string selectedKey;
@@ -869,9 +906,9 @@ void AutomationEngine::evaluateSchedules(std::chrono::system_clock::time_point n
             selectedKey = key;
         }
     }
-    if (selected == nullptr ||
+    if (selected == nullptr || (!force &&
         std::find(handledOccurrences_.begin(), handledOccurrences_.end(), selectedKey) !=
-            handledOccurrences_.end()) return;
+            handledOccurrences_.end())) return;
     lastAction_ = "Zeitplan " + selected->name + " fällig · " +
         formatLocal(std::chrono::system_clock::to_time_t(selectedTime), "%Y-%m-%dT%H:%M:%S%z");
     if (actionHandler_)
@@ -879,7 +916,7 @@ void AutomationEngine::evaluateSchedules(std::chrono::system_clock::time_point n
 }
 
 void AutomationEngine::processTime(std::chrono::system_clock::time_point now) {
-    if (state_ == nullptr) return;
+    if (state_ == nullptr || manualOverride_) return;
     const std::time_t value = std::chrono::system_clock::to_time_t(now);
     const std::string minute = formatLocal(value, "%Y-%m-%dT%H:%M");
     if (minute == lastMinute_) return;

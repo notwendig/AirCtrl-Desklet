@@ -1,5 +1,18 @@
 # Änderungsübersicht
 
+## v1.09 – 2026-09-14
+
+- Manuelle Änderungen von Power, Betriebsart/Lüfterstufe, Zielfeuchte,
+  Gerätefunktion oder Timer sperren die serverseitige Lua-Automatik für alle
+  Clients.
+- Licht/Anzeige (`aqil`, `uil`) und Kindersicherung (`cl`) lösen die Sperre
+  ausdrücklich nicht aus.
+- Während der Sperre blinkt die Power-Taste aller verbundenen Clients langsam.
+  Ein Klick hebt nur die Sperre auf, schaltet nicht den Gerätestrom und wertet
+  Statusregeln sowie den aktuell gültigen Zeitplan sofort neu aus.
+- Die manuelle Sperre wird in der serverseitigen Zustandsdatei gespeichert und
+  bleibt daher bei einem Serverneustart erhalten.
+
 ## v1.08 – 2026-09-14
 
 - Das Desklet prüft seine TCP-Verbindung im Leerlauf per `ping`/`pong`. Ein

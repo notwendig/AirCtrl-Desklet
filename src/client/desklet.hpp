@@ -84,6 +84,7 @@ private:
     bool waylandSession_ = false;
     bool connected_ = false;
     bool awaitingConfirmation_ = false;
+    bool automationResumeRequested_ = false;
     bool leftPressed_ = false;
     bool rightPressed_ = false;
     bool mouseMoved_ = false;

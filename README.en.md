@@ -2,7 +2,7 @@
 
 **Your Philips air purifier, right on your Linux desktop.**
 
-C++17 · Qt 6 · Lua 5.4 · TCP server/clients · MIT · **v1.08**
+C++17 · Qt 6 · Lua 5.4 · TCP server/clients · MIT · **v1.09**
 
 [Deutsch](README.md) · [Development](docs/DEVELOPMENT.md) · [C++ API](docs/CPP_API.md) · [Changelog](CHANGELOG.md)
 
@@ -32,6 +32,9 @@ It is a standalone Qt application, **not a Cinnamon JavaScript desklet**.
 - Diagnostics with raw JSON, hexadecimal codes and a full copyable report.
 - Server-side sandboxed Lua automation for status, connection, alarm and time
   events, including complete `between` day/night rules, with an exclusive editor on clients.
+- Manual operating changes suspend Lua server-wide. A slowly blinking power
+  button reports the override on every client and resumes/re-evaluates Lua with
+  one click; lighting and child-lock changes do not suspend it.
 
 ![Light theme rendered by the actual Qt application in demo mode](docs/images/desklet-light.png)
 

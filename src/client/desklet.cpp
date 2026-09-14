@@ -77,6 +77,7 @@ QString automationStateLabel(const QJsonObject& state) {
     if (state.isEmpty()) return "Serverstatus unbekannt";
     if (!state.value("error").toString().isEmpty()) return "Fehler";
     if (!state.value("enabled").toBool()) return "aus";
+    if (state.value("manual_override").toBool()) return "manuell gesperrt";
     return state.value("loaded").toBool() ? "aktiv" : "Fehler";
 }
 QString automationDiagnostics(const QJsonObject& state) {
@@ -89,6 +90,8 @@ QString automationDiagnostics(const QJsonObject& state) {
         "Zeitpläne = "+QString::number(state.value("schedule_count").toInt())+"\n"
         "Letztes Ereignis = "+state.value("last_event").toString("—")+"\n"
         "Letzte Aktion = "+state.value("last_action").toString("—")+"\n";
+    if(state.value("manual_override").toBool())
+        text+="Automatik-Sperre = manuelle Geräteeinstellung; Power-Taste zum Freigeben\n";
     if(!state.value("error").toString().isEmpty())
         text+="Letzter Lua-Fehler = "+state.value("error").toString()+"\n";
     const QJsonArray log=state.value("log").toArray();
@@ -186,6 +189,8 @@ Desklet::Desklet(Preferences preferences, QString backend, bool demo)
     });
     connect(&controller_,&Controller::automationStateReceived,this,[this](const QJsonObject& state) {
         automationState_=state;
+        if(!state.value("manual_override").toBool()) automationResumeRequested_=false;
+        updateControls();
         updateMonitoring();
     });
     QShortcut* refresh=new QShortcut(QKeySequence("F5"),this);
@@ -274,6 +279,19 @@ void Desklet::sendValues(const QJsonObject& values) {
 void Desklet::openControl(int index) {
     if(!controls_[index]->isEnabled()) return;
     if(index==0) {
+        if(connected_ && automationState_.value("manual_override").toBool()) {
+            if(awaitingConfirmation_ || controller_.busy()) {
+                notice_="Gerätebefehl noch nicht abgeschlossen · Automatik danach freigeben";
+            } else if(automationResumeRequested_) {
+                notice_="Automatik-Freigabe wurde bereits angefordert …";
+            } else {
+                automationResumeRequested_=true;
+                notice_="Automatik-Sperre wird aufgehoben · Lua wird neu ausgewertet …";
+                controller_.resumeAutomation();
+            }
+            updateControls(); updateFooter();
+            return;
+        }
         if(demo_) { notice_="Vorschau – keine Gerätesteuerung"; updateFooter(); return; }
         if(awaitingConfirmation_ || controller_.busy()) {
             notice_="Ein Befehl läuft bereits · Geräterückmeldung abwarten …";
@@ -331,7 +349,7 @@ void Desklet::applyStatus(const QJsonObject& status) {
     updateEmblems(); updateValues(); updateControls(); updateFooter();
 }
 void Desklet::setConnectionError(const QString& error) {
-    connected_=false; error_=error; notice_=error;
+    connected_=false; automationResumeRequested_=false; error_=error; notice_=error;
     receptionFailed_=true;
     if(!controller_.busy()) awaitingConfirmation_=false;
     updateEmblems(); updateValues();
@@ -347,12 +365,16 @@ void Desklet::updateControls() {
     for(int i=1;i<8;++i) controls_[i]->setEnabled(ready && available[i] && (i==1 || unlocked) && (i<=1 || on));
     PanelButton* power=controls_[0];
     power->setEnabled(true);
+    const bool automationBlocked=connected_ && automationState_.value("manual_override").toBool();
+    power->setSlowBlink(automationBlocked);
     const bool known=connected_ && powerKnown(status_);
     power->setStatusColor(!known ? QColor("#ff9800") : on ? QColor("#2ecc71") : QColor("#ffffff"));
     QString powerTip=!connected_ ? "Keine Verbindung · Einschalten versuchen" :
         !known ? "Betriebszustand unbekannt · Einschalten versuchen" :
         on ? "Gerät an · Ausschalten" : "Gerät aus · Einschalten";
+    if(automationBlocked) powerTip="Lua-Automatik manuell gesperrt · einmal klicken zum Freigeben und Neuauswerten";
     if(demo_) powerTip+="\nVorschau – keine Gerätesteuerung";
+    else if(automationResumeRequested_) powerTip+="\nFreigabe wurde bereits angefordert";
     else if(awaitingConfirmation_) powerTip+="\nBefehl läuft · weitere Klicks senden keinen zusätzlichen Befehl";
     else if(!unlocked) powerTip+="\nKindersicherung aktiv · das Gerät kann den Befehl ablehnen";
     power->setToolTip(powerTip);

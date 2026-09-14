@@ -334,6 +334,11 @@ void Controller::setPanelValues(const QJsonObject& values) {
     launchWrite(values);
 }
 
+void Controller::resumeAutomation() {
+    if (!active_ || socket_.state() != QAbstractSocket::ConnectedState) return;
+    send({{"_airctrl", "automation_resume"}});
+}
+
 void Controller::beginAutomationEdit() {
     if (pendingAutomationRequestId_ != 0 || automationEditHeld_) return;
     if (!active_ || socket_.state() != QAbstractSocket::ConnectedState) {

@@ -39,7 +39,7 @@ int main() {
     require(!example.empty(), "Lua-Beispiel fehlt.");
 
     {
-        airctrl::AutomationEngine engine(configFor(directory, "example"), "1.08");
+        airctrl::AutomationEngine engine(configFor(directory, "example"), "1.09");
         std::string error;
         require(engine.saveScript(example, true, &error), "Beispiel wird geladen: " + error);
         const airctrl::Json state = engine.stateJson();
@@ -50,7 +50,7 @@ int main() {
     }
 
     {
-        airctrl::AutomationEngine engine(configFor(directory, "between"), "1.08");
+        airctrl::AutomationEngine engine(configFor(directory, "between"), "1.09");
         std::string error;
         require(engine.saveScript(R"lua(
             airctrl.schedule {
@@ -65,7 +65,7 @@ int main() {
     }
 
     {
-        airctrl::AutomationEngine engine(configFor(directory, "invalid"), "1.08");
+        airctrl::AutomationEngine engine(configFor(directory, "invalid"), "1.09");
         std::string error;
         require(!engine.saveScript(
             "airctrl.schedule{name='x',at='7:00',set={evil=1}}", true, &error),
@@ -75,7 +75,7 @@ int main() {
     }
 
     {
-        airctrl::AutomationEngine engine(configFor(directory, "event"), "1.08");
+        airctrl::AutomationEngine engine(configFor(directory, "event"), "1.09");
         std::vector<airctrl::AutomationAction> actions;
         engine.setActionHandler([&](airctrl::AutomationAction action) {
             actions.push_back(std::move(action));
@@ -101,16 +101,51 @@ int main() {
         const airctrl::AutomationConfig config = configFor(directory, "persistent");
         std::string error;
         {
-            airctrl::AutomationEngine writer(config, "1.08");
+            airctrl::AutomationEngine writer(config, "1.09");
             require(writer.saveScript("airctrl.log('info', 'ok')", false, &error),
                 "Deaktiviertes Skript wird gespeichert: " + error);
         }
-        airctrl::AutomationEngine reader(config, "1.08");
+        airctrl::AutomationEngine reader(config, "1.09");
         require(reader.initialize(&error), "Serverzustand wird erneut geladen: " + error);
         require(!reader.stateJson().value("enabled", true), "Deaktivierung bleibt serverseitig erhalten.");
         std::string stored;
         require(reader.readScript(&stored, &error) && stored == "airctrl.log('info', 'ok')",
             "Server liefert bytegleich das gespeicherte Skript.");
+    }
+
+    {
+        const airctrl::AutomationConfig config = configFor(directory, "manual-override");
+        std::vector<airctrl::AutomationAction> actions;
+        std::string error;
+        {
+            airctrl::AutomationEngine engine(config, "1.09");
+            engine.setActionHandler([&](airctrl::AutomationAction action) {
+                actions.push_back(std::move(action));
+            });
+            require(engine.saveScript(R"lua(
+                function on_event(event)
+                    if event.type == "status" and event.status.rh < 35 then
+                        airctrl.set { func="PH" }
+                    end
+                end
+            )lua", true, &error), "Sperrtest-Skript wird geladen: " + error);
+            require(engine.setManualOverride(true, "Manueller Modus"),
+                "Manuelle Automatik-Sperre wird aktiviert.");
+            engine.statusEvent({{"rh", 34}, {"func", "P"}});
+            require(actions.empty(), "Während der Sperre wird keine Lua-Aktion ausgelöst.");
+            require(engine.stateJson().value("manual_override", false),
+                "Sperre wird an Clients gemeldet.");
+        }
+        airctrl::AutomationEngine engine(config, "1.09");
+        engine.setActionHandler([&](airctrl::AutomationAction action) {
+            actions.push_back(std::move(action));
+        });
+        require(engine.initialize(&error), "Gesperrter Zustand wird neu geladen: " + error);
+        require(engine.manualOverride(), "Manuelle Sperre überlebt einen Serverneustart.");
+        require(engine.setManualOverride(false), "Manuelle Sperre wird aufgehoben.");
+        engine.reevaluate({{"rh", 34}, {"func", "P"}});
+        require(actions.size() == 1U,
+            "Freigabe wertet das Skript mit dem aktuellen Gerätestatus sofort neu aus.");
     }
 
     std::filesystem::remove_all(directory);
