@@ -33,6 +33,7 @@ serverweite Editier-Sperre erteilt wurde.
 | `automation_edit_begin` | `id` | Exklusive Editier-Sperre anfordern und aktuelle Serverfassung laden |
 | `automation_edit_save` | `id`, `revision`, `enabled`, `script` | Gesperrte Fassung serverseitig prüfen, speichern und neu laden |
 | `automation_edit_cancel` | – | Eigene Editier-Sperre ohne Änderung freigeben |
+| `automation_resume` | – | Manuelle Automatik-Sperre aufheben und Lua sofort neu auswerten |
 
 Eine `configure`-Nachricht wird abgewiesen. Clients dürfen die Gerätekonfiguration
 nicht ändern.
@@ -53,7 +54,7 @@ Beispiel:
 | `control` | `id`, `ok`, optional `error` | Ergebnis des gleich bezeichneten Clientauftrags |
 | `pong` | – | Antwort auf `ping` |
 | `error` | `error` | Ungültige IPC-Nachricht oder Anfrage |
-| `automation_state` | `enabled`, `loaded`, `revision`, `schedule_count`, Diagnosefelder, `editor_busy` | Serverweiter Lua-Zustand ohne Skripttext |
+| `automation_state` | `enabled`, `loaded`, `manual_override`, `revision`, `schedule_count`, Diagnosefelder, `editor_busy` | Serverweiter Lua-Zustand ohne Skripttext |
 | `automation_edit` | `id`, `ok`, bei Erfolg `script`, `revision`, `state` | Erteilte Sperre und Serverfassung oder Ablehnungsgrund |
 | `automation_saved` | `id`, `ok`, bei Erfolg `state`, sonst `error` | Ergebnis der serverseitigen Prüfung und Speicherung |
 | `automation_edit_released` | `ok` | Bestätigung der Sperrfreigabe |
@@ -68,6 +69,13 @@ frei. `revision` verhindert das Überschreiben einer nicht mehr aktuellen Fassun
 Das Desklet sendet im Leerlauf regelmäßig `ping`. Bleibt `pong` aus, verwirft es
 die scheinbar noch bestehende TCP-Verbindung und verbindet sich selbstständig
 neu. Dadurch wird ein stiller Netz- oder Serverausfall ohne Schaltbefehl erkannt.
+
+Ein gültiger manueller `control`-Auftrag mit `pwr`, `mode`, `om`, `func`,
+`rhset` oder `dt` setzt `manual_override=true` und hält Lua auf allen Clients
+sichtbar an. Reine Licht-/Anzeigeaufträge (`aqil`, `uil`) und die
+Kindersicherung (`cl`) tun dies nicht. `automation_resume` hebt die Sperre auf;
+der Server wertet danach den letzten Status und den aktuell gültigen Zeitplan
+neu aus. Die Nachricht selbst erzeugt keinen Power-Auftrag.
 
 Ein `ok=true` bestätigt zunächst die Annahme durch das Gerät. Desklet und die
 serverseitige Lua-Automatik warten weiterhin auf die nächste Statusmeldung, bevor sie die Zustandsänderung

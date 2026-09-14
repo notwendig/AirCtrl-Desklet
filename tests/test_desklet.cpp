@@ -319,6 +319,63 @@ private slots:
         second.cancelAutomationEdit();
         second.stop();
     }
+    void manualRelevantControlsSuspendAutomationForAllClients() {
+        UdpDevice device;
+        QVERIFY(writeServerConfig(device.port));
+        Controller first(REAL_BACKEND),second(REAL_BACKEND);
+        QSignalSpy firstStatus(&first,&Controller::statusReceived),secondStatus(&second,&Controller::statusReceived);
+        QSignalSpy firstState(&first,&Controller::automationStateReceived);
+        QSignalSpy secondState(&second,&Controller::automationStateReceived);
+        QSignalSpy granted(&first,&Controller::automationEditGranted);
+        QSignalSpy saved(&first,&Controller::automationSaved);
+        first.start(); second.start();
+        QTRY_VERIFY(!firstStatus.isEmpty());
+        QTRY_VERIFY(!secondStatus.isEmpty());
+
+        first.beginAutomationEdit();
+        QTRY_COMPARE(granted.size(),1);
+        first.saveAutomationEdit("airctrl.log('info', 'manual-override-test')\n",true,
+                                 granted.first()[2].toULongLong());
+        QTRY_COMPARE(saved.size(),1);
+
+        const auto lastOverride=[&](const QSignalSpy& spy) {
+            return !spy.isEmpty() && spy.last()[0].toJsonObject().value("manual_override").toBool();
+        };
+        first.setPanelValues({{"cl",true}});
+        QTRY_VERIFY(!first.busy());
+        QVERIFY(!lastOverride(firstState));
+        first.setPanelValues({{"uil","0"}});
+        QTRY_VERIFY(!first.busy());
+        QVERIFY(!lastOverride(firstState));
+        first.setPanelValues({{"aqil",50}});
+        QTRY_VERIFY(!first.busy());
+        QVERIFY(!lastOverride(firstState));
+
+        first.setPanelValues({{"mode","S"},{"om","s"}});
+        QTRY_VERIFY(!first.busy());
+        QTRY_VERIFY(lastOverride(firstState));
+        QTRY_VERIFY(lastOverride(secondState));
+        const int controlsBeforeResume=device.controls.load();
+        first.resumeAutomation();
+        QTRY_VERIFY(!lastOverride(firstState));
+        QTRY_VERIFY(!lastOverride(secondState));
+        QTest::qWait(250);
+        QCOMPARE(device.controls.load(),controlsBeforeResume);
+        first.stop(); second.stop();
+    }
+    void manualOverrideSlowlyBlinksPowerButton() {
+        Desklet widget(Preferences{},FAKE_BACKEND);
+        widget.applyStatus({{"pwr","1"},{"cl",false},{"mode","P"}});
+        Controller* controller=widget.findChild<Controller*>();
+        PanelButton* power=static_cast<PanelButton*>(widget.findChild<QPushButton*>("power"));
+        emit controller->automationStateReceived({{"enabled",true},{"loaded",true},
+                                                   {"manual_override",true}});
+        QVERIFY(power->slowBlink());
+        QVERIFY(power->toolTip().contains("einmal klicken"));
+        emit controller->automationStateReceived({{"enabled",true},{"loaded",true},
+                                                   {"manual_override",false}});
+        QVERIFY(!power->slowBlink());
+    }
     void streamKeepsButtonsEnabledAndWriteRunsOnce() {
         qputenv("AIRCTRL_TEST_WRITE_GATE",temp_.filePath("write.ready").toUtf8());
         Desklet widget(Preferences{},FAKE_BACKEND); widget.showAndPosition(); widget.start();

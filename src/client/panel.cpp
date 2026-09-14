@@ -49,9 +49,23 @@ void glyph(QPainter& p, PanelIcon icon, const QRectF& box, const QColor& color) 
 PanelButton::PanelButton(PanelIcon icon, const QString& name, QWidget* parent)
     : QPushButton(parent), icon_(icon) {
     setAccessibleName(name); setToolTip(name); setCursor(Qt::PointingHandCursor); setFocusPolicy(Qt::StrongFocus);
+    blinkTimer_.setInterval(700);
+    connect(&blinkTimer_, &QTimer::timeout, this, [this] {
+        blinkVisible_ = !blinkVisible_;
+        update();
+    });
+}
+void PanelButton::setSlowBlink(bool enabled) {
+    if (slowBlink_ == enabled) return;
+    slowBlink_ = enabled;
+    blinkVisible_ = true;
+    if (enabled) blinkTimer_.start();
+    else blinkTimer_.stop();
+    update();
 }
 void PanelButton::paintEvent(QPaintEvent*) {
     QPainter p(this); p.setRenderHint(QPainter::Antialiasing);
+    if(slowBlink_ && !blinkVisible_) p.setOpacity(0.25);
     if((isEnabled() && (isDown() || underMouse())) || hasFocus()) {
         QColor highlight=foreground_; highlight.setAlpha(28); p.setPen(Qt::NoPen); p.setBrush(highlight);
         p.drawRoundedRect(rect().adjusted(1,1,-1,-1),3,3);
