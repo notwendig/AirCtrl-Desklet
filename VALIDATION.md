@@ -1,8 +1,24 @@
-# Validierung – v1.07
+# Validierung – v1.08
 
 Stand: 2026-09-14.
 
-## Prüfungen in v1.07
+## Prüfungen in v1.08
+
+- Ein frischer Server-Debug-Build mit GCC 13.3.0 und den strikten Warnoptionen
+  besteht ohne Warnung. `coap`, `statuslog` und `automation` bestehen: **3/3**.
+- Ein frischer Client-Debug-Build mit Qt 6.8.3 und denselben Warnoptionen besteht
+  ohne Warnung. `coap`, `statuslog` und `desklet` bestehen: **3/3** in 38,61 s.
+- Der neue Integrationstest unterdrückt `pong` und jeden weiteren Status auf
+  einer weiterhin offenen TCP-Verbindung. Der Client erkennt den Ausfall,
+  verbindet sich neu und erhält wieder Status, ohne einen Schaltauftrag zu senden.
+- Der Zwei-Client-Test prüft zusätzlich, dass der Abbruch des sperrenden Clients
+  die Lua-Editier-Sperre freigibt und der verbleibende Client sie anschließend
+  erhält.
+- Die Automation-Suite lädt die mitgelieferte
+  `between = "07:00-22:00"`-Regel mit `set` und `outside` erfolgreich.
+- Der Repositoryprüfer und alle **24 Python-Repositorytests** bestehen.
+
+## Historischer Stand v1.07
 
 - Lua 5.4.9 wird ausschließlich im Qt-freien Serverzweig gebaut. Der Clientzweig
   enthält nur den Editor und lädt das maßgebliche Skript erst nach erteilter

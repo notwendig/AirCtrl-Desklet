@@ -44,6 +44,8 @@ public:
     void setConfirmationTimeout(int milliseconds);
     /** @brief Override the reconnect delay; intended for tests. */
     void setReconnectDelay(int milliseconds);
+    /** @brief Override TCP heartbeat timings; intended for tests. */
+    void setHeartbeatIntervals(int intervalMilliseconds, int timeoutMilliseconds);
 public slots:
     /** @brief Ask the server to rebuild its device I/O session. */
     void refresh();
@@ -90,11 +92,13 @@ private:
     void launchWrite(const QJsonObject& values);
     void failCommand(const QString& reason);
     void setBusy(bool busy);
+    void sendHeartbeat();
     QString addressError() const;
 
     QString executable_, serverHost_;
     int serverPort_ = 5680, reconnectMs_ = 10000;
     int writeMs_ = 25000, confirmationMs_ = 90000;
+    int heartbeatMs_ = 5000, heartbeatTimeoutMs_ = 3000;
     bool active_ = false, busy_ = false, hasStatus_ = false;
     bool awaitingConfirmation_ = false, launchAttempted_ = false, failureReported_ = false;
     bool refreshScheduled_ = false;
@@ -103,6 +107,7 @@ private:
     QString progress_;
     QTcpSocket socket_;
     QTimer reconnect_, connectWatchdog_, writeWatchdog_, confirmation_;
+    QTimer heartbeat_, heartbeatWatchdog_;
     QTimer automationWatchdog_;
     QByteArray stream_;
     quint64 nextAutomationRequestId_ = 1, pendingAutomationRequestId_ = 0;

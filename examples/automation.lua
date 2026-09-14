@@ -140,30 +140,25 @@
 -- ZEITPLÄNE
 -- ==========================================================================
 -- name      eindeutiger Name: 1..64 Zeichen aus A-Z, a-z, 0-9, _ . -
--- at        lokale Rechnerzeit exakt als "HH:MM"
+-- at        einzelner Schaltzeitpunkt, lokale Rechnerzeit exakt als "HH:MM"
+-- between   alternativ ein Zeitraum als "HH:MM-HH:MM"
 -- days      optional: 1=Montag ... 7=Sonntag; ohne days täglich
 -- catch_up  optionaler Boolean, Standard true:
 --           true  = nach einem Start nur jüngsten fälligen Termin nachholen
 --           false = ausschließlich in der exakten Minute ausführen
 -- set       erlaubte Steuerwerte aus der Liste oben
+-- outside   nur bei between: Werte am Ende des Zeitraums
 --
 -- Gleiche Uhrzeit darf sich bei zwei Zeitplänen nicht am selben Wochentag
 -- überschneiden. Jeder übergebene Termin wird höchstens einmal versucht.
 
 airctrl.schedule {
-    name = "nacht",
-    at = "22:00",
+    name = "tag/nacht",
+    between = "07:00-22:00",
     days = {1, 2, 3, 4, 5, 6, 7},
     catch_up = true,
-    set = { mode = "S", om = "s", uil = "0" }
-}
-
-airctrl.schedule {
-    name = "tag",
-    at = "07:00",
-    days = {1, 2, 3, 4, 5, 6, 7},
-    catch_up = true,
-    set = { mode = "P", uil = "1" }
+    set = { mode = "P", uil = "1" },
+    outside = { mode = "S", om = "s", uil = "0" }
 }
 
 function on_event(event)

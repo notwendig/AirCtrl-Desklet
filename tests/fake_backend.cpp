@@ -150,7 +150,8 @@ private:
             if(kind=="configure") send(socket,{{"_airctrl","error"},{"error","device settings are server-only"}});
             else if(kind=="refresh") scheduleRefresh();
             else if(kind=="control") control(socket,object);
-            else if(kind=="ping") send(socket,{{"_airctrl","pong"}});
+            else if(kind=="ping" && currentMode()!="client-link-silent")
+                send(socket,{{"_airctrl","pong"}});
         }
     }
     void beginAttempt() {
@@ -196,6 +197,7 @@ private:
             // pending. The fake server must not leak status packets here.
             if(pending_) return;
         }
+        if(mode=="client-link-silent") return;
         if(mode=="idle" || mode=="partial" || mode=="batch") {
             if(mode=="idle" && statusTick_.elapsed()>=idleMs_) failAttempt("Observation idle timeout");
             return;

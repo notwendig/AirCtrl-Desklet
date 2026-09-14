@@ -307,7 +307,17 @@ private slots:
         QTRY_COMPARE(secondGranted.size(),1);
         QCOMPARE(secondGranted.first()[0].toString(),script);
         second.cancelAutomationEdit();
-        first.stop(); second.stop();
+
+        first.beginAutomationEdit();
+        QTRY_COMPARE(firstGranted.size(),2);
+        QSignalSpy secondState(&second,&Controller::automationStateReceived);
+        first.stop();
+        QTRY_VERIFY_WITH_TIMEOUT(!secondState.isEmpty() &&
+            !secondState.last()[0].toJsonObject().value("editor_busy").toBool(),2000);
+        second.beginAutomationEdit();
+        QTRY_COMPARE(secondGranted.size(),2);
+        second.cancelAutomationEdit();
+        second.stop();
     }
     void streamKeepsButtonsEnabledAndWriteRunsOnce() {
         qputenv("AIRCTRL_TEST_WRITE_GATE",temp_.filePath("write.ready").toUtf8());
@@ -364,6 +374,22 @@ private slots:
         c.start(); c.stop(); c.start();
         QTRY_VERIFY(!status.isEmpty()); QCOMPARE(errors.count(),0); QVERIFY(c.observing());
         QCOMPARE(c.observationStarts(),quint64(1)); c.stop();
+    }
+    void silentTcpLinkReconnectsWithoutControlCommand() {
+        Controller c(FAKE_BACKEND);
+        c.setHeartbeatIntervals(50,80);
+        c.setReconnectDelay(50);
+        QSignalSpy status(&c,&Controller::statusReceived), errors(&c,&Controller::failed);
+        c.start();
+        QTRY_VERIFY(!status.isEmpty());
+        const int previous=status.count();
+        setMode("client-link-silent");
+        QTRY_VERIFY_WITH_TIMEOUT(!errors.isEmpty(),1000);
+        setMode("");
+        QTRY_VERIFY_WITH_TIMEOUT(status.count()>previous,2000);
+        QVERIFY(c.observing());
+        for(const QJsonArray& request:calls()) QVERIFY(!request.contains("set"));
+        c.stop();
     }
     void manualRefreshRestartsOnlyOneObserver() {
         Controller c(FAKE_BACKEND); QSignalSpy status(&c,&Controller::statusReceived), errors(&c,&Controller::failed);

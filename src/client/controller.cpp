@@ -15,9 +15,15 @@ Controller::Controller(QString serverExecutable, QObject* parent)
     : QObject(parent), executable_(std::move(serverExecutable)),
       serverHost_(defaultAirctrlServerHost()), serverPort_(defaultAirctrlServerPort()) {
     for (QTimer* timer : {&reconnect_, &connectWatchdog_, &writeWatchdog_, &confirmation_,
-                          &automationWatchdog_})
+                          &heartbeat_, &heartbeatWatchdog_, &automationWatchdog_})
         timer->setSingleShot(true);
     connect(&reconnect_, &QTimer::timeout, this, &Controller::connectServer);
+    connect(&heartbeat_, &QTimer::timeout, this, &Controller::sendHeartbeat);
+    connect(&heartbeatWatchdog_, &QTimer::timeout, this, [this] {
+        if (!active_ || socket_.state() != QAbstractSocket::ConnectedState) return;
+        connectionFailed("AirControl-Server antwortet nicht auf die Verbindungsprüfung.");
+        socket_.abort();
+    });
     connect(&connectWatchdog_, &QTimer::timeout, this, [this] {
         socket_.abort();
         connectionFailed("Keine Verbindung zum AirControl-Server.");
@@ -34,12 +40,16 @@ Controller::Controller(QString serverExecutable, QObject* parent)
     });
     connect(&socket_, &QTcpSocket::connected, this, [this] {
         connectWatchdog_.stop();
+        heartbeatWatchdog_.stop();
+        heartbeat_.start(heartbeatMs_);
         failureReported_ = false;
         progress_ = "Mit AirControl-Server "+serverEndpoint()+" verbunden";
     });
     connect(&socket_, &QTcpSocket::readyRead, this, &Controller::readServer);
     connect(&socket_, &QTcpSocket::disconnected, this, [this] {
         connectWatchdog_.stop();
+        heartbeat_.stop();
+        heartbeatWatchdog_.stop();
         launchAttempted_ = false;
         hasStatus_ = false;
         if (automationEditHeld_ || pendingAutomationRequestId_ != 0) {
@@ -82,6 +92,10 @@ void Controller::setConfirmationTimeout(int ms) { confirmationMs_ = qMax(50, ms)
 void Controller::setReconnectDelay(int ms) {
     reconnectMs_ = qMax(50, ms);
 }
+void Controller::setHeartbeatIntervals(int intervalMs, int timeoutMs) {
+    heartbeatMs_ = qMax(50, intervalMs);
+    heartbeatTimeoutMs_ = qMax(50, timeoutMs);
+}
 void Controller::setBusy(bool busy) {
     if (busy_ == busy) return;
     busy_ = busy;
@@ -107,6 +121,8 @@ void Controller::stop() {
     connectWatchdog_.stop();
     writeWatchdog_.stop();
     confirmation_.stop();
+    heartbeat_.stop();
+    heartbeatWatchdog_.stop();
     automationWatchdog_.stop();
     awaitingConfirmation_ = false;
     pendingCommandId_ = 0;
@@ -170,6 +186,11 @@ void Controller::send(const QJsonObject& object) {
     if (socket_.state() != QAbstractSocket::ConnectedState) return;
     socket_.write(QJsonDocument(object).toJson(QJsonDocument::Compact) + '\n');
 }
+void Controller::sendHeartbeat() {
+    if (!active_ || socket_.state() != QAbstractSocket::ConnectedState) return;
+    send({{"_airctrl", "ping"}});
+    heartbeatWatchdog_.start(heartbeatTimeoutMs_);
+}
 void Controller::readServer() {
     stream_ += socket_.readAll();
     for (;;) {
@@ -199,6 +220,12 @@ void Controller::readServer() {
 }
 void Controller::handleEnvelope(const QJsonObject& envelope) {
     const QString kind = envelope.value("_airctrl").toString();
+    if (kind == "pong") {
+        heartbeatWatchdog_.stop();
+        if (active_ && socket_.state() == QAbstractSocket::ConnectedState)
+            heartbeat_.start(heartbeatMs_);
+        return;
+    }
     if (kind == "automation_state") {
         emit automationStateReceived(envelope);
         return;
@@ -257,7 +284,6 @@ void Controller::handleEnvelope(const QJsonObject& envelope) {
         return;
     }
     if (kind == "configured") return; // compatibility with a v1.05 server during upgrade
-    if (kind == "pong") return;
     if (kind == "error") {
         connectionFailed(envelope.value("error").toString());
         return;

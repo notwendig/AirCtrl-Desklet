@@ -39,17 +39,33 @@ int main() {
     require(!example.empty(), "Lua-Beispiel fehlt.");
 
     {
-        airctrl::AutomationEngine engine(configFor(directory, "example"), "1.07");
+        airctrl::AutomationEngine engine(configFor(directory, "example"), "1.08");
         std::string error;
         require(engine.saveScript(example, true, &error), "Beispiel wird geladen: " + error);
         const airctrl::Json state = engine.stateJson();
         require(state.value("loaded", false), "Aktiviertes Beispiel ist geladen.");
-        require(state.value("schedule_count", 0) == 2, "Beispiel enthält zwei Zeitpläne.");
+        require(state.value("schedule_count", 0) == 1,
+            "Beispiel enthält eine vollständige Tag/Nacht-Regel.");
         require(state.value("lua_version", std::string{}) == "Lua 5.4.9", "Lua-Version ist 5.4.9.");
     }
 
     {
-        airctrl::AutomationEngine engine(configFor(directory, "invalid"), "1.07");
+        airctrl::AutomationEngine engine(configFor(directory, "between"), "1.08");
+        std::string error;
+        require(engine.saveScript(R"lua(
+            airctrl.schedule {
+                name="tag/nacht", between="07:00-22:00",
+                days={1,2,3,4,5,6,7}, catch_up=true,
+                set={mode="P",uil="1"},
+                outside={mode="S",om="s",uil="0"}
+            }
+        )lua", true, &error), "between-Tag/Nacht-Regel wird geladen: " + error);
+        require(engine.stateJson().value("schedule_count", 0) == 1,
+            "between wird als eine benannte Regel gemeldet.");
+    }
+
+    {
+        airctrl::AutomationEngine engine(configFor(directory, "invalid"), "1.08");
         std::string error;
         require(!engine.saveScript(
             "airctrl.schedule{name='x',at='7:00',set={evil=1}}", true, &error),
@@ -59,7 +75,7 @@ int main() {
     }
 
     {
-        airctrl::AutomationEngine engine(configFor(directory, "event"), "1.07");
+        airctrl::AutomationEngine engine(configFor(directory, "event"), "1.08");
         std::vector<airctrl::AutomationAction> actions;
         engine.setActionHandler([&](airctrl::AutomationAction action) {
             actions.push_back(std::move(action));
@@ -85,11 +101,11 @@ int main() {
         const airctrl::AutomationConfig config = configFor(directory, "persistent");
         std::string error;
         {
-            airctrl::AutomationEngine writer(config, "1.07");
+            airctrl::AutomationEngine writer(config, "1.08");
             require(writer.saveScript("airctrl.log('info', 'ok')", false, &error),
                 "Deaktiviertes Skript wird gespeichert: " + error);
         }
-        airctrl::AutomationEngine reader(config, "1.07");
+        airctrl::AutomationEngine reader(config, "1.08");
         require(reader.initialize(&error), "Serverzustand wird erneut geladen: " + error);
         require(!reader.stateJson().value("enabled", true), "Deaktivierung bleibt serverseitig erhalten.");
         std::string stored;

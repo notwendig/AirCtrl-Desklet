@@ -2,7 +2,7 @@
 
 [Projektübersicht](../README.md) · [Architektur](ARCHITECTURE.md) · [Sicherheit](../SECURITY.md)
 
-AirCtrl-Desklet 1.07 enthält Lua 5.4.9 als ausschließlich in `airctrl-server`
+AirCtrl-Desklet 1.08 enthält Lua 5.4.9 als ausschließlich in `airctrl-server`
 eingebettetes Automatikmodul. Es kann
 auf bestätigte Gerätezustände und lokale Ereignisse reagieren oder zu festen
 Uhrzeiten schalten. Nach der Installation ist es **deaktiviert**.
@@ -34,21 +34,19 @@ die eingebettete Vorlage direkt aus dieser Datei; es gibt keine zweite Kopie.
 
 ```lua
 airctrl.schedule {
-    name = "nacht",
-    at = "22:00",
+    name = "tag/nacht",
+    between = "07:00-22:00",
     days = {1, 2, 3, 4, 5, 6, 7},
-    set = { mode = "S", om = "s", uil = "0" }
-}
-
-airctrl.schedule {
-    name = "tag",
-    at = "07:00",
-    days = {1, 2, 3, 4, 5, 6, 7},
-    set = { mode = "P", uil = "1" }
+    catch_up = true,
+    set = { mode = "P", uil = "1" },
+    outside = { mode = "S", om = "s", uil = "0" }
 }
 ```
 
-`at` ist lokale Rechnerzeit im Format `HH:MM`. Die Wochentage sind Montag `1`
+`between` schaltet am Beginn mit `set` und am Ende mit `outside`. Alternativ
+schaltet `at` nur einmal zur angegebenen lokalen Rechnerzeit im Format `HH:MM`.
+Ein Bereich darf Mitternacht überschreiten; dann gehört sein Ende zum folgenden
+Kalendertag. Die Wochentage sind Montag `1`
 bis Sonntag `7`; ohne `days` gilt der Termin täglich. `catch_up` ist standardmäßig
 `true`: Startet der Server nach dem Termin, wird nur der **jüngste** fällige
 Zeitplan berücksichtigt. Mit `catch_up=false` gilt die Regel ausschließlich in
@@ -114,8 +112,10 @@ Abstand verwenden.
 
 ### `airctrl.schedule { ... }`
 
-Registriert beim Laden einen Zeitplan mit `name`, `at`, optional `days`, optional
-`catch_up` und der Steuerwerttabelle `set`. `name` darf 1–64 Zeichen aus
+Registriert beim Laden einen Zeitplan mit `name`, genau einem von `at` oder
+`between`, optional `days`, optional `catch_up` und der Steuerwerttabelle `set`.
+`between = "07:00-22:00"` verwendet `set` um 07:00 Uhr und die zusätzliche
+Tabelle `outside` um 22:00 Uhr. `name` darf 1–64 Zeichen aus
 `A–Z`, `a–z`, `0–9`, `_`, `.`, `-` enthalten und muss eindeutig sein. Pro
 Skript sind höchstens 64 Zeitpläne erlaubt; `catch_up` ist ein Boolean.
 

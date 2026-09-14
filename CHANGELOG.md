@@ -1,5 +1,21 @@
 # Änderungsübersicht
 
+## v1.08 – 2026-09-14
+
+- Das Desklet prüft seine TCP-Verbindung im Leerlauf per `ping`/`pong`. Ein
+  still abgerissener Server oder Netzpfad wird ohne vorherigen Schaltvorgang
+  erkannt und automatisch neu verbunden.
+- Der Server sendet einem neu verbundenen Client weiterhin sofort seinen
+  Zustand, den letzten bestätigten Gerätestatus und den serverseitigen
+  Lua-Zustand.
+- Das mitgelieferte Tag/Nacht-Skript verwendet nun eine vollständige Regel
+  `between = "07:00-22:00"`: `set` gilt ab 07:00 Uhr, `outside` ab 22:00 Uhr.
+- Die serverseitige Lua-Dateiübertragung wurde erneut mit zwei Clients geprüft:
+  genau eine Editier-Sperre, Speichern zurück auf den Server und sofortige
+  Sperrfreigabe auch beim Abbruch der Eigentümerverbindung.
+- Frische Server- und Client-Builds mit `-Wall -Wextra -Wpedantic` bleiben bei
+  **0 Warnungen**; sämtliche CTest- und Repositorytests bestehen.
+
 ## v1.07 – 2026-09-14
 
 - Lua 5.4.9, Ereignisse und Zeitpläne laufen ausschließlich im Qt-freien

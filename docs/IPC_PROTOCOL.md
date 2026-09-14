@@ -65,6 +65,10 @@ fehlgeschlagene Skriptprüfung lässt die Sperre beim Eigentümer, damit der Feh
 im Editor korrigiert werden kann. Erfolgreiches Speichern oder Abbrechen gibt sie
 frei. `revision` verhindert das Überschreiben einer nicht mehr aktuellen Fassung.
 
+Das Desklet sendet im Leerlauf regelmäßig `ping`. Bleibt `pong` aus, verwirft es
+die scheinbar noch bestehende TCP-Verbindung und verbindet sich selbstständig
+neu. Dadurch wird ein stiller Netz- oder Serverausfall ohne Schaltbefehl erkannt.
+
 Ein `ok=true` bestätigt zunächst die Annahme durch das Gerät. Desklet und die
 serverseitige Lua-Automatik warten weiterhin auf die nächste Statusmeldung, bevor sie die Zustandsänderung
 als bestätigt anzeigen. Schaltaufträge werden nach Timeout oder Verbindungsfehler

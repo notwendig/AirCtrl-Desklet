@@ -338,8 +338,10 @@ bool AutomationEngine::saveScript(const std::string& text, bool enabled, std::st
 }
 
 Json AutomationEngine::stateJson() const {
+    std::set<std::string> ruleNames;
+    for (const Schedule& schedule : schedules_) ruleNames.insert(schedule.name);
     Json result = {{"enabled", enabled_}, {"loaded", state_ != nullptr && lastError_.empty()},
-                   {"revision", revision_}, {"schedule_count", schedules_.size()},
+                   {"revision", revision_}, {"schedule_count", ruleNames.size()},
                    {"lua_version", LUA_RELEASE}, {"script_path", config_.scriptPath},
                    {"last_event", lastEvent_}, {"last_action", lastAction_}};
     if (!lastError_.empty()) result["error"] = lastError_;
@@ -544,7 +546,6 @@ int AutomationEngine::luaSchedule(lua_State* state) {
     AutomationEngine* self = fromLua(state);
     if (self == nullptr) return 0;
     luaL_checktype(state, 1, LUA_TTABLE);
-    if (self->schedules_.size() >= 64U) return luaL_error(state, "höchstens 64 Zeitpläne erlaubt");
     const int table = lua_absindex(state, 1);
     const auto fieldString = [&](const char* name) {
         lua_getfield(state, table, name);
@@ -552,22 +553,31 @@ int AutomationEngine::luaSchedule(lua_State* state) {
         lua_pop(state, 1);
         return result;
     };
-    Schedule schedule;
-    schedule.name = fieldString("name");
+    const std::string name = fieldString("name");
     const std::string at = fieldString("at");
-    static const std::regex validName("^[A-Za-z0-9_.-]{1,64}$");
+    const std::string between = fieldString("between");
+    static const std::regex validName("^[A-Za-z0-9_./-]{1,64}$");
     static const std::regex validTime("^([01][0-9]|2[0-3]):[0-5][0-9]$");
-    if (!std::regex_match(schedule.name, validName))
-        return luaL_error(state, "schedule.name: 1-64 Zeichen aus A-Z, a-z, 0-9, _.- erwartet");
-    if (!std::regex_match(at, validTime)) return luaL_error(state, "schedule.at: HH:MM erwartet");
-    schedule.hour = std::stoi(at.substr(0, 2));
-    schedule.minute = std::stoi(at.substr(3, 2));
+    static const std::regex validRange(
+        "^([01][0-9]|2[0-3]):[0-5][0-9]-([01][0-9]|2[0-3]):[0-5][0-9]$");
+    if (!std::regex_match(name, validName))
+        return luaL_error(state, "schedule.name: 1-64 Zeichen aus A-Z, a-z, 0-9, _./- erwartet");
+    if (at.empty() == between.empty())
+        return luaL_error(state, "schedule: genau at oder between angeben");
+    if (!at.empty() && !std::regex_match(at, validTime))
+        return luaL_error(state, "schedule.at: HH:MM erwartet");
+    if (!between.empty() && !std::regex_match(between, validRange))
+        return luaL_error(state, "schedule.between: HH:MM-HH:MM erwartet");
+    std::set<std::string> existingNames;
+    for (const Schedule& existing : self->schedules_) existingNames.insert(existing.name);
+    if (existingNames.size() >= 64U) return luaL_error(state, "höchstens 64 Zeitpläne erlaubt");
     for (const Schedule& existing : self->schedules_)
-        if (existing.name == schedule.name)
-            return luaL_error(state, "doppelter Zeitplanname: %s", schedule.name.c_str());
+        if (existing.name == name)
+            return luaL_error(state, "doppelter Zeitplanname: %s", name.c_str());
+    std::set<int> days;
     lua_getfield(state, table, "days");
     if (lua_isnil(state, -1)) {
-        for (int day = 1; day <= 7; ++day) schedule.days.insert(day);
+        for (int day = 1; day <= 7; ++day) days.insert(day);
     } else {
         if (!lua_istable(state, -1)) {
             lua_pop(state, 1);
@@ -582,35 +592,92 @@ int AutomationEngine::luaSchedule(lua_State* state) {
                 lua_pop(state, 1);
                 return luaL_error(state, "schedule.days: Wochentage 1 bis 7 erwartet");
             }
-            schedule.days.insert(day);
+            days.insert(day);
         }
-        if (schedule.days.empty()) {
+        if (days.empty()) {
             lua_pop(state, 1);
             return luaL_error(state, "schedule.days darf nicht leer sein");
         }
     }
     lua_pop(state, 1);
+    bool catchUp = true;
     lua_getfield(state, table, "catch_up");
     if (!lua_isnil(state, -1) && !lua_isboolean(state, -1)) {
         lua_pop(state, 1);
         return luaL_error(state, "schedule.catch_up: Boolean erwartet");
     }
-    if (!lua_isnil(state, -1)) schedule.catchUp = lua_toboolean(state, -1) != 0;
+    if (!lua_isnil(state, -1)) catchUp = lua_toboolean(state, -1) != 0;
     lua_pop(state, 1);
-    lua_getfield(state, table, "set");
-    std::string error;
-    schedule.values = simpleTable(state, -1, &error);
-    lua_pop(state, 1);
-    if (!error.empty()) return luaL_error(state, "schedule.set: %s", error.c_str());
-    for (const Schedule& existing : self->schedules_) {
-        std::vector<int> overlap;
-        std::set_intersection(existing.days.begin(), existing.days.end(),
-            schedule.days.begin(), schedule.days.end(), std::back_inserter(overlap));
-        if (existing.hour == schedule.hour && existing.minute == schedule.minute && !overlap.empty())
-            return luaL_error(state, "Zeitpläne %s und %s überschneiden sich zur selben Uhrzeit",
-                existing.name.c_str(), schedule.name.c_str());
+    const auto fieldValues = [&](const char* field, Json* values) {
+        lua_getfield(state, table, field);
+        std::string error;
+        *values = simpleTable(state, -1, &error);
+        lua_pop(state, 1);
+        return error;
+    };
+    Json insideValues;
+    const std::string setError = fieldValues("set", &insideValues);
+    if (!setError.empty()) return luaL_error(state, "schedule.set: %s", setError.c_str());
+
+    const auto makeSchedule = [&](const std::string& time, std::set<int> activeDays,
+                                  Json values, std::string phase) {
+        Schedule result;
+        result.name = name;
+        result.phase = std::move(phase);
+        result.hour = std::stoi(time.substr(0, 2));
+        result.minute = std::stoi(time.substr(3, 2));
+        result.days = std::move(activeDays);
+        result.values = std::move(values);
+        result.catchUp = catchUp;
+        return result;
+    };
+    std::vector<Schedule> additions;
+    if (!at.empty()) {
+        lua_getfield(state, table, "outside");
+        const bool hasOutside = !lua_isnil(state, -1);
+        lua_pop(state, 1);
+        if (hasOutside) return luaL_error(state, "schedule.outside ist nur mit between erlaubt");
+        additions.push_back(makeSchedule(at, days, std::move(insideValues), {}));
+    } else {
+        const std::string start = between.substr(0, 5);
+        const std::string end = between.substr(6, 5);
+        if (start == end) return luaL_error(state, "schedule.between darf nicht bei derselben Uhrzeit enden");
+        Json outsideValues;
+        const std::string outsideError = fieldValues("outside", &outsideValues);
+        if (!outsideError.empty())
+            return luaL_error(state, "schedule.outside: %s", outsideError.c_str());
+        std::set<int> endDays = days;
+        if (end < start) {
+            endDays.clear();
+            for (const int day : days) endDays.insert(day == 7 ? 1 : day + 1);
+        }
+        additions.push_back(makeSchedule(start, days, std::move(insideValues), "Beginn"));
+        additions.push_back(makeSchedule(end, std::move(endDays), std::move(outsideValues), "Ende"));
     }
-    self->schedules_.push_back(std::move(schedule));
+    const auto label = [](const Schedule& schedule) {
+        return schedule.phase.empty() ? schedule.name :
+            schedule.name + " (" + schedule.phase + ")";
+    };
+    for (std::size_t index = 0; index < additions.size(); ++index) {
+        const Schedule& addition = additions[index];
+        const auto conflicts = [&](const Schedule& existing) {
+            std::vector<int> overlap;
+            std::set_intersection(existing.days.begin(), existing.days.end(),
+                addition.days.begin(), addition.days.end(), std::back_inserter(overlap));
+            return existing.hour == addition.hour && existing.minute == addition.minute &&
+                !overlap.empty();
+        };
+        for (const Schedule& existing : self->schedules_)
+            if (conflicts(existing))
+                return luaL_error(state, "Zeitpläne %s und %s überschneiden sich zur selben Uhrzeit",
+                    label(existing).c_str(), label(addition).c_str());
+        for (std::size_t earlier = 0; earlier < index; ++earlier)
+            if (conflicts(additions[earlier]))
+                return luaL_error(state, "Zeitplan %s besitzt zwei gleiche Schaltzeitpunkte",
+                    name.c_str());
+    }
+    self->schedules_.insert(self->schedules_.end(),
+        std::make_move_iterator(additions.begin()), std::make_move_iterator(additions.end()));
     return 0;
 }
 

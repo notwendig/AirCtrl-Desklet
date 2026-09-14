@@ -64,6 +64,7 @@ public:
 private:
     struct Schedule {
         std::string name;
+        std::string phase;
         int hour = 0;
         int minute = 0;
         std::set<int> days;

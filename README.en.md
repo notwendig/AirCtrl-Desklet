@@ -2,7 +2,7 @@
 
 **Your Philips air purifier, right on your Linux desktop.**
 
-C++17 · Qt 6 · Lua 5.4 · TCP server/clients · MIT · **v1.07**
+C++17 · Qt 6 · Lua 5.4 · TCP server/clients · MIT · **v1.08**
 
 [Deutsch](README.md) · [Development](docs/DEVELOPMENT.md) · [C++ API](docs/CPP_API.md) · [Changelog](CHANGELOG.md)
 
@@ -21,6 +21,8 @@ It is a standalone Qt application, **not a Cinnamon JavaScript desklet**.
   lighting, purification/2-in-1 and shutdown timer.
 - One persistent `airctrl-server` is the only process that contacts the AC2729
   and the only process containing the Lua runtime. Editors and other clients use its TCP endpoint.
+- Ping/pong monitoring detects a silently broken TCP connection without waiting
+  for a control action and reconnects the desklet automatically.
 - One UDP I/O session is shared by all clients. A fixed source port and CoAP
   keepalive preserve host-firewall state; the server first refreshes Observe on
   that session before performing a complete reconnect.
@@ -29,7 +31,7 @@ It is a standalone Qt application, **not a Cinnamon JavaScript desklet**.
 - Configurable colours, background transparency, fonts, window decoration and autostart.
 - Diagnostics with raw JSON, hexadecimal codes and a full copyable report.
 - Server-side sandboxed Lua automation for status, connection, alarm and time
-  events, including day/night schedules, with an exclusive editor on clients.
+  events, including complete `between` day/night rules, with an exclusive editor on clients.
 
 ![Light theme rendered by the actual Qt application in demo mode](docs/images/desklet-light.png)
 

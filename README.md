@@ -2,7 +2,7 @@
 
 **Dein Philips-Luftreiniger. Direkt auf dem Linux-Desktop.**
 
-C++17 · Qt 6 · Lua 5.4 · TCP-Server/Clients · MIT · Version **v1.07**
+C++17 · Qt 6 · Lua 5.4 · TCP-Server/Clients · MIT · Version **v1.08**
 
 [English](README.en.md) · [Bedienung](docs/USER_GUIDE.de.md) · [Entwicklung](docs/DEVELOPMENT.md) · [C++-API](docs/CPP_API.md) · [Änderungen](CHANGELOG.md)
 
@@ -28,6 +28,8 @@ Die Oberfläche ist derzeit deutschsprachig.
 - Aktive Modus- und Wartungssymbole aus bestätigten Statusmeldungen.
 - Ein dauerhafter `airctrl-server` als einziger AC2729-Teilnehmer und einzige
   Lua-Laufzeit. Desklet, Skripteditor und `airctrl-client` verwenden seine TCP-Schnittstelle.
+- Eine Ping/Pong-Überwachung erkennt auch eine still abgerissene TCP-Verbindung
+  ohne Schaltvorgang und verbindet das Desklet automatisch erneut.
 - Genau eine UDP-I/O-Sitzung für alle Clients; fester Quellport und CoAP-
   Keepalive halten die Host-Firewall offen. Vor einem vollständigen Neuaufbau
   versucht der Server eine Observe-Neuanmeldung auf derselben Sitzung.
@@ -36,7 +38,8 @@ Die Oberfläche ist derzeit deutschsprachig.
 - Farben, Hintergrundtransparenz, Schrift, Fensterdekoration und Autostart im Kontextmenü.
 - Diagnose mit deutschen Feldbeschreibungen, Hexcodes und kopierbarem Gesamtbericht.
 - Serverseitige Lua-Automatik für Status-, Verbindungs-, Alarm- und
-  Zeitereignisse einschließlich Tag/Nacht-Zeitplänen; exklusiver Editor auf den Clients.
+  Zeitereignisse einschließlich vollständiger `between`-Tag/Nacht-Regeln;
+  exklusiver Editor auf den Clients.
 
 ![Helle Standarddarstellung des Widgets](docs/images/desklet-light.png)
 
