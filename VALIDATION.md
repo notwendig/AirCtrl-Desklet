@@ -1,6 +1,59 @@
 # Validierung – v1.06
 
-Stand: 2026-09-10.
+Stand: 2026-09-13.
+
+Physischer Nachtrag 2026-09-13: Der installierte Server hat auf `gnubbel`
+nachweislich eine stabile CSV-Kopfzeile und fortlaufend gültige AC2729-Stati in
+`/var/log/airctrl.log` geschrieben. Die frühere extrem hohe Einseiten-Grafik
+blieb trotz gültiger Daten ohne sichtbare Zeichenflächen. Sie wurde deshalb
+durch `airctrl-plot` ersetzt: Das headless Matplotlib-Programm liest den
+millisekundengenauen ISO-Zeitstempel direkt, überspringt Text und Gerätekennungen
+und schreibt höchstens vier beschriftete Diagramme auf jede A4-PDF-Seite.
+
+Nachtrag Statusprotokoll: Die neue CSV-Komponente wurde mit GCC 12 und
+`-Wall -Wextra -Wpedantic` eigenständig gebaut und ausgeführt. Der Test bestätigt
+sortierte Kopfzeilen, CSV-Escaping, Boolean-/Zahlenfelder, verlustfreie spätere
+Felder in `_extra_json` sowie das Wiederherstellen der Kopfzeile nach
+`copytruncate`. Anschließend wurde der vollständige neue Serverquellstand gegen
+die bereits geprüfte Protokollbibliothek gelinkt; `--check-config` war
+erfolgreich. **24 Repositorytests** und die Quellpaketprüfung bestehen. Der
+PDF-Test erzeugt aus einer synthetischen Statusdatei drei Diagramme und prüft
+PDF-Kopf sowie nichtleere Ausgabe. Das erste Blatt wurde zusätzlich als Bild
+gerendert und visuell kontrolliert.
+
+Nachtrag 2026-09-13: Der neue zentrale-Server-Mitschnitt bestimmt die zuvor
+offene Fehlerursache. Drei formal gültige AC2729-Statusmeldungen erreichen den
+Server 35 bis 55 Sekunden nach der Observe-Anmeldung, werden vom Host aber
+innerhalb weniger Zehntel Millisekunden mit ICMP Typ 3, Code 13
+(`communication administratively prohibited`) abgewiesen. Eine vierte Sitzung
+mit erster Meldung nach 25 Sekunden bleibt dagegen über elf Meldungen und eine
+77-Sekunden-Pause stabil. `/sys/dev/sync` benötigt durchgehend nur 6 bis 15 ms;
+alle entschlüsselten Statusobjekte melden `err=0` und etwa −35 dBm.
+
+Die daraus abgeleitete Fassung bindet einen konfigurierbaren lokalen UDP-Port,
+sendet ein CoAP-Keepalive alle 20 Sekunden, lässt der ersten Meldung 120 Sekunden
+und registriert Observe einmal auf derselben Sitzung neu, bevor Socket und Sync
+ersetzt werden. Ein 300-ms-Abmeldenachlauf fängt die im älteren Mitschnitt 104 ms
+zu spät eingetroffene Meldung ab. Der neue Qt-freie Loopbacktest bestätigt Port,
+Keepalive und das Leeren einer verspäteten Meldung vor der Abmeldeantwort.
+[Vollständige Paketbewertung](docs/PROTOCOL_VALIDATION_2026-09-13.md)
+
+Der aktuelle frische Debug-Build mit GCC 13.3.0 und Qt 6.8.3 ist erfolgreich.
+Der Desklet-Lauf meldet **111 bestanden, 0 fehlgeschlagen, 2 umgebungsbedingt
+übersprungen** in 37,58 s; Automation meldet **13 bestanden, 0 fehlgeschlagen**.
+Der eigenständige CoAP-Test besteht in 0,26 s, und **24 Repositorytests**
+bestehen. Der zusätzliche Installertest simuliert die CMake-Installationen,
+prüft getrennt Server-only, Client-only sowie die kompatible Vollinstallation
+und kontrolliert die jeweils für clangd zusammengeführte `compile_commands.json`.
+Ein weiterer Lauf bestätigt den Serverstandard `/usr/local/bin` und den damit
+erzeugten, weiterhin benutzereigenen systemd-Dienst.
+Ein zweiter vollständiger Build und alle drei CTest-Ziele bestehen
+zusätzlich mit AddressSanitizer und UndefinedBehaviorSanitizer; Leak-Erkennung
+war wegen der externen Qt-Laufzeit deaktiviert. Der Lauf deckte außerdem eine im CMake-Split verlorene `file(READ)`-
+Anweisung auf: Ein wirklich frischer v1.06-Build hatte eine leere Lua-
+Editorvorlage. Die Anweisung ist wiederhergestellt und der Automationstest
+anschließend erfolgreich. Ein physischer Lauf der gehärteten Fassung steht noch
+aus; die Paketursache selbst stammt vom realen Server und Gerät.
 
 Nachtrag 2026-09-11: Die physische Trennung in `src/server` und `src/client`
 sowie die vier Buildpfade wurden durch die Repositorytests geprüft. Der neue
@@ -30,24 +83,25 @@ installiert dafür ausschließlich die Server-Abhängigkeiten.
 
 - Vollständiger Debug-Build von Server, TCP-Client, Desklet, eingebettetem Lua
   und allen Testzielen mit GCC 13.3.0 und Qt 6.8.3 erfolgreich.
-- Beide CTest-Ziele bestanden: Desklet einschließlich TCP-Mehrclient- und echtem
-  UDP-Simulator in **35,76 s**, Automation in **0,07 s**; Gesamt **35,84 s**.
-- Direkt gezählt: **108 Desklet-Fälle bestanden**, 2 nur wegen fehlender nativer
+- Drei CTest-Ziele bestanden: Qt-freier CoAP-Transport, Desklet einschließlich
+  TCP-Mehrclient- und echtem UDP-Simulator sowie Automation.
+- Direkt gezählt: **111 Desklet-Fälle bestanden**, 2 nur wegen fehlender nativer
   X11-/privater D-Bus-Sitzung übersprungen; **13 Automation-Fälle bestanden**.
 - Die Tests verwenden für jeden Fall einen eigenen TCP-Loopback-Port. Der echte
   `airctrl-server` liest dabei eine temporäre Datei mit demselben Schema wie
   `/etc/airctrld.cfg`; Geräteparameter werden nicht vom Client übertragen.
 - Zwei Clients teilen weiterhin genau einen Geräte-UDP-Port und eine
-  Synchronisierung. Ein Status-Timeout erzeugt einen neuen Geräte-UDP-Port und
-  eine neue Synchronisierung, ohne den TCP-Serverprozess zu ersetzen.
+  Synchronisierung. Ein Status-Timeout erneuert Observe zunächst auf demselben
+  Port; nur ein weiterer Timeout erzeugt einen neuen Geräteport und eine neue
+  Synchronisierung, ohne den TCP-Serverprozess zu ersetzen.
 - Der Fake-Server puffert den letzten Status wie der reale Server und pausiert
   sauber zwischen Fehler und Wiederverbindungsversuch. Dadurch sind die früheren
   SIGSEGV-/SIGABRT- und Timeout-Symptome nicht mehr vorhanden.
 - Repository-, Paket-, Installations- und Fedora-Zieltests werden zusätzlich vom
   Einspielskript ausgeführt, bevor Commit und Tag `server_clients` erzeugt werden.
-- Der physische Betrieb dieser v1.06-TCP-Fassung am AC2729 ist noch vom Maintainer
-  zu bestätigen. Die darunterliegende Geräte-I/O entspricht weiterhin der
-  bereits per Mitschnitt bestätigten v1.04-Implementierung.
+- Der physische TCP-Betrieb dieser v1.06-Fassung ist durch den neuen Mitschnitt
+  sichtbar. Die Wirkung der daraus abgeleiteten Keepalive-/Firewallhärtung muss
+  der Maintainer nach dem Einspielen noch bestätigen.
 
 ## Historischer Prüfstand v1.05
 
@@ -112,8 +166,9 @@ Lua und CLI sind Unix-Socket-Clients.
   Korrekturstands ist vor Commit, Tag, Installation und Push zwingend und wird
   vom Einspielskript automatisch ausgeführt.
 
-Die folgenden realen Paketbefunde prüfen weiterhin das unverändert innerhalb
-des Servers verwendete Observe-/Control-Verhalten aus v1.04.
+Die folgenden realen Paketbefunde dokumentieren das ursprüngliche
+Observe-/Control-Verhalten aus v1.04. Der neuere Firewallbefund und die daraus
+abgeleitete Härtung stehen im Nachtrag oben.
 
 ## Bestätigung am physischen AC2729/10 – 2026-09-08
 

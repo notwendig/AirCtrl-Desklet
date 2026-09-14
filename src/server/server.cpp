@@ -82,13 +82,21 @@ bool loadConfig(const std::string& path, ServerConfig* config, std::string* erro
     const std::unordered_map<std::string, std::string>::const_iterator address =
         values.find("server/listen_address");
     const std::unordered_map<std::string, std::string>::const_iterator host = values.find("device/host");
+    const std::unordered_map<std::string, std::string>::const_iterator statusLog =
+        values.find("logging/status_file");
     config->listenAddress = address == values.end() ? "0.0.0.0" : trim(address->second);
     config->device.host = host == values.end() ? "AC2729-10" : trim(host->second);
+    config->statusLogPath = statusLog == values.end() ? "/var/log/airctrl.log" : trim(statusLog->second);
     int listenPort = 5680;
     int devicePort = 5683;
+    int localPort = 5680;
     int reconnectMs = 10000;
     int requestMs = 60000;
+    int initialStatusMs = 120000;
     int idleMs = 90000;
+    int keepaliveMs = 20000;
+    int observeRefreshes = 1;
+    int cancelGraceMs = 300;
     const struct Setting {
         const char* name;
         int minimum;
@@ -97,9 +105,14 @@ bool loadConfig(const std::string& path, ServerConfig* config, std::string* erro
     } settings[] = {
         {"server/port", 1, 65535, &listenPort},
         {"device/port", 1, 65535, &devicePort},
+        {"device/local_port", 0, 65535, &localPort},
         {"device/reconnect_ms", 50, 300000, &reconnectMs},
         {"device/request_ms", 50, 86400000, &requestMs},
+        {"device/initial_status_ms", 50, 86400000, &initialStatusMs},
         {"device/idle_ms", 50, 86400000, &idleMs},
+        {"device/keepalive_ms", 0, 86400000, &keepaliveMs},
+        {"device/observe_refreshes", 0, 10, &observeRefreshes},
+        {"device/cancel_grace_ms", 0, 10000, &cancelGraceMs},
     };
     for (const Setting& setting : settings) {
         const std::unordered_map<std::string, std::string>::const_iterator found = values.find(setting.name);
@@ -114,15 +127,22 @@ bool loadConfig(const std::string& path, ServerConfig* config, std::string* erro
     if (config->listenAddress.empty() ||
         (inet_pton(AF_INET, config->listenAddress.c_str(), &ipv4) != 1 &&
          inet_pton(AF_INET6, config->listenAddress.c_str(), &ipv6) != 1) ||
-        config->device.host.empty()) {
+        config->device.host.empty() || config->statusLogPath.empty() ||
+        config->statusLogPath.front() != '/' ||
+        config->statusLogPath.find_first_of("\r\n") != std::string::npos) {
         if (error) *error = "Ungültiger Wert in " + path;
         return false;
     }
     config->listenPort = static_cast<std::uint16_t>(listenPort);
     config->device.port = devicePort;
+    config->device.localPort = localPort;
     config->device.reconnectMs = reconnectMs;
     config->device.requestMs = requestMs;
+    config->device.initialStatusMs = initialStatusMs;
     config->device.idleMs = idleMs;
+    config->device.keepaliveMs = keepaliveMs;
+    config->device.observeRefreshes = observeRefreshes;
+    config->device.cancelGraceMs = cancelGraceMs;
     return true;
 }
 
@@ -181,12 +201,13 @@ int setNonBlocking(int descriptor) {
 } // namespace
 
 AirCtrlServer::AirCtrlServer(ServerConfig config)
-    : config_(std::move(config)), exitOnIdle_(environmentFlag("AIRCTRL_SERVER_EXIT_ON_IDLE")) {}
+    : config_(std::move(config)), exitOnIdle_(environmentFlag("AIRCTRL_SERVER_EXIT_ON_IDLE")),
+      statusLog_(config_.statusLogPath) {}
 
 AirCtrlServer::~AirCtrlServer() { shutdown(); }
 
 bool AirCtrlServer::start(std::string* error) {
-    if (!openWakePipe(error) || !openListener(error)) return false;
+    if (!statusLog_.initialize(error) || !openWakePipe(error) || !openListener(error)) return false;
     worker_ = std::thread([this] { deviceLoop(); });
     initialIdleDeadline_ = std::chrono::steady_clock::now() + std::chrono::seconds(5);
     return true;
@@ -223,7 +244,6 @@ int AirCtrlServer::run() {
             if ((events & POLLIN) != 0 && clients_.find(id) != clients_.end()) readClient(id);
             if ((events & POLLOUT) != 0 && clients_.find(id) != clients_.end()) flushClient(id);
         }
-        refreshScheduled_ = false;
         if (exitOnIdle_ && clients_.empty() && !acceptedAnyClient_ &&
             std::chrono::steady_clock::now() >= initialIdleDeadline_)
             quitRequested_ = true;
@@ -346,6 +366,8 @@ void AirCtrlServer::readClient(std::uint64_t id) {
             found->second.input.append(block, static_cast<std::size_t>(count));
             if (found->second.input.size() > maximumInputSize) {
                 send(id, {{"_airctrl", "error"}, {"error", "IPC-Nachricht ist zu groß."}});
+                found = clients_.find(id);
+                if (found == clients_.end()) return;
                 found->second.closeAfterWrite = true;
                 flushClient(id);
                 return;
@@ -371,9 +393,13 @@ void AirCtrlServer::readClient(std::uint64_t id) {
         const Json request = Json::parse(line, nullptr, false);
         if (request.is_discarded() || !request.is_object()) {
             send(id, {{"_airctrl", "error"}, {"error", "Ungültiges IPC-JSON."}});
+            found = clients_.find(id);
+            if (found == clients_.end()) return;
             continue;
         }
         handle(id, request);
+        found = clients_.find(id);
+        if (found == clients_.end()) return;
     }
     flushClient(id);
 }
@@ -496,6 +522,7 @@ void AirCtrlServer::processEvents() {
     for (ServerEvent& event : pending) {
         if (event.kind == EventKind::Start) {
             ++starts_;
+            refreshScheduled_ = false;
             state_ = "connecting";
             stateError_.clear();
             broadcast(stateEnvelope());
@@ -504,7 +531,13 @@ void AirCtrlServer::processEvents() {
             stateError_ = event.error;
             broadcast(stateEnvelope());
         } else if (event.kind == EventKind::Status) {
-            if (!event.data.is_object()) continue;
+            if (!event.data.is_object() || event.data.empty()) continue;
+            std::string logError;
+            if (!statusLog_.append(event.data, &logError)) {
+                if (!statusLogErrorReported_)
+                    std::cerr << "AirControl-Server: " << logError << '\n';
+                statusLogErrorReported_ = true;
+            } else statusLogErrorReported_ = false;
             lastStatus_ = std::move(event.data);
             state_ = "connected";
             stateError_.clear();
@@ -583,9 +616,14 @@ void AirCtrlServer::deviceLoop() {
         try {
             aioairctrl::ClientOptions options;
             options.port = static_cast<std::uint16_t>(config.port);
+            options.local_port = static_cast<std::uint16_t>(config.localPort);
             options.timeout = std::chrono::milliseconds(config.requestMs);
             options.control_timeout = std::chrono::seconds(10);
+            options.observe_start_timeout = std::chrono::milliseconds(config.initialStatusMs);
             options.observe_idle_timeout = std::chrono::milliseconds(config.idleMs);
+            options.observe_keepalive_interval = std::chrono::milliseconds(config.keepaliveMs);
+            options.observe_refresh_attempts = static_cast<unsigned>(config.observeRefreshes);
+            options.cancel_grace_timeout = std::chrono::milliseconds(config.cancelGraceMs);
             aioairctrl::Client device(config.host, options);
             bool statusRequiredAfterControl = false;
             while (!stopping_.load()) {

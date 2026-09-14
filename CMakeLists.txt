@@ -46,13 +46,31 @@ else()
     set(CMAKE_AUTOMOC ON)
     set(CMAKE_AUTORCC ON)
     find_package(Qt6 6.2 REQUIRED COMPONENTS Core Network Gui Widgets DBus)
+    file(READ "${PROJECT_SOURCE_DIR}/examples/automation.lua" AIRCTRL_AUTOMATION_EXAMPLE)
     configure_file(src/client/automation_example.hpp.in
         generated/airctrl_automation_example.hpp @ONLY)
     add_subdirectory(src/client)
 endif()
 
+if(BUILD_TESTING)
+    add_executable(coap-tests tests/test_coap.cpp)
+    target_include_directories(coap-tests PRIVATE ${AIRCTRL_PROTOCOL_SOURCE}/src)
+    target_link_libraries(coap-tests PRIVATE aioairctrl Threads::Threads)
+    add_test(NAME coap COMMAND coap-tests)
+    set_tests_properties(coap PROPERTIES TIMEOUT 10)
+
+    add_executable(statuslog-tests
+        tests/test_statuslog.cpp
+        src/server/statuslog.cpp
+        src/server/statuslog.h)
+    target_include_directories(statuslog-tests PRIVATE src/server)
+    target_link_libraries(statuslog-tests PRIVATE nlohmann_json::nlohmann_json)
+    add_test(NAME statuslog COMMAND statuslog-tests)
+    set_tests_properties(statuslog PROPERTIES TIMEOUT 10)
+endif()
+
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    foreach(target airctrl_client_common aioairctrl desklet_ui airctrl-server airctrl-client airctrl-desklet)
+    foreach(target airctrl_client_common aioairctrl coap-tests statuslog-tests desklet_ui airctrl-server airctrl-client airctrl-desklet)
         if(TARGET ${target})
             target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
         endif()
@@ -102,6 +120,8 @@ endif()
 if(AIRCTRL_COMPONENT STREQUAL "server")
     install(TARGETS airctrl-server RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
     install(FILES config/airctrld.cfg DESTINATION ${CMAKE_INSTALL_DATADIR}/airctrl-desklet)
+    install(PROGRAMS scripts/plot-airctrl.py DESTINATION ${CMAKE_INSTALL_BINDIR}
+        RENAME airctrl-plot)
 else()
     install(TARGETS airctrl-desklet airctrl-client RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
     install(FILES assets/airctrl-desklet.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)

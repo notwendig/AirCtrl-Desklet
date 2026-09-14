@@ -45,11 +45,21 @@ Eine Schaltantwort geht ausschließlich an den Client, der ihre Kennung erzeugt 
 Mehrere Clientaufträge werden serverweit serialisiert; vor dem nächsten Versuch
 muss Observe mindestens einen neuen Gerätestatus geliefert haben.
 
-Beim Start installiert `install.sh` den systemd-Benutzerdienst
-`airctrl-server.service`. Das Desklet startet keinen Server. Das Schließen oder Abstürzen eines Clients beendet
+Bei einer Voll- oder Serverinstallation (`install.sh --server`) richtet das Skript
+den systemd-Benutzerdienst `airctrl-server.service` ein. `install.sh --client`
+installiert dagegen ausschließlich Desklet und CLI. Das Desklet startet keinen Server. Das Schließen oder Abstürzen eines Clients beendet
 den Server und dessen Geräte-I/O nicht. Der Server hält den letzten Status nur
 als Cache; während eines Verbindungsfehlers wird er neuen Clients nicht als
 frischer Status ausgegeben.
+
+Vor der Verteilung hängt der Server jeden nichtleeren Objektstatus an das
+CSV-Protokoll `/var/log/airctrl.log` an. Der erste Status legt die alphabetisch
+sortierten Spalten fest; spätere unbekannte Schlüssel werden verlustfrei in der
+reservierten Spalte `_extra_json` gesammelt. Ein Prozess-Lock und `O_APPEND`
+schützen vollständige Datensätze, die Kopfzeile wird nach `copytruncate` selbst
+wiederhergestellt. Das installierte headless Python-Programm ermittelt numerische
+Spalten aus diesem stabilen Schema und erzeugt eine mehrseitige PDF mit vier
+Diagrammen pro Seite.
 
 Listenadresse, TCP-Port, Geräteadresse, UDP-Port und Gerätefristen liest der
 Server aus `/etc/airctrld.cfg`. Die Geräteadresse bleibt ein Host-String. Ausschließlich der Server
@@ -65,19 +75,20 @@ Schreibwiederholung und bei einem Schaltfehler keine Neusynchronisierung.
 Wird Geräte-I/O während eines laufenden Auftrags erneuert, meldet der Server den
 Ausgang als unbekannt und lässt keinen Status der neuen Sitzung als Bestätigung gelten.
 
-Bleiben Statusmeldungen bis zum 90-Sekunden-Timeout aus, zerstört der Server nur
-seinen Geräteclient. Dadurch wird der alte UDP-Socket geschlossen. Nach der
+Der Geräteclient bindet standardmäßig den konfigurierbaren lokalen UDP-Port 5680.
+Während einer offenen Beobachtung sendet er alle 20 Sekunden ein leeres CoAP-CON,
+damit zustandsbehaftete Firewalls auch in ereignisbedingten Sendepausen einen
+gültigen Rückweg behalten. Die erste Statusmeldung darf bis zu 120 Sekunden
+benötigen; für weitere Meldungen gilt zunächst die 90-Sekunden-Frist.
+
+Läuft eine Statusfrist ab, registriert der Geräteclient Observe einmal mit
+demselben Token und Socket neu und wartet weitere 60 Sekunden. Erst danach wird
+der alte Socket nach einer kurzen Abmeldefrist geschlossen. Nach der
 Wiederverbindung erstellt derselbe Serverprozess genau einen neuen Geräteclient,
 öffnet einen neuen Socket und synchronisiert den Protokollzustand neu. Die TCP-
 Clients bleiben verbunden. F5 und fatale Protokollfehler können denselben
 kontrollierten I/O-Neustart auslösen. Änderungen an `/etc/airctrld.cfg` werden
 nach einem Neustart des systemd-Benutzerdienstes wirksam.
-
-Der anfängliche Status darf bis zu 60 s nach der Anmeldung benötigen; die
-90-s-Frist gilt für das Ausbleiben weiterer Statusmeldungen. Wiederverbindungspause
-und erneuter Anlauf kommen hinzu. Im Gerätetest vom 2026-09-08 wurden 90,0 s bis
-zur Abmeldung, weitere 9,7 s bis zum neuen Sync und 36,4 s von der Anmeldung bis
-zum neuen Status beobachtet: 136,1 s Datenpause insgesamt.
 
 ### Synchronisierung, Zähler und Verschlüsselung
 
@@ -94,10 +105,15 @@ bringen ihren eigenen Präfix mit. Es besteht somit kein unveränderter
 AES-Schlüssel für die ganze Socket-Lebensdauer. Im Schaltmitschnitt läuft der
 Sendezähler von `0x36A2D909` bis `0x36A2D919` fortlaufend weiter.
 
-Die [Paketbelege](PROTOCOL_VALIDATION_2026-09-08.md) unterscheiden ausdrücklich
+Die [Paketbelege vom 8. September](PROTOCOL_VALIDATION_2026-09-08.md) unterscheiden ausdrücklich
 Observe-Neuanmeldung, Socketwechsel und neue Synchronisierung. Observe ist
 kein garantierter periodischer Herzschlag; bei unverändertem Zustand ist eine
 Sendepause zulässig ([RFC 7641, Abschnitt 4.3.1](https://www.rfc-editor.org/rfc/rfc7641.html#section-4.3.1)).
+Darum hält der Server den UDP-Firewallzustand unabhängig vom Statusstrom mit
+leeren CoAP-CON-Paketen offen. Ein abgelaufener Statuszeitraum führt zuerst zu
+einer Observe-Neuanmeldung mit gleichem Token und Socket; erst deren Fehlschlag
+ersetzt Socket und Synchronisierung. Der [Mitschnitt vom 13. September](PROTOCOL_VALIDATION_2026-09-13.md)
+belegt die zuvor nicht bekannte Firewallablehnung verzögerter Meldungen.
 
 Lua läuft im GUI-Prozess und erhält nur kopierte JSON-/Ereignisdaten. Ein
 `airctrl.set`-Auftrag geht wie ein Klick über den Controller und die TCP-Verbindung

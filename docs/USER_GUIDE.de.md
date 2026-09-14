@@ -72,7 +72,7 @@ Uhrzeitkorrekturen verändern ihn nicht, Suspend-Zeit wird mitgezählt.
 
 Die Grenzen lassen sich unter **Rechtsklick → Datenalter und Alarme …** ändern.
 Die rote Grenze muss größer als die gelbe sein. Das verändert nur Anzeige/Alarme,
-nicht den bisherigen 90-Sekunden-Timeout des Empfängers. Schaltfehler machen den
+nicht die getrennten Serverfristen für Observe. Schaltfehler machen den
 Alarmbereich rot, aber nicht den weiterhin frischen Datenzähler.
 
 **Alarmquellen:** ausbleibende Daten, Verbindungsfehler, abgelehnte/nicht bestätigte
@@ -227,17 +227,14 @@ Diese Optionen verändern das Widget; die Lichttaste oben steuert das reale Ger�
 ## Lua-Automatik
 
 **Rechtsklick → Lua-Automatik** öffnet Editor, Aktivierung und Ladezustand. Die
-Taste **Tag/Nacht-Beispiel** setzt einen Entwurf mit Nachtmodus um 22:00 Uhr ein.
-Zwischen 07:00 und 22:00 Uhr korrigiert er den bestätigten Nachtzustand auf
-Automatikmodus. Seine Kommentare erklären sämtliche Ereignisse, bekannten
-Statusfelder und erlaubten Steuerwerte. Erst **Speichern und neu laden** übernimmt ihn.
+Taste **Tag/Nacht-Beispiel** setzt einen Entwurf mit Nachtmodus um 22:00 Uhr und
+Automatikmodus um 07:00 Uhr ein. Seine Kommentare erklären sämtliche Ereignisse,
+bekannten Statusfelder und erlaubten Steuerwerte. Erst **Speichern und neu laden** übernimmt ihn.
 
 Lua kann auf Statusänderungen, Verbindung, Alarme, Befehlsresultate und den
 Minutentakt reagieren. Zeitpläne werden lokal ausgewertet. Ist das Widget beim
 Termin nicht aktiv, wird beim nächsten Start nur der jüngste fällige Zustand
-nachgeholt. Regeln können mit `between` ein Zeitfenster und mit `["if"]`
-erforderliche bestätigte Statuswerte festlegen. Ein übergebener Geräteauftrag
-wird nicht automatisch wiederholt.
+nachgeholt. Ein übergebener Geräteauftrag wird nicht automatisch wiederholt.
 
 Die Automatik ist nach der Installation aus. Skripte haben keinen Datei-,
 Netzwerk-, Shell- oder Prozesszugriff; Speicher und Ausführung sind begrenzt.
@@ -251,9 +248,20 @@ neuen, leeren Ordner entpacken; nicht ungeprüft über eine Git-Arbeitskopie sch
 Im enthaltenen Ordner `AirCtrl-Desklet` ausführen:
 
 ```bash
-bash install.sh &&
+# Auf dem Server-Rechner:
+bash install.sh --server
+
+# Auf dem Desktop-Rechner:
+bash install.sh --client &&
 env -u QT_QPA_PLATFORM ~/.local/bin/airctrl-desklet
 ```
+
+Laufen Server und Desklet auf demselben Rechner, installiert `bash install.sh`
+weiterhin beide Rollen. Die Kurzformen lauten `-s` und `-c`; ein abweichendes
+Ziel wird etwa mit `--prefix /opt/airctrl` angegeben. Ohne Überschreibung wird
+der Server nach `/usr/local/bin`, Desklet und CLI nach `~/.local/bin` installiert.
+Das Skript nicht vollständig mit `sudo` starten: Es fordert die benötigten
+Root-Rechte für die Serverdateien und `/etc/airctrld.cfg` selbst an.
 
 Qt wählt das Backend anhand der verfügbaren Sitzung. Der vorher empfohlene
 erzwungene Wayland-Start wurde entfernt, nachdem am Benutzerrechner kein passender
@@ -263,15 +271,49 @@ verwendete Qt-Backend und zusätzlich den Sitzungstyp an.
 Für eine erste Installation unter Fedora vorher:
 
 ```bash
-sudo dnf install -y gcc-c++ cmake make qt6-qtbase-devel qt6-qtsvg openssl-devel json-devel python3 unzip
+# Server-Rechner:
+sudo dnf install -y gcc-c++ cmake ninja-build openssl-devel json-devel python3 unzip python3-matplotlib
+
+# Desktop-Rechner:
+sudo dnf install -y gcc-c++ cmake ninja-build qt6-qtbase-devel qt6-qtsvg python3 unzip
 ```
 
-Installation für deinen Benutzer unter `~/.local`. Menüeintrag: **Philips AirControl**.
+Serverinstallation unter `/usr/local`, Clientinstallation für deinen Benutzer
+unter `~/.local`. Menüeintrag: **Philips AirControl**.
 Der Quellordner darf frei gewählt werden; die persönlichen Einstellungen liegen
 unabhängig davon in deinem Benutzerprofil.
 Zusätzlich wird jetzt das Qt6-DBus-Modul aus Qt Base zum Bauen benötigt.
 Python dient ausschließlich zum Schreiben des Menüeintrags; beide laufenden
 Programme sind C++.
+
+## Statusprotokoll und Diagramm
+
+Der Server hängt jede gültige Statusmeldung als CSV-Zeile an
+`/var/log/airctrl.log` an. Die Zeile beginnt mit einem UTC-Zeitstempel; die
+Kopfzeile benennt sämtliche Statusfelder. Boolean-Werte werden als `0` oder `1`
+geschrieben. Neue Felder, die in der ersten Statusmeldung noch nicht vorkamen,
+stehen vollständig im Feld `_extra_json`, damit sich die Anzahl und Bedeutung
+der bestehenden CSV-Spalten nicht während des Betriebs ändert.
+
+Der Server startet nicht, wenn das Statusprotokoll beim Start nicht sicher
+geöffnet werden kann. Ein späterer Schreibfehler wird einmal im Serviceprotokoll
+gemeldet; Statusverteilung und Gerätebedienung laufen weiter. Die Installation
+legt die Datei mit Modus `0640` für den Benutzer des systemd-Dienstes an und
+rotiert sie ab 10 MiB. Vor dem Weitergeben beachten: Gerätekennungen können Teil
+des vollständigen Status sein.
+
+Das installierte Programm `airctrl-plot` erkennt automatisch alle numerischen
+und booleschen Spalten und zeichnet sie mit eigener Y-Achse und eigenem Titel
+in eine mehrseitige PDF. Pro A4-Seite stehen vier Diagramme untereinander:
+
+```bash
+/usr/local/bin/airctrl-plot /var/log/airctrl.log "$HOME/airctrl-status.pdf"
+```
+
+Textfelder und Gerätekennungen verbleiben unverändert im CSV, werden jedoch nicht
+als künstliche Zahlenwerte gezeichnet. Die X-Achse zeigt den UTC-Zeitstempel;
+boolesche Achsen sind mit „Aus“ und „Ein“ beschriftet. Das Programm arbeitet ohne
+grafische Sitzung und kann daher direkt auf dem Fedora-Server laufen.
 
 ## Bedienung
 
@@ -388,9 +430,14 @@ port=5680
 [device]
 host=AC2729-10
 port=5683
+local_port=5680
 reconnect_ms=10000
 request_ms=60000
+initial_status_ms=120000
 idle_ms=90000
+keepalive_ms=20000
+observe_refreshes=1
+cancel_grace_ms=300
 ```
 
 Nach einer Änderung ist `systemctl --user restart airctrl-server.service`
@@ -403,10 +450,12 @@ TCP-Port 5680 an alle verbundenen Clients.
 Desklet und Lua besitzen keine eigene Geräteverbindung. Es gibt keinen
 periodischen Neustart und keine zyklische Neusynchronisierung.
 
-| Grenze | Einstellung seit 0.3.5 |
+| Grenze | Serverregel in v1.06 |
 |---|---|
-| Synchronisierung / erste Statusantwort | Jeweils bis zu 60 s |
-| Keine weiteren Statusmeldungen | Server erneuert die Geräte-I/O nach 90 s |
+| Synchronisierung | Bis zu 60 s |
+| Erste Statusantwort | Bis zu 120 s; danach eine Observe-Neuanmeldung auf demselben Socket |
+| Keine weiteren Statusmeldungen | Nach 90 s zunächst Observe-Neuanmeldung; vollständige Geräte-I/O-Erneuerung erst nach weiteren 60 s ohne Antwort |
+| UDP-Firewallzustand | Leeres CoAP-CON alle 20 s; fester lokaler UDP-Port 5680 |
 | Geräte-Wiederverbindung nach Fehler | Serverwert `device/reconnect_ms` in `/etc/airctrld.cfg` |
 | Client-Wiederverbindung zum Server | Standard 10 s; im Clientmenü 1–300 s |
 | Schaltanfrage | 10 s je Anfrage, GUI-Watchdog 25 s |
@@ -417,26 +466,40 @@ TCP-Verbindung zum Server. Die Geräte-Wiederverbindung bestimmt dagegen nur
 `/etc/airctrld.cfg`. Die Meldungsrate bestimmt das Gerät. F5 fordert den Server nur auf ausdrücklichen
 Benutzerwunsch zum Neuaufbau der Geräte-I/O auf. Eine gesunde Sitzung bleibt bestehen.
 
+Auf einem Server mit `firewalld` muss UDP-Port `device/local_port` nur von der
+Geräteadresse erreichbar sein. Beispiel; `ZONE` und `GERAETE-IP` sind vor dem
+Ausführen durch die tatsächlichen Werte zu ersetzen:
+
+```bash
+sudo firewall-cmd --permanent --zone=ZONE \
+  --add-rich-rule='rule family="ipv4" source address="GERAETE-IP/32" port port="5680" protocol="udp" accept'
+sudo firewall-cmd --reload
+```
+
+Eine vorhandene `/etc/airctrld.cfg` wird weiterhin nicht überschrieben. Fehlen
+die neuen Schlüssel, gelten die oben gezeigten Standardwerte des Servers.
+
 Zum Schalten wird die Observe-Anfrage sauber abgemeldet. Der Control-Aufruf läuft
 danach im Server über denselben UDP-Socket und Sendezähler. Anschließend
 wird Observe auf demselben Socket wieder angemeldet. Erst eine neue Statusmeldung
 nach der Schreibannahme wird zur Rückmeldung verwendet.
 Der angezeigte Gerätezustand wird nie optimistisch umgeschaltet.
 
-Bleibt eine erste oder spätere Statusmeldung bis zum Timeout aus, zerstört der
-laufende Server nur seinen Geräteclient und schließt dessen UDP-Socket. Nach der
-Wiederverbindungspause öffnet derselbe Serverprozess einen neuen UDP-Socket und
-führt genau eine neue `/sys/dev/sync`-Synchronisierung aus. Die TCP-Clients
-bleiben verbunden. Ein fehlgeschlagener
-Schaltbefehl allein erneuert Socket und Schlüssel nicht; die Beobachtung wird
-auf derselben Sitzung fortgesetzt.
+Bleibt eine erste oder spätere Statusmeldung bis zur jeweiligen Frist aus,
+registriert der Server Observe zunächst einmal mit gleichem Token und UDP-Socket
+neu. Erst wenn innerhalb weiterer 60 Sekunden keine passende Antwort eintrifft,
+meldet er Observe ab, wartet 300 ms auf auslaufende Pakete und schließt den
+Geräteclient. Nach der Wiederverbindungspause öffnet derselbe Serverprozess einen
+neuen UDP-Socket und führt genau eine neue `/sys/dev/sync`-Synchronisierung aus.
+Die TCP-Clients bleiben verbunden. Ein fehlgeschlagener Schaltbefehl allein
+erneuert Socket und Schlüssel nicht; die Beobachtung wird auf derselben Sitzung
+fortgesetzt.
 
-Die 90-Sekunden-Frist ist der Zeitpunkt, an dem eine ausgebliebene weitere
-Statusmeldung als Fehler behandelt wird. Wiederverbindungspause und erneuter
-Anlauf folgen danach. Im realen v1.04-Mitschnitt entstanden dadurch insgesamt
-136,1 Sekunden zwischen dem letzten Status der alten und dem ersten Status der
-neuen Sitzung: 90,0 s bis zur Abmeldung, 9,7 s bis zum neuen Sync und 36,4 s
-von der neuen Anmeldung bis zum Status.
+Der historische v1.04-Mitschnitt enthält noch den unmittelbaren Neuaufbau nach
+90 Sekunden und dadurch insgesamt 136,1 Sekunden ohne frische Daten. Der neue
+Mitschnitt vom 13. September zeigt als eigentliche Fehlerursache von der
+Serverfirewall abgewiesene, verspätete Observe-Meldungen. Der feste UDP-Port und
+20-s-Keepalive adressieren diesen Rückweg unabhängig von der Statusrate.
 
 Weitere Klicks während eines laufenden Befehls werden nicht gesammelt.
 Schreibbefehle werden **nie automatisch wiederholt**, auch nicht nach einem

@@ -28,8 +28,9 @@ Die Oberfläche ist derzeit deutschsprachig.
 - Aktive Modus- und Wartungssymbole aus bestätigten Statusmeldungen.
 - Ein dauerhafter `airctrl-server` als einziger AC2729-Teilnehmer. Desklet,
   Lua und `airctrl-client` verwenden ausschließlich seine TCP-Schnittstelle.
-- Genau eine UDP-I/O-Sitzung für alle Clients; automatische Erneuerung nur im
-  Server, wenn 90 Sekunden lang keine Statusmeldung eingeht.
+- Genau eine UDP-I/O-Sitzung für alle Clients; fester Quellport und CoAP-
+  Keepalive halten die Host-Firewall offen. Vor einem vollständigen Neuaufbau
+  versucht der Server eine Observe-Neuanmeldung auf derselben Sitzung.
 - Datenalter in Sekunden und separate Alarmglocke.
 - Filtervorwarnungen, Quittierung, Desktop-Benachrichtigungen und optionaler Ton.
 - Farben, Hintergrundtransparenz, Schrift, Fensterdekoration und Autostart im Kontextmenü.
@@ -45,18 +46,34 @@ Ausgegraute Gerätetasten sind in der Demo absichtlich nicht bedienbar.*
 ## Schnellstart auf Fedora
 
 Server-Voraussetzungen: C++17-Compiler, CMake ≥ 3.16, OpenSSL Crypto,
-nlohmann/json ≥ 3.9 und Threads – **kein Qt**. Der Client benötigt zusätzlich
+nlohmann/json ≥ 3.9 und Threads – **kein Qt**. Matplotlib ist nur für die optionale
+Status-PDF erforderlich. Der Client benötigt zusätzlich
 einen C-Compiler und Qt ≥ 6.2 (Core/Gui/Widgets/DBus/Network). Python 3 wird vom
 Installer verwendet.
 
 ```bash
-sudo dnf install -y gcc-c++ cmake make qt6-qtbase-devel qt6-qtsvg \
-  openssl-devel json-devel python3 dejavu-sans-fonts
+# Auf dem Rechner mit dem Luftreiniger (nur Server, kein Qt nötig):
+sudo dnf install -y gcc-c++ cmake ninja-build openssl-devel json-devel python3 python3-matplotlib
+bash install.sh --server
 
-# Im entpackten oder geklonten Projektverzeichnis:
-bash install.sh
+# Auf dem Desktop-Rechner (Desklet und Kommandozeilen-Client):
+sudo dnf install -y gcc-c++ cmake ninja-build qt6-qtbase-devel qt6-qtsvg \
+  python3 dejavu-sans-fonts
+bash install.sh --client
 ~/.local/bin/airctrl-desklet --demo
 ```
+
+`bash install.sh` ohne Rollenoption installiert beide Komponenten auf demselben
+Rechner. `-s` und `-c` sind die Kurzformen; beide Optionen können gemeinsam
+angegeben werden. Standardmäßig landet der Server in `/usr/local/bin`, Client
+und Desklet in `~/.local/bin`. Ein anderer Präfix wird mit
+`--prefix /absoluter/pfad` für die ausgewählten Rollen gesetzt. Das Skript selbst
+wird ohne `sudo` gestartet und fordert Root-Rechte nur für die Serverinstallation
+und die erstmalige Systemkonfiguration an.
+Der Installer erzeugt außerdem `compile_commands.json` im Projektordner, damit
+clangd/VSCodium auch generierte Header wie `airctrl_version.hpp` korrekt findet.
+Nach einer bereits geöffneten Sitzung genügt **clangd: Restart language server**
+oder einmal **Developer: Reload Window**.
 
 Die Geräteadresse steht ausschließlich in `/etc/airctrld.cfg`:
 
@@ -65,17 +82,46 @@ Die Geräteadresse steht ausschließlich in `/etc/airctrld.cfg`:
 listen_address=0.0.0.0
 port=5680
 
+[logging]
+status_file=/var/log/airctrl.log
+
 [device]
 host=AC2729-10
 port=5683
+local_port=5680
+initial_status_ms=120000
+idle_ms=90000
+keepalive_ms=20000
+observe_refreshes=1
+cancel_grace_ms=300
 ```
+
+Jeder gültige, vom Gerät bestätigte Status wird an `/var/log/airctrl.log`
+angehängt. Die erste Zeile enthält die Feldnamen, danach folgt je Status eine
+CSV-Zeile mit UTC-Zeitstempel und allen Werten. Boolean-Werte stehen als `0/1`;
+später von einer Firmware ergänzte Felder bleiben in `_extra_json` vollständig
+erhalten. Da das Protokoll auch `DeviceId` und `ProductId` enthalten kann, hat
+die Datei absichtlich nur Modus `0640`. Der Installer erhält vorhandene Daten
+und richtet eine Größenrotation bei 10 MiB ein.
+
+Numerische und boolesche Statusfelder werden mit eigener beschrifteter Achse
+und eigenem Titel in eine mehrseitige PDF gezeichnet, vier Diagramme pro Seite:
+
+```bash
+/usr/local/bin/airctrl-plot /var/log/airctrl.log "$HOME/airctrl-status.pdf"
+```
+
+Textfelder und Gerätekennungen bleiben im CSV erhalten, werden aber nicht auf
+eine numerische Achse gezwungen. Ohne Argumente verwendet das Programm
+`/var/log/airctrl.log` und schreibt `airctrl-status.pdf` in das aktuelle Verzeichnis.
 
 Im Desklet wird unter **Rechtsklick → Verbindung und Autostart** nur der
 AirControl-Server eingetragen, standardmäßig `nadhh` und TCP-Port `5680`.
 Der Client kennt weder Gerätehostname noch UDP-Port.
 
-Installation unter `~/.local`, ohne `sudo` für das Installationsskript.
-Menüeintrag: **Philips AirControl**. Bestehende Einstellungen bleiben erhalten.
+Serverinstallation unter `/usr/local`, Clientinstallation unter `~/.local`, ohne
+`sudo` vor dem Installationsskript. Menüeintrag: **Philips AirControl**.
+Bestehende Einstellungen bleiben erhalten.
 Der Installer aktiviert außerdem den systemd-Benutzerdienst `airctrl-server`.
 Ohne verfügbare systemd-Benutzersitzung muss `airctrl-server` separat gestartet werden.
 Weitere Distributionen: [Build und Installation](docs/DEVELOPMENT.md).
@@ -95,7 +141,10 @@ airctrl-client refresh
 Nur `airctrl-server` enthält die Philips-CoAP-Anbindung. Alle Clients sprechen
 zeilenbasiertes JSON über TCP, standardmäßig mit `nadhh:5680`. Dieses Protokoll
 hat keine eigene Anmeldung oder Verschlüsselung; Port 5680 darf in der Firewall
-nur für vertrauenswürdige Rechner im lokalen Netz freigegeben werden.
+nur für vertrauenswürdige Rechner im lokalen Netz freigegeben werden. Zusätzlich
+muss der feste lokale Geräteport UDP 5680 ausschließlich für Pakete von der
+AC2729-Adresse freigegeben sein. Das verhindert, dass verzögerte Observe-
+Benachrichtigungen nach Ablauf des UDP-Connection-Trackings verworfen werden.
 
 ## Bedienung
 
@@ -122,8 +171,8 @@ Die Kreise messen bei Standardschrift 26 px und wachsen mit der Schriftgröße.
 Unter **Rechtsklick → Lua-Automatik** öffnet sich der integrierte Skripteditor.
 Die Automatik ist nach Installation zunächst ausgeschaltet. Das mitgelieferte
 Beispiel enthält als Kommentare die vollständige Ereignis-, Statusfeld- und
-Steuerwertreferenz. Aktiv schaltet es täglich um 22:00 Uhr auf Nacht. Zwischen
-07:00 und 22:00 Uhr korrigiert es den bestätigten Nachtzustand auf Tag:
+Steuerwertreferenz. Aktiv schaltet es täglich um 22:00 Uhr auf Nacht und um
+07:00 Uhr auf Tag:
 
 ```lua
 airctrl.schedule {
@@ -133,10 +182,7 @@ airctrl.schedule {
 }
 
 airctrl.schedule {
-    name = "tag", between = "07:00-22:00",
-    days = {1, 2, 3, 4, 5, 6, 7},
-    ["if"] = { mode = "S", om = "s", uil = "0" },
-    catch_up = true,
+    name = "tag", at = "07:00",
     set = { mode = "P", uil = "1" }
 }
 ```
@@ -145,10 +191,8 @@ airctrl.schedule {
 `status`, `alarm` und `command`. Statusereignisse enthalten den vollständigen
 bestätigten Zustand in `event.status` sowie Änderungen in `event.changed`.
 `airctrl.set { ... }` verwendet dieselbe Positivliste, IPC-Verbindung und
-Bestätigungslogik wie die Gerätetasten. `between` beschreibt ein aktives
-Zeitfenster; `["if"]` verlangt übereinstimmende bestätigte Statuswerte. Pro
-Zeitplantermin oder Fenster gibt es höchstens einen Schaltversuch; bereits
-passende Zielzustände erzeugen keinen Netzwerkbefehl.
+Bestätigungslogik wie die Gerätetasten. Pro Zeitplantermin gibt es höchstens einen Schaltversuch;
+bereits passende Zustände erzeugen keinen Netzwerkbefehl.
 
 Lua 5.4.9 wird aus dem geprüften offiziellen Quellstand eingebettet. Die Sandbox
 stellt nur Basis-, Tabellen-, String-, Mathematik- und UTF-8-Funktionen bereit:
@@ -193,21 +237,27 @@ Vor dem Teilen Gerätekennungen, Namen, Netzwerkadressen und lokale Pfade entfer
 Die beiden Gerätemitschnitte vom **8. September 2026** bestätigen den v1.04-
 Ablauf: **148 gültige Statusmeldungen**, **17 von 17 angenommene Schaltbefehle**
 mit passender nächster Statusmeldung nach **45–97 ms** und kein neuer UDP-Port
-oder Sync beim Schalten. Nach **90 s** ohne Status wird die alte Beobachtung
-abgemeldet; knapp 10 s später beginnt eine neue Sitzung. Im beobachteten Fall
-treffen nach insgesamt **136,1 s** wieder Daten ein. 90 s ist die Fehlerfrist,
-keine Zusage, dass dann bereits neue Daten vorliegen.
+oder Sync beim Schalten.
 
 Observe wird beim Schalten kurz ab- und wieder angemeldet, während der Socket
 bestehen bleibt. Eine 65,8-s-Pause bei ausgeschaltetem Gerät führt zu keinem
-Neustart. Zwischen den beiden Aufzeichnungen fehlen knapp neun Minuten; die
-Ursache der langen Sendepause ist nicht geklärt.
-[Paketbelege, Zähler und Grenzen](docs/PROTOCOL_VALIDATION_2026-09-08.md)
+Neustart. Der damalige 90-s-Neuaufbau erzeugte in einem Fall insgesamt 136,1 s
+ohne frische Daten.
+[Paketbelege vom 8. September](docs/PROTOCOL_VALIDATION_2026-09-08.md)
+
+Der Mitschnitt vom **13. September 2026** bestimmt die Ursache der aktuellen
+Wiederverbindungsschleife: Drei gültige Statusmeldungen erreichen nach 35–55 s
+den Serverhost, werden dort aber sofort mit ICMP „administratively prohibited“
+abgewiesen. Kommt die erste Meldung schon nach 25 s, bleibt derselbe Socket über
+elf Meldungen und eine Sendepause von 77 s stabil. Deshalb verwendet der Server
+jetzt UDP 5680 als konfigurierbaren Quellport, einen 20-s-Keepalive, eine längere
+erste Antwortfrist und eine Observe-Neuanmeldung vor dem vollständigen Neuaufbau.
+[Firewallbefund und Härtung vom 13. September](docs/PROTOCOL_VALIDATION_2026-09-13.md)
 
 | Umgebung | Stand |
 |---|---|
-| Philips AC2729/10 | v1.04: gemeinsamer UDP-Port, 17 Schaltungen und Wiederanlauf nach Status-Timeout im Gerätemitschnitt bestätigt |
-| Server/Clients v1.06 | TCP-Mehrclientbetrieb, zentrale `/etc/airctrld.cfg` und echter UDP-Simulator lokal geprüft; echter Gerätebetrieb muss nach dem Einspielen bestätigt werden |
+| Philips AC2729/10 | Gemeinsamer UDP-Port und 17 Schaltungen bestätigt; neuer Mitschnitt belegt eine lokale Firewallablehnung verzögerter Observe-Pakete |
+| Server/Clients v1.06 | TCP-Mehrclientbetrieb, zentrale `/etc/airctrld.cfg`, Keepalive, fester Quellport und Observe-Erneuerung lokal geprüft; die gehärtete Fassung muss nach dem Einspielen noch am Gerät bestätigt werden |
 | Fedora 44 / Cinnamon / X11 (`xcb`) | Vom Nutzer bestätigt, einschließlich Diagnoseexport von v1.01 |
 | Wayland | Angepasste Fensterbehandlung vorhanden; kein vollständiger nativer Desktop-Test bestätigt |
 | Andere Philips-Modelle | Nicht freigegeben; Modellzuordnungen und Befehle können abweichen |

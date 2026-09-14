@@ -62,7 +62,14 @@ Versuchen muss mindestens eine neue Statusmeldung des Geräts eingegangen sein.
 
 Der Server verarbeitet Observe und Control nacheinander auf einem einzigen
 UDP-Socket. Ein Schaltauftrag meldet Observe kurz ab, sendet Control und meldet
-Observe auf demselben Socket wieder an. Nach `device/idle_ms` ohne Status wird
-der Geräteclient zerstört. Nach `device/reconnect_ms` öffnet der Server einen
-neuen UDP-Socket und synchronisiert `/sys/dev/sync` erneut. Die TCP-Verbindungen
-der Clients bleiben dabei bestehen.
+Observe auf demselben Socket wieder an. Der Server bindet `device/local_port`
+und hält Firewall-/NAT-Zustände während ereignisbedingter Sendepausen mit einem
+leeren CoAP-CON im Abstand `device/keepalive_ms` offen. Nach
+`device/idle_ms` ohne Status registriert er Observe zunächst bis zu
+`device/observe_refreshes` Mal mit demselben Token und derselben UDP-Sitzung
+neu. Erst wenn auch die jeweils höchstens `device/request_ms` lange Antwortfrist
+abläuft, meldet er Observe ab und empfängt noch bis zu
+`device/cancel_grace_ms` lang auslaufende Pakete. Danach wird der Geräteclient
+zerstört. Nach `device/reconnect_ms` öffnet der Server einen neuen UDP-Socket
+und synchronisiert `/sys/dev/sync` erneut. Die TCP-Verbindungen der Clients
+bleiben dabei bestehen.

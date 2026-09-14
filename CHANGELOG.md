@@ -2,6 +2,36 @@
 
 ## v1.06 – 2026-09-10
 
+- Jede gültige Gerätestatusmeldung wird mit UTC-Zeitstempel und stabiler
+  CSV-Kopfzeile an `/var/log/airctrl.log` angehängt; unbekannte spätere Felder
+  bleiben in `_extra_json` erhalten.
+- Der Serverinstaller richtet restriktive Dateirechte und Größenrotation ein.
+  Das neue headless Matplotlib-Programm zeichnet numerische und boolesche Werte
+  mit separaten Achsen und Titeln in eine mehrseitige PDF.
+- Stabilitätsnachtrag vom 13. September: Der Geräte-Socket bindet standardmäßig
+  UDP 5680 und sendet während stiller Observe-Phasen alle 20 Sekunden ein leeres
+  CoAP-CON. So verwerfen zustandsbehaftete Host-Firewalls verzögerte Meldungen
+  nicht mehr nach Ablauf eines dynamischen UDP-Eintrags.
+- Ein Status-Timeout erneuert Observe zunächst einmal mit demselben Token und
+  Socket. Erst ein weiterer Antwort-Timeout ersetzt Socket und Synchronisierung.
+- Die erste Observe-Antwort erhält 120 Sekunden; eine endgültige Abmeldung lässt
+  dem Gerät 300 ms zum Antworten, bevor der Socket geschlossen wird.
+- Wiederholte Aktualisierungsanforderungen bleiben gesperrt, bis der Geräteworker
+  den tatsächlich erneuerten I/O-Start gemeldet hat.
+- IPC-Eingabeverarbeitung prüft nach jeder potenziell trennenden Ausgabe erneut
+  die Clientexistenz und verwendet keinen ungültig gewordenen Container-Iterator.
+- Ein frischer Client-Build liest die Lua-Beispielautomatik wieder vor dem
+  Erzeugen des eingebetteten Headers ein; die Editorvorlage ist nicht mehr leer
+  und hängt nicht von einem zufällig gefüllten CMake-Cache ab.
+- `install.sh -s|--server` installiert nur den Qt-freien Server einschließlich
+  Konfiguration und Benutzerdienst; `-c|--client` installiert nur Desklet und
+  CLI. Ohne Rollenoption bleibt die bisherige Vollinstallation erhalten.
+- Der Serverstandard ist wieder `/usr/local/bin`; Client und Desklet bleiben
+  unter `~/.local/bin`. Nur der privilegierte Server-Installationsschritt wird
+  bei Bedarf über `sudo` ausgeführt, nicht der gesamte Installer.
+- Der Installer fasst die ausgewählten CMake-Kompilierungsdatenbanken im
+  Projektstamm zusammen. clangd findet dadurch `airctrl_version.hpp` und die
+  richtigen C++-/Qt-Includepfade ohne manuelle Editor-Konfiguration.
 - Produktionsquellen physisch in `src/server` und `src/client` getrennt. Der
   Server ist vollständig Qt-frei; gemeinsam bleibt nur die Versionsvorlage.
 - TCP-Ereignisschleife, INI-Leser und JSON-Behandlung des Servers verwenden
@@ -21,8 +51,6 @@
   Serverkonfiguration; der v1.05-Mischzustand aus Unix-Socket und TCP ist entfernt.
 - Wiederholte Lua-Warnereignisse bei unverändertem Alarm werden verhindert,
   indem die stabile Alarmkennung statt des wechselnden Meldungstextes verglichen wird.
-- Lua-Zeitpläne unterstützen neben `at` nun Zeitfenster mit `between` und
-  bedingte Ausführung anhand bestätigter Statuswerte über `["if"]`.
 - Eigene C++-Schnittstellen auf Englisch im Doxygen-Stil dokumentiert; optionales
   `Doxyfile` erzeugt die HTML-Referenz außerhalb des Quellbaums.
 - CI-Branchfilter vom nicht verwendeten `main` auf den veröffentlichten Branch

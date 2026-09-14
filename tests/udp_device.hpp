@@ -26,7 +26,7 @@ public:
     ~UdpDevice() { stopped_=true; thread_.join(); ::close(fd_); }
     unsigned short port=0;
     std::atomic<int> syncs{0}, subscriptions{0}, controls{0}, cancellations{0};
-    std::atomic<int> notifications{0}, controlsWithoutInterveningStatus{0};
+    std::atomic<int> notifications{0}, keepalives{0}, controlsWithoutInterveningStatus{0};
     std::atomic<int> firstClientPort{0}, changedClientPorts{0};
     std::atomic<bool> notificationsEnabled{true};
     std::atomic<bool> failed{false};
@@ -54,7 +54,7 @@ private:
                     if(!firstClientPort.compare_exchange_strong(expected,sourcePort) && expected!=sourcePort)
                         ++changedClientPorts;
                     bytes.resize(static_cast<std::size_t>(count)); const detail::Message request=detail::decode(bytes);
-                    if(!request.code) continue;
+                    if(!request.code) { ++keepalives; continue; }
                     std::string path;
                     for(const detail::Option& option:request.options) if(option.number==11)
                         path+="/"+std::string(option.value.begin(),option.value.end());

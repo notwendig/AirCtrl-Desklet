@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -60,10 +61,18 @@ class RepositoryTests(unittest.TestCase):
         self.assertIn("main.cpp", server_cmake)
         self.assertIn("server.cpp", server_cmake)
         self.assertIn("server.h", server_cmake)
+        self.assertIn("statuslog.cpp", server_cmake)
         self.assertIn("add_executable(airctrl-client cli_main.cpp)", client_cmake)
         self.assertNotIn("Qt6", server_cmake)
         self.assertIn("airctrl_client_common", client_cmake)
         self.assertIn("config/airctrld.cfg", cmake)
+        self.assertIn("scripts/plot-airctrl.py", cmake)
+        self.assertIn("RENAME airctrl-plot", cmake)
+        plotter = (self.root / "scripts" / "plot-airctrl.py").read_text()
+        self.assertIn('matplotlib.use("Agg")', plotter)
+        self.assertIn("PdfPages", plotter)
+        self.assertIn('BOOLEAN_COLUMNS = {"pwr", "cl", "uil"', plotter)
+        self.assertNotIn("plot-airctrl.gnuplot", cmake)
         locations = {preset["name"]: preset.get("binaryDir")
                      for preset in presets["configurePresets"]}
         self.assertEqual("${sourceDir}/build/DEBUG/server", locations["debug-server"])
@@ -74,6 +83,10 @@ class RepositoryTests(unittest.TestCase):
         self.assertIn("host=AC2729-10", config)
         self.assertIn("port=5683", config)
         self.assertIn("port=5680", config)
+        self.assertIn("local_port=5680", config)
+        self.assertIn("keepalive_ms=20000", config)
+        self.assertIn("observe_refreshes=1", config)
+        self.assertIn("status_file=/var/log/airctrl.log", config)
         server = (self.root / "src" / "server" / "server.cpp").read_text()
         server_header = (self.root / "src" / "server" / "server.h").read_text()
         self.assertIn("<poll.h>", server)
@@ -83,6 +96,158 @@ class RepositoryTests(unittest.TestCase):
         self.assertIn("AirCtrlServer::run()", server)
         self.assertNotIn("#include <Q", server)
         self.assertNotIn("QTcpServer", server)
+        protocol = (self.root / "third_party" / "aioairctrl" / "src" / "coap.cpp").read_text()
+        client = (self.root / "third_party" / "aioairctrl" / "src" / "client.cpp").read_text()
+        self.assertIn("Empty CON is the standard CoAP ping", protocol)
+        self.assertIn("re-registering on the same UDP session", client)
+        self.assertIn('file(READ "${PROJECT_SOURCE_DIR}/examples/automation.lua"', cmake)
+
+    def test_role_specific_installer(self):
+        installer = self.root / "install.sh"
+        help_result = subprocess.run(
+            ["bash", str(installer), "--help"], check=True,
+            capture_output=True, text=True)
+        self.assertIn("-s, --server", help_result.stdout)
+        self.assertIn("-c, --client", help_result.stdout)
+        self.assertIn("--prefix PFAD", help_result.stdout)
+        self.assertIn("Server: /usr/local", help_result.stdout)
+
+        unknown = subprocess.run(
+            ["bash", str(installer), "--unbekannt"], check=False,
+            capture_output=True, text=True)
+        self.assertEqual(2, unknown.returncode)
+        self.assertIn("Unbekannte Option", unknown.stderr)
+
+        def run_install(name, *options, explicit_prefix=True):
+            scenario = self.area / name
+            fake_bin = scenario / "fake-bin"
+            prefix = scenario / "prefix"
+            home = scenario / "home"
+            config_home = scenario / "config"
+            log = scenario / "cmake.log"
+            fake_bin.mkdir(parents=True)
+            home.mkdir()
+            cmake_stub = fake_bin / "cmake"
+            cmake_stub.write_text("""#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "$AIRCTRL_TEST_CMAKE_LOG"
+if [[ "$*" == *"-DAIRCTRL_COMPONENT=server"* ]]; then
+    mkdir -p "$AIRCTRL_TEST_PROJECT/build/RELEASE/server"
+    printf '[{"directory":"%s","command":"c++ -c main.cpp","file":"%s/src/server/main.cpp"}]\\n' \
+        "$AIRCTRL_TEST_PROJECT" "$AIRCTRL_TEST_PROJECT" > \
+        "$AIRCTRL_TEST_PROJECT/build/RELEASE/server/compile_commands.json"
+fi
+if [[ "$*" == *"-DAIRCTRL_COMPONENT=client"* ]]; then
+    mkdir -p "$AIRCTRL_TEST_PROJECT/build/RELEASE/client"
+    printf '[{"directory":"%s","command":"c++ -c desklet.cpp","file":"%s/src/client/desklet.cpp"}]\\n' \
+        "$AIRCTRL_TEST_PROJECT" "$AIRCTRL_TEST_PROJECT" > \
+        "$AIRCTRL_TEST_PROJECT/build/RELEASE/client/compile_commands.json"
+fi
+if [[ " $* " == *" --install "* && "$*" == *"/server"* ]]; then
+    mkdir -p "$AIRCTRL_TEST_PREFIX/bin"
+    : > "$AIRCTRL_TEST_PREFIX/bin/airctrl-server"
+    : > "$AIRCTRL_TEST_PREFIX/bin/airctrl-plot"
+    chmod +x "$AIRCTRL_TEST_PREFIX/bin/airctrl-server"
+    chmod +x "$AIRCTRL_TEST_PREFIX/bin/airctrl-plot"
+fi
+if [[ " $* " == *" --install "* && "$*" == *"/client"* ]]; then
+    mkdir -p "$AIRCTRL_TEST_PREFIX/bin" "$AIRCTRL_TEST_PREFIX/share/applications"
+    : > "$AIRCTRL_TEST_PREFIX/bin/airctrl-desklet"
+    : > "$AIRCTRL_TEST_PREFIX/bin/airctrl-client"
+    printf '%s\\n' '[Desktop Entry]' 'Exec=airctrl-desklet' > \
+        "$AIRCTRL_TEST_PREFIX/share/applications/airctrl-desklet.desktop"
+fi
+""")
+            cmake_stub.chmod(0o755)
+            pkill_stub = fake_bin / "pkill"
+            pkill_stub.write_text("#!/usr/bin/env bash\nexit 0\n")
+            pkill_stub.chmod(0o755)
+            sudo_stub = fake_bin / "sudo"
+            sudo_stub.write_text("#!/usr/bin/env bash\nexec \"$@\"\n")
+            sudo_stub.chmod(0o755)
+            env = os.environ.copy()
+            env.update({
+                "PATH": f"{fake_bin}:{env['PATH']}",
+                "HOME": str(home),
+                "XDG_CONFIG_HOME": str(config_home),
+                "AIRCTRL_SKIP_SYSTEM_CONFIG": "1",
+                "AIRCTRL_SKIP_SYSTEM_LOG": "1",
+                "AIRCTRL_SKIP_SYSTEMD": "1",
+                "AIRCTRL_TEST_CMAKE_LOG": str(log),
+                "AIRCTRL_TEST_PREFIX": str(prefix),
+                "AIRCTRL_TEST_PROJECT": str(self.root),
+            })
+            command = ["bash", str(installer), *options]
+            if explicit_prefix:
+                command.extend(("--prefix", str(prefix)))
+            subprocess.run(
+                command,
+                cwd=self.root, env=env, check=True, capture_output=True, text=True)
+            return log.read_text(), prefix, config_home
+
+        server_log, server_prefix, server_config = run_install("server", "--server")
+        self.assertIn("-DAIRCTRL_COMPONENT=server", server_log)
+        self.assertNotIn("-DAIRCTRL_COMPONENT=client", server_log)
+        self.assertTrue((server_prefix / "bin/airctrl-server").is_file())
+        self.assertTrue((server_prefix / "bin/airctrl-plot").is_file())
+        self.assertTrue((server_config / "systemd/user/airctrl-server.service").is_file())
+        self.assertFalse((server_prefix / "bin/airctrl-desklet").exists())
+        commands = json.loads((self.root / "compile_commands.json").read_text())
+        self.assertTrue(any(entry["file"].endswith("src/server/main.cpp")
+                            for entry in commands))
+        self.assertFalse(any(entry["file"].endswith("src/client/desklet.cpp")
+                             for entry in commands))
+
+        client_log, client_prefix, client_config = run_install("client", "--client")
+        self.assertIn("-DAIRCTRL_COMPONENT=client", client_log)
+        self.assertNotIn("-DAIRCTRL_COMPONENT=server", client_log)
+        self.assertTrue((client_prefix / "bin/airctrl-desklet").is_file())
+        desktop = client_prefix / "share/applications/airctrl-desklet.desktop"
+        self.assertIn(str(client_prefix / "bin/airctrl-desklet"), desktop.read_text())
+        self.assertFalse((client_config / "systemd/user/airctrl-server.service").exists())
+        self.assertFalse((client_prefix / "bin/airctrl-server").exists())
+        commands = json.loads((self.root / "compile_commands.json").read_text())
+        self.assertTrue(any(entry["file"].endswith("src/client/desklet.cpp")
+                            for entry in commands))
+        self.assertFalse(any(entry["file"].endswith("src/server/main.cpp")
+                             for entry in commands))
+
+        full_log, full_prefix, full_config = run_install("full")
+        self.assertIn("-DAIRCTRL_COMPONENT=server", full_log)
+        self.assertIn("-DAIRCTRL_COMPONENT=client", full_log)
+        self.assertTrue((full_prefix / "bin/airctrl-server").is_file())
+        self.assertTrue((full_prefix / "bin/airctrl-desklet").is_file())
+        self.assertTrue((full_config / "systemd/user/airctrl-server.service").is_file())
+        commands = json.loads((self.root / "compile_commands.json").read_text())
+        self.assertEqual({"main.cpp", "desklet.cpp"},
+                         {Path(entry["file"]).name for entry in commands})
+
+        default_log, _, default_config = run_install(
+            "server-default", "--server", explicit_prefix=False)
+        self.assertIn("-DCMAKE_INSTALL_PREFIX=/usr/local", default_log)
+        service = default_config / "systemd/user/airctrl-server.service"
+        self.assertIn('ExecStart="/usr/local/bin/airctrl-server"', service.read_text())
+
+    def test_pdf_plotter(self):
+        try:
+            __import__("matplotlib")
+        except ImportError:
+            self.skipTest("Matplotlib ist in dieser Testumgebung nicht installiert")
+        csv_file = self.area / "status.csv"
+        pdf_file = self.area / "status.pdf"
+        csv_file.write_text(
+            "timestamp,DeviceId,pm25,pwr,rh,name,_extra_json\n"
+            "2026-09-13T23:18:57.937Z,0123456789abcdef,4,1,52,Wohnzimmer,\n"
+            "2026-09-13T23:19:57.937Z,0123456789abcdef,7,0,53,Wohnzimmer,\n",
+            encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, str(self.root / "scripts/plot-airctrl.py"),
+             str(csv_file), str(pdf_file)],
+            check=False, capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("3 Werte, 1 Seiten, 2 Statuszeilen", result.stdout)
+        self.assertGreater(pdf_file.stat().st_size, 5_000)
+        self.assertEqual(b"%PDF", pdf_file.read_bytes()[:4])
 
     def test_server_and_client_sources_are_physically_separated(self):
         server_sources = "\n".join(

@@ -14,9 +14,10 @@ struct Client::Impl {
     std::mutex mutex;
 
     Impl(const std::string& host, ClientOptions opts)
-        : options(std::move(opts)), transport(host, options.port, closed) {
+        : options(std::move(opts)), transport(host, options.port, options.local_port, closed) {
         if (options.timeout.count() <= 0 || options.control_timeout.count() <= 0 ||
-            options.observe_idle_timeout.count() < 0)
+            options.observe_start_timeout.count() < 0 || options.observe_idle_timeout.count() < 0 ||
+            options.observe_keepalive_interval.count() < 0 || options.cancel_grace_timeout.count() < 0)
             throw std::invalid_argument("Invalid timeout");
         sync_unlocked();
     }
@@ -57,14 +58,31 @@ struct Client::Impl {
         if (!callback) throw std::invalid_argument("Status callback is required");
         std::unique_lock<std::mutex> guard = lock();
         log("Observing /sys/dev/status");
-        const detail::Message request = transport.request(1, "/sys/dev/status", {}, 0);
+        detail::Message request = transport.request(1, "/sys/dev/status", {}, 0);
+        const std::chrono::milliseconds first_timeout = options.observe_start_timeout.count() > 0
+            ? options.observe_start_timeout : options.timeout;
+        const auto receive_status = [this, &request, &stop](std::chrono::milliseconds timeout) {
+            unsigned refreshes = 0;
+            for (;;) {
+                try {
+                    return transport.receive(request, timeout, stop,
+                                             options.observe_keepalive_interval);
+                } catch (const TimeoutError&) {
+                    if (refreshes >= options.observe_refresh_attempts) throw;
+                    ++refreshes;
+                    log("Observe response timed out; re-registering on the same UDP session");
+                    request = transport.request(1, "/sys/dev/status", {}, 0, request.token);
+                    timeout = options.timeout;
+                }
+            }
+        };
         try {
-            std::optional<detail::Message> response = transport.receive(request, options.timeout, stop);
+            std::optional<detail::Message> response = receive_status(first_timeout);
             if (response) {
                 if (callback(status(*response))) {
                     if (!response->observe()) throw std::runtime_error("Device did not accept CoAP Observe");
                     for (;;) {
-                        response = transport.receive(request, options.observe_idle_timeout, stop);
+                        response = receive_status(options.observe_idle_timeout);
                         if (!response) break;
                         if (!callback(status(*response))) break;
                         if (!response->observe()) throw std::runtime_error("Device terminated CoAP Observe");
@@ -74,6 +92,9 @@ struct Client::Impl {
             transport.cancel(request);
         } catch (const CancelledError&) {
             transport.cancel(request); // shutdown is a normal end of observation
+        } catch (const TimeoutError&) {
+            transport.cancel(request, options.cancel_grace_timeout);
+            throw;
         } catch (...) { transport.cancel(request); throw; }
     }
     bool set(const Json& data, int retries, bool resync) {

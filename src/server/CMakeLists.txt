@@ -1,7 +1,9 @@
 add_executable(airctrl-server
     main.cpp
     server.cpp
-    server.h)
+    server.h
+    statuslog.cpp
+    statuslog.h)
 set_target_properties(airctrl-server PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 target_link_libraries(airctrl-server PRIVATE

@@ -27,7 +27,9 @@ REQUIRED = ROOT_FILES + (
     "docs/DEVELOPMENT.md", "docs/GITHUB_SETUP.md", "docs/ARCHITECTURE.md",
     "docs/USER_GUIDE.de.md", "docs/LUA_AUTOMATION.md",
     "docs/IPC_PROTOCOL.md",
-    "config/airctrld.cfg",
+    "docs/PROTOCOL_VALIDATION_2026-09-13.md",
+    "config/airctrld.cfg", "config/airctrl.logrotate",
+    "scripts/plot-airctrl.py",
     "scripts/v1.05-resume.json",
     "scripts/check_v105_resume.py",
     "docs/PROTOCOL_VALIDATION_2026-09-08.md",
@@ -36,6 +38,7 @@ REQUIRED = ROOT_FILES + (
     "docs/images/alarms-demo.png", "src/common/version.hpp.in",
     "src/server/CMakeLists.txt",
     "src/server/main.cpp", "src/server/server.cpp", "src/server/server.h",
+    "src/server/statuslog.cpp", "src/server/statuslog.h",
     "src/client/CMakeLists.txt",
     "src/client/controlvalues.cpp", "src/client/controlvalues.hpp",
     "src/client/ipc.cpp", "src/client/ipc.hpp",
@@ -43,10 +46,12 @@ REQUIRED = ROOT_FILES + (
     "src/client/cli_main.cpp",
     "third_party/aioairctrl/LICENSE", "third_party/aioairctrl/ORIGIN.md",
     "third_party/lua/LICENSE", "third_party/lua/ORIGIN.md", "third_party/lua/src/lua.h",
-    "examples/automation.lua", "tests/test_automation.cpp",
+    "examples/automation.lua", "tests/test_automation.cpp", "tests/test_coap.cpp",
+    "tests/test_statuslog.cpp",
     "scripts/package_source.py", "tests/test_repository.py",
 )
 ALLOWED_SUFFIXES = {".md", ".c", ".h", ".cpp", ".hpp", ".in", ".py", ".sh", ".lua", ".png", ".html", ".cfg",
+                    ".logrotate",
                     ".svg", ".qrc", ".desktop", ".yml", ".yaml", ".json"}
 ALLOWED_NAMES = {"CMakeLists.txt", "Doxyfile", "LICENSE", "README", "Makefile"}
 IGNORED_DIRS = {"__pycache__", ".pytest_cache"}

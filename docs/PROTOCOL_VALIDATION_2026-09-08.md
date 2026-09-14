@@ -3,6 +3,11 @@
 [Projektübersicht](../README.md) · [Architektur](ARCHITECTURE.md) ·
 [Gesamter Prüfstand](../VALIDATION.md)
 
+> Historischer Stand der v1.04-I/O. Der Mitschnitt vom
+> [13. September 2026](PROTOCOL_VALIDATION_2026-09-13.md) bestimmt zusätzlich
+> eine Host-Firewallablehnung als Ursache der später beobachteten Fehler und
+> begründet die inzwischen gehärteten Zeit- und Keepalive-Regeln.
+
 Diese Notiz dokumentiert die reale Geräteprüfung der v1.04-I/O-Sitzung. Zwei
 Ethernet-Aufzeichnungen wurden offline ausgewertet und auf CoAP/UDP-Port 5683
 zwischen genau einem Client und dem Philips AC2729/10 begrenzt. Paketinhalt,
@@ -124,11 +129,13 @@ Alarm ab. Lua darf ihn über `event.status.dtrs` beziehungsweise
 
 ## Grenzen und Schlussfolgerung
 
-Die Ursache der mindestens 90 Sekunden langen Sendepause ist aus den Paketen
-nicht bestimmbar. CoAP Observe verlangt bei unverändertem Zustand keine
-periodische Nachricht; deshalb kann die Clientseite ohne eigene Aktualisierung
-nicht zwischen Ruhe und Verbindungsverlust unterscheiden. Die lokale
-90-s-Frist bleibt eine bewusst gewählte Produktregel.
+Die Ursache der mindestens 90 Sekunden langen Sendepause ist aus diesem
+historischen Mitschnitt allein nicht bestimmbar. CoAP Observe verlangt bei
+unverändertem Zustand keine periodische Nachricht; deshalb kann die Clientseite
+ohne eigene Aktualisierung nicht zwischen Ruhe und Verbindungsverlust
+unterscheiden. Die damalige v1.04-Fassung behandelte 90 Sekunden als lokale
+Fehlerfrist. Die aktuelle Fassung hält den Firewallzustand aktiv und versucht
+vor einem vollständigen Neuaufbau eine Observe-Neuanmeldung.
 
 Bestätigt sind:
 

@@ -8,6 +8,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QHostAddress>
+#include <QUdpSocket>
 #include <QTcpServer>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -111,16 +112,27 @@ private:
         qputenv("AIRCTRL_TEST_SERVER_PORT",QByteArray::number(testServerPort_));
         return true;
     }
-    bool writeServerConfig(quint16 devicePort,int reconnectMs=10000,int requestMs=60000,int idleMs=90000) {
+    bool writeServerConfig(quint16 devicePort,int reconnectMs=10000,int requestMs=60000,
+                           int idleMs=90000,int localPort=0,int initialStatusMs=120000,
+                           int keepaliveMs=20000,int observeRefreshes=1,int cancelGraceMs=300) {
         const QString path=temp_.filePath(QString("airctrld-%1.cfg").arg(testSequence_));
         QSaveFile file(path);
         if(!file.open(QIODevice::WriteOnly)) return false;
         file.write(QString("[server]\nlisten_address=127.0.0.1\nport=%1\n"
-                           "[device]\nhost=127.0.0.1\nport=%2\nreconnect_ms=%3\nrequest_ms=%4\nidle_ms=%5\n")
-                       .arg(testServerPort_).arg(devicePort).arg(reconnectMs).arg(requestMs).arg(idleMs).toUtf8());
+                           "[device]\nhost=127.0.0.1\nport=%2\nlocal_port=%3\n"
+                           "reconnect_ms=%4\nrequest_ms=%5\ninitial_status_ms=%6\nidle_ms=%7\n"
+                           "keepalive_ms=%8\nobserve_refreshes=%9\ncancel_grace_ms=%10\n")
+                       .arg(testServerPort_).arg(devicePort).arg(localPort).arg(reconnectMs)
+                       .arg(requestMs).arg(initialStatusMs).arg(idleMs).arg(keepaliveMs)
+                       .arg(observeRefreshes).arg(cancelGraceMs).toUtf8());
         if(!file.commit()) return false;
         qputenv("AIRCTRL_TEST_SERVER_CONFIG",path.toUtf8());
         return true;
+    }
+    static quint16 availableUdpPort() {
+        QUdpSocket probe;
+        if(!probe.bind(QHostAddress::LocalHost,0)) return 0;
+        return probe.localPort();
     }
     void setMode(const QString& mode) {
         qputenv("AIRCTRL_TEST_MODE",mode.toUtf8());
@@ -437,6 +449,49 @@ private slots:
         QCOMPARE(errors.count(),0); QCOMPARE(commandErrors.count(),0);
         c.stop(); QTRY_COMPARE(device.cancellations.load(),2);
         QCOMPARE(device.changedClientPorts.load(),0); QVERIFY(!device.failed.load());
+    }
+    void realUdpUsesConfiguredLocalPort() {
+        UdpDevice device;
+        const quint16 localPort=availableUdpPort();
+        QVERIFY(localPort!=0);
+        QVERIFY(writeServerConfig(device.port,10000,60000,90000,localPort));
+        Controller c(REAL_BACKEND);
+        QSignalSpy status(&c,&Controller::statusReceived),errors(&c,&Controller::failed);
+        c.start(); QTRY_VERIFY(status.count()>=1);
+        QCOMPARE(device.firstClientPort.load(),int(localPort));
+        QCOMPARE(device.changedClientPorts.load(),0); QCOMPARE(errors.count(),0);
+        c.stop(); QVERIFY(!device.failed.load());
+    }
+    void realUdpObserveKeepaliveUsesSameSocket() {
+        UdpDevice device;
+        QVERIFY(writeServerConfig(device.port,100,1000,1000,0,1000,50,1,100));
+        Controller c(REAL_BACKEND);
+        QSignalSpy status(&c,&Controller::statusReceived),errors(&c,&Controller::failed);
+        c.start(); QTRY_VERIFY(status.count()>=1);
+        device.notificationsEnabled=false;
+        const int previousPings=device.keepalives.load();
+        QTRY_VERIFY(device.keepalives.load()>=previousPings+2);
+        QCOMPARE(errors.count(),0); QCOMPARE(device.syncs.load(),1);
+        QCOMPARE(device.changedClientPorts.load(),0);
+        const int previousStatus=status.count();
+        device.notificationsEnabled=true;
+        QTRY_VERIFY(status.count()>previousStatus);
+        QCOMPARE(errors.count(),0); c.stop(); QVERIFY(!device.failed.load());
+    }
+    void realUdpObserveRefreshRecoversSameSession() {
+        UdpDevice device;
+        device.notificationsEnabled=false;
+        QVERIFY(writeServerConfig(device.port,100,200,300,0,200,50,1,100));
+        Controller c(REAL_BACKEND);
+        QSignalSpy status(&c,&Controller::statusReceived),errors(&c,&Controller::failed);
+        c.start();
+        QTRY_COMPARE(device.subscriptions.load(),2);
+        device.notificationsEnabled=true;
+        QTRY_VERIFY(status.count()>=1);
+        QCOMPARE(errors.count(),0); QCOMPARE(device.syncs.load(),1);
+        QCOMPARE(device.changedClientPorts.load(),0);
+        QCOMPARE(c.observationStarts(),quint64(1));
+        c.stop(); QVERIFY(!device.failed.load());
     }
     void realUdpStatusTimeoutRenewsSocketAndSessionKey() {
         UdpDevice device;

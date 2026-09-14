@@ -2,6 +2,7 @@
 #include <openssl/rand.h>
 #include <sys/socket.h>
 #include <netdb.h>
+#include <netinet/in.h>
 #include <poll.h>
 #include <unistd.h>
 #include <algorithm>
@@ -129,7 +130,8 @@ Message decode(const Bytes& wire) {
     return result;
 }
 
-Transport::Transport(const std::string& host, std::uint16_t port, const std::atomic<bool>& closed)
+Transport::Transport(const std::string& host, std::uint16_t port, std::uint16_t local_port,
+                     const std::atomic<bool>& closed)
     : host_(host), port_(port), closed_(closed) {
     if (host_.size() > 2 && host_.front() == '[' && host_.back() == ']')
         host_ = host_.substr(1, host_.size() - 2);
@@ -149,6 +151,27 @@ Transport::Transport(const std::string& host, std::uint16_t port, const std::ato
     for (addrinfo* address = raw; address; address = address->ai_next) {
         fd_ = socket(address->ai_family, SOCK_DGRAM | SOCK_CLOEXEC, address->ai_protocol);
         if (fd_ < 0) continue;
+        if (local_port != 0) {
+            int bound = -1;
+            if (address->ai_family == AF_INET) {
+                sockaddr_in local{};
+                local.sin_family = AF_INET;
+                local.sin_addr.s_addr = htonl(INADDR_ANY);
+                local.sin_port = htons(local_port);
+                bound = ::bind(fd_, reinterpret_cast<const sockaddr*>(&local), sizeof(local));
+            } else if (address->ai_family == AF_INET6) {
+                sockaddr_in6 local{};
+                local.sin6_family = AF_INET6;
+                local.sin6_addr = in6addr_any;
+                local.sin6_port = htons(local_port);
+                bound = ::bind(fd_, reinterpret_cast<const sockaddr*>(&local), sizeof(local));
+            }
+            if (bound != 0) {
+                ::close(fd_);
+                fd_ = -1;
+                continue;
+            }
+        }
         if (::connect(fd_, address->ai_addr, address->ai_addrlen) == 0) return;
         ::close(fd_);
         fd_ = -1;
@@ -188,12 +211,25 @@ void Transport::send(const Message& message) {
     if (sent < 0) io_error("Send UDP");
     if (static_cast<std::size_t>(sent) != bytes.size()) throw std::runtime_error("Short UDP write");
 }
+void Transport::ping() {
+    Message message;
+    message.type = 0; // Empty CON is the standard CoAP ping.
+    message.mid = ++mid_;
+    send(message);
+}
 std::optional<Message> Transport::receive(const Message& request_message,
-    std::chrono::milliseconds timeout, const Client::StopPredicate& stop) {
+    std::chrono::milliseconds timeout, const Client::StopPredicate& stop,
+    std::chrono::milliseconds keepalive) {
     const std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::now() + timeout;
+    std::chrono::steady_clock::time_point next_keepalive =
+        std::chrono::steady_clock::now() + keepalive;
     for (;;) {
         if (closed_.load()) throw CancelledError();
         if (stop && stop()) return std::nullopt;
+        if (keepalive.count() > 0 && std::chrono::steady_clock::now() >= next_keepalive) {
+            ping();
+            next_keepalive = std::chrono::steady_clock::now() + keepalive;
+        }
         int wait_ms = 100;
         if (timeout.count() > 0) {
             const std::chrono::milliseconds::rep remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -226,7 +262,22 @@ std::optional<Message> Transport::receive(const Message& request_message,
         return response;
     }
 }
-void Transport::cancel(const Message& original) noexcept {
-    try { (void)request(1, "/sys/dev/status", {}, 1, original.token); } catch (...) {}
+void Transport::cancel(const Message& original, std::chrono::milliseconds grace) noexcept {
+    try {
+        const Message cancellation = request(1, "/sys/dev/status", {}, 1, original.token);
+        if (grace.count() <= 0) return;
+        const std::chrono::steady_clock::time_point deadline =
+            std::chrono::steady_clock::now() + grace;
+        for (;;) {
+            const std::chrono::milliseconds remaining =
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    deadline - std::chrono::steady_clock::now());
+            if (remaining.count() <= 0) return;
+            const std::optional<Message> response = receive(cancellation, remaining);
+            // A delayed notification still carries Observe. Drain it and wait
+            // for the cancellation response instead of closing the port early.
+            if (!response || !response->observe()) return;
+        }
+    } catch (...) {}
 }
 } // namespace aioairctrl::detail

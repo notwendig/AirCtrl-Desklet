@@ -22,7 +22,7 @@ Bytes random_bytes(std::size_t count);
 
 class Transport {
 public:
-    Transport(const std::string& host, std::uint16_t port,
+    Transport(const std::string& host, std::uint16_t port, std::uint16_t local_port,
               const std::atomic<bool>& closed);
     ~Transport();
     Transport(const Transport&) = delete;
@@ -31,10 +31,12 @@ public:
                     std::string payload = {}, std::optional<unsigned> observe = {},
                     Bytes token = {});
     void send(const Message& message);
+    void ping();
     // Returns nullopt for StopPredicate, throws on timeout/shutdown/protocol errors.
     std::optional<Message> receive(const Message& request,
-        std::chrono::milliseconds timeout, const Client::StopPredicate& stop = {});
-    void cancel(const Message& original) noexcept;
+        std::chrono::milliseconds timeout, const Client::StopPredicate& stop = {},
+        std::chrono::milliseconds keepalive = {});
+    void cancel(const Message& original, std::chrono::milliseconds grace = {}) noexcept;
 private:
     int fd_ = -1;
     std::uint16_t mid_ = 0;

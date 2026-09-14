@@ -5,6 +5,7 @@
 #pragma once
 
 #include <aioairctrl/client.hpp>
+#include "statuslog.h"
 
 #include <atomic>
 #include <chrono>
@@ -23,14 +24,20 @@ using Json = aioairctrl::Json;
 struct DeviceConfig {
     std::string host = "AC2729-10";
     int port = 5683;
+    int localPort = 5680;
     int reconnectMs = 10000;
     int requestMs = 60000;
+    int initialStatusMs = 120000;
     int idleMs = 90000;
+    int keepaliveMs = 20000;
+    int observeRefreshes = 1;
+    int cancelGraceMs = 300;
 };
 
 struct ServerConfig {
     std::string listenAddress = "0.0.0.0";
     std::uint16_t listenPort = 5680;
+    std::string statusLogPath = "/var/log/airctrl.log";
     DeviceConfig device;
 };
 
@@ -97,6 +104,8 @@ private:
 
     ServerConfig config_;
     const bool exitOnIdle_;
+    StatusCsvLog statusLog_;
+    bool statusLogErrorReported_ = false;
     int listener_ = -1;
     int wakeRead_ = -1;
     int wakeWrite_ = -1;

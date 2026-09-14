@@ -6,7 +6,10 @@
       "name": "base",
       "hidden": true,
       "generator": "Ninja",
-      "cacheVariables": { "AIRCTRL_TEST_WITH_DBUS": "OFF" }
+      "cacheVariables": {
+        "AIRCTRL_TEST_WITH_DBUS": "OFF",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
     },
     {
       "name": "debug-server",

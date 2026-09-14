@@ -10,6 +10,8 @@ if command -v systemctl >/dev/null; then
 fi
 rm -f -- "$install_prefix/bin/airctrl-desklet" "$install_prefix/bin/airctrl-backend" \
     "$install_prefix/bin/airctrl-server" "$install_prefix/bin/airctrl-client" \
+    "$install_prefix/bin/airctrl-plot" \
+    "$install_prefix/share/airctrl-desklet/plot-airctrl.gnuplot" \
     "$install_prefix/share/applications/airctrl-desklet.desktop" \
     "$install_prefix/share/icons/hicolor/scalable/apps/airctrl-desklet.svg" \
     "${XDG_CONFIG_HOME:-$HOME/.config}/autostart/airctrl-desklet.desktop" \

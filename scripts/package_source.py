@@ -34,7 +34,8 @@ def package_source(root, output):
                     info = zipfile.ZipInfo("AirCtrl-Desklet/" + relative,
                                            date_time=(2026, 1, 1, 0, 0, 0))
                     info.create_system = 3
-                    mode = 0o755 if path.suffix == ".sh" else 0o644
+                    executable = path.suffix == ".sh" or relative == "scripts/plot-airctrl.py"
+                    mode = 0o755 if executable else 0o644
                     info.external_attr = (0o100000 | mode) << 16
                     info.compress_type = zipfile.ZIP_DEFLATED
                     archive.writestr(info, path.read_bytes(), compresslevel=9)

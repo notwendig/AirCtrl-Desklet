@@ -21,12 +21,27 @@ public:
 
 struct ClientOptions {
     std::uint16_t port = 5683;
+    // Zero lets the operating system choose the local UDP port. A fixed port
+    // allows a narrow host-firewall rule for delayed Observe notifications.
+    std::uint16_t local_port = 0;
     std::chrono::milliseconds timeout{10000};
     // Control requests can use a shorter deadline than the first Observe
     // response while both operations share one transport/session.
     std::chrono::milliseconds control_timeout{10000};
-    // Zero: wait indefinitely between notifications. First response uses timeout.
+    // Zero uses timeout for the first Observe response.
+    std::chrono::milliseconds observe_start_timeout{0};
+    // Zero: wait indefinitely between notifications. The first response uses
+    // observe_start_timeout when set, otherwise timeout.
     std::chrono::milliseconds observe_idle_timeout{0};
+    // Empty CoAP CON messages keep stateful firewalls/NAT mappings alive while
+    // the event-driven device has no changed status to report. Zero disables it.
+    std::chrono::milliseconds observe_keepalive_interval{0};
+    // Re-register Observe with the same token after a response timeout before
+    // giving up and replacing the complete UDP/session state.
+    unsigned observe_refresh_attempts = 0;
+    // On a final Observe timeout, briefly receive the cancellation response so
+    // it is not sent to an already closed UDP port. Zero disables the grace.
+    std::chrono::milliseconds cancel_grace_timeout{0};
     std::function<void(const std::string&)> log;
 };
 
