@@ -1,7 +1,7 @@
 # AirControl-TCP-Protokoll
 
 Seit v1.06 kommuniziert ausschließlich `airctrl-server` mit dem Philips AC2729.
-Desklet, Lua-Automatik und `airctrl-client` kennen nur den TCP-Endpunkt des
+Desklet, Lua-Skripteditor und `airctrl-client` kennen nur den TCP-Endpunkt des
 Servers, standardmäßig `nadhh:5680`. Gerätehostname, UDP-Port und Gerätefristen
 stehen ausschließlich in `/etc/airctrld.cfg`.
 
@@ -17,9 +17,11 @@ Das Protokoll besitzt keine Anmeldung und keine Transportverschlüsselung. Port
 5680 darf deshalb nur für vertrauenswürdige Rechner im lokalen Netz erreichbar
 sein und niemals aus dem Internet veröffentlicht werden.
 
-Der Server sendet beim Verbindungsaufbau seinen Zustand und bei aktiver
-Geräteverbindung zusätzlich den letzten Status. Gerätestatus und Zustandswechsel
-gehen an alle Clients. Ein Schaltergebnis geht nur an den Auftraggeber.
+Der Server sendet beim Verbindungsaufbau seinen Geräte- und Lua-Zustand und bei
+aktiver Geräteverbindung zusätzlich den letzten Status. Gerätestatus und
+Zustandswechsel gehen an alle Clients. Ein Schaltergebnis geht nur an den
+Auftraggeber. Der Lua-Skripttext geht ausschließlich an den Client, dem die
+serverweite Editier-Sperre erteilt wurde.
 
 ## Clientnachrichten
 
@@ -28,6 +30,9 @@ gehen an alle Clients. Ein Schaltergebnis geht nur an den Auftraggeber.
 | `control` | `id`, `values` | Einen positiv geprüften Geräteauftrag genau einmal versuchen |
 | `refresh` | – | Geräte-I/O im Server schließen, neu öffnen und synchronisieren |
 | `ping` | – | IPC-Verbindung ohne Gerätezugriff prüfen |
+| `automation_edit_begin` | `id` | Exklusive Editier-Sperre anfordern und aktuelle Serverfassung laden |
+| `automation_edit_save` | `id`, `revision`, `enabled`, `script` | Gesperrte Fassung serverseitig prüfen, speichern und neu laden |
+| `automation_edit_cancel` | – | Eigene Editier-Sperre ohne Änderung freigeben |
 
 Eine `configure`-Nachricht wird abgewiesen. Clients dürfen die Gerätekonfiguration
 nicht ändern.
@@ -48,9 +53,20 @@ Beispiel:
 | `control` | `id`, `ok`, optional `error` | Ergebnis des gleich bezeichneten Clientauftrags |
 | `pong` | – | Antwort auf `ping` |
 | `error` | `error` | Ungültige IPC-Nachricht oder Anfrage |
+| `automation_state` | `enabled`, `loaded`, `revision`, `schedule_count`, Diagnosefelder, `editor_busy` | Serverweiter Lua-Zustand ohne Skripttext |
+| `automation_edit` | `id`, `ok`, bei Erfolg `script`, `revision`, `state` | Erteilte Sperre und Serverfassung oder Ablehnungsgrund |
+| `automation_saved` | `id`, `ok`, bei Erfolg `state`, sonst `error` | Ergebnis der serverseitigen Prüfung und Speicherung |
+| `automation_edit_released` | `ok` | Bestätigung der Sperrfreigabe |
 
-Ein `ok=true` bestätigt zunächst die Annahme durch das Gerät. Desklet und Lua
-warten weiterhin auf die nächste Statusmeldung, bevor sie die Zustandsänderung
+Gleichzeitig besitzt höchstens eine TCP-Verbindung die Editier-Sperre. Ein
+zweiter Client erhält `automation_edit` mit `ok=false`. Bei Abbruch der
+Eigentümerverbindung gibt der Server die Sperre ohne Zeitverzug frei. Eine
+fehlgeschlagene Skriptprüfung lässt die Sperre beim Eigentümer, damit der Fehler
+im Editor korrigiert werden kann. Erfolgreiches Speichern oder Abbrechen gibt sie
+frei. `revision` verhindert das Überschreiben einer nicht mehr aktuellen Fassung.
+
+Ein `ok=true` bestätigt zunächst die Annahme durch das Gerät. Desklet und die
+serverseitige Lua-Automatik warten weiterhin auf die nächste Statusmeldung, bevor sie die Zustandsänderung
 als bestätigt anzeigen. Schaltaufträge werden nach Timeout oder Verbindungsfehler
 nicht automatisch wiederholt. Wird die Geräte-I/O während eines bereits laufenden
 Auftrags erneuert, meldet der Server dessen Ausgang ausdrücklich als unbekannt;

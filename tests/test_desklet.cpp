@@ -119,12 +119,17 @@ private:
         QSaveFile file(path);
         if(!file.open(QIODevice::WriteOnly)) return false;
         file.write(QString("[server]\nlisten_address=127.0.0.1\nport=%1\n"
+                           "[logging]\nstatus_file=%13\n"
+                           "[automation]\nscript_file=%11\nstate_file=%12\nenabled=false\n"
                            "[device]\nhost=127.0.0.1\nport=%2\nlocal_port=%3\n"
                            "reconnect_ms=%4\nrequest_ms=%5\ninitial_status_ms=%6\nidle_ms=%7\n"
                            "keepalive_ms=%8\nobserve_refreshes=%9\ncancel_grace_ms=%10\n")
                        .arg(testServerPort_).arg(devicePort).arg(localPort).arg(reconnectMs)
                        .arg(requestMs).arg(initialStatusMs).arg(idleMs).arg(keepaliveMs)
-                       .arg(observeRefreshes).arg(cancelGraceMs).toUtf8());
+                       .arg(observeRefreshes).arg(cancelGraceMs)
+                       .arg(temp_.filePath(QString("automation-%1.lua").arg(testSequence_)))
+                       .arg(temp_.filePath(QString("automation-state-%1.json").arg(testSequence_)))
+                       .arg(temp_.filePath(QString("status-%1.csv").arg(testSequence_))).toUtf8());
         if(!file.commit()) return false;
         qputenv("AIRCTRL_TEST_SERVER_CONFIG",path.toUtf8());
         return true;
@@ -203,7 +208,6 @@ private slots:
         qunsetenv("AIRCTRL_TEST_NOTIFY_GATE"); qunsetenv("AIRCTRL_TEST_TICK_MS");
         qunsetenv("AIRCTRL_TEST_EXIT_FILE");
         QSettings().clear();
-        QFile::remove(AutomationEngine::scriptPath());
     }
     void observationStreamsWithoutPolling() {
         Controller c(FAKE_BACKEND); QSignalSpy status(&c,&Controller::statusReceived), errors(&c,&Controller::failed);
@@ -275,36 +279,35 @@ private slots:
             QCOMPARE(c.serverEndpoint(),item.second+":5680");
         }
     }
-    void luaStatusEventUsesConfirmedWritePathOnce() {
-        QVERIFY(QDir().mkpath(QFileInfo(AutomationEngine::scriptPath()).absolutePath()));
-        QFile script(AutomationEngine::scriptPath());
-        QVERIFY(script.open(QIODevice::WriteOnly));
-        script.write(R"lua(
-            function on_event(event)
-                if event.type == "status" and event.changed.rh then
-                    airctrl.set { func = "P" }
-                end
-            end
-        )lua");
-        script.close();
+    void serverTransfersScriptAndLocksEditor() {
+        UdpDevice device;
+        QVERIFY(writeServerConfig(device.port));
+        Controller first(REAL_BACKEND),second(REAL_BACKEND);
+        QSignalSpy firstStatus(&first,&Controller::statusReceived),secondStatus(&second,&Controller::statusReceived);
+        QSignalSpy firstGranted(&first,&Controller::automationEditGranted);
+        QSignalSpy secondGranted(&second,&Controller::automationEditGranted);
+        QSignalSpy secondFailed(&second,&Controller::automationEditFailed);
+        QSignalSpy saved(&first,&Controller::automationSaved);
+        first.start(); second.start();
+        QTRY_VERIFY(!firstStatus.isEmpty());
+        QTRY_VERIFY(!secondStatus.isEmpty());
 
-        Preferences preferences;
-        preferences.automationEnabled = true;
-        Desklet widget(preferences,FAKE_BACKEND); widget.showAndPosition(); widget.start();
-        Controller* controller=widget.findChild<Controller*>();
-        AutomationEngine* automation=widget.findChild<AutomationEngine*>();
-        QVERIFY(automation); QVERIFY(automation->loaded());
-        QSignalSpy commandErrors(controller,&Controller::commandFailed);
+        first.beginAutomationEdit();
+        QTRY_COMPARE(firstGranted.size(),1);
+        const quint64 revision=firstGranted.first()[2].toULongLong();
+        QVERIFY(revision>0);
+        second.beginAutomationEdit();
+        QTRY_COMPARE(secondFailed.size(),1);
+        QVERIFY(secondFailed.first()[0].toString().contains("anderen Client"));
 
-        QTRY_COMPARE(calls().size(),2);
-        QTRY_VERIFY(!controller->busy());
-        QTRY_VERIFY(automation->lastAction().contains("bestätigt"));
-        QTest::qWait(350);
-
-        QCOMPARE(calls().size(),2);
-        QCOMPARE(commandErrors.size(),0);
-        QCOMPARE(calls()[1].contains("func=P"),true);
-        controller->stop();
+        const QString script="airctrl.log('info', 'server-editor-test')\n";
+        first.saveAutomationEdit(script,false,revision);
+        QTRY_COMPARE(saved.size(),1);
+        second.beginAutomationEdit();
+        QTRY_COMPARE(secondGranted.size(),1);
+        QCOMPARE(secondGranted.first()[0].toString(),script);
+        second.cancelAutomationEdit();
+        first.stop(); second.stop();
     }
     void streamKeepsButtonsEnabledAndWriteRunsOnce() {
         qputenv("AIRCTRL_TEST_WRITE_GATE",temp_.filePath("write.ready").toUtf8());

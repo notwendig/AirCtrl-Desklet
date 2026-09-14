@@ -8,7 +8,6 @@
 #include "panel.hpp"
 #include "emblems.hpp"
 #include "alerts.hpp"
-#include "automation.hpp"
 #include <QElapsedTimer>
 #include <QDateTime>
 #include <QLabel>
@@ -28,7 +27,7 @@ class Desklet : public QWidget {
 public:
     /** @brief Construct the widget from validated user preferences. */
     Desklet(Preferences preferences, QString backend, bool demo = false);
-    /** @brief Start client connection, monitoring, and enabled automation. */
+    /** @brief Start the client connection and monitoring. */
     void start();
     /** @brief Open the server-connection and autostart settings dialog. */
     void showSettings();
@@ -44,7 +43,7 @@ public:
     void acknowledgeAlarms();
     /** @brief Return monotonic seconds since the last valid status packet. */
     qint64 dataAgeSeconds() const;
-    /** @brief Apply one confirmed status snapshot to all views and automation. */
+    /** @brief Apply one confirmed status snapshot to all views. */
     void applyStatus(const QJsonObject& status);
     /** @brief Mark reception failed while retaining visibly stale values. */
     void setConnectionError(const QString& error);
@@ -78,16 +77,13 @@ private:
     void showPositionDialog();
     void openControl(int index);
     void sendValues(const QJsonObject& values);
-    void sendAutomationValues(const QJsonObject& values, const QString& source, const QString& occurrenceKey);
     void rememberPosition();
     Preferences preferences_;
     Controller controller_;
-    AutomationEngine automation_;
     bool demo_ = false;
     bool waylandSession_ = false;
     bool connected_ = false;
     bool awaitingConfirmation_ = false;
-    bool pendingAutomation_ = false;
     bool leftPressed_ = false;
     bool rightPressed_ = false;
     bool mouseMoved_ = false;
@@ -101,12 +97,11 @@ private:
     qint64 lastDataAt_=-1;
     bool receptionFailed_=false, alarmsPaused_=false, notificationFailureLogged_=false;
     QString activeCommandError_;
-    QString automationProblem_, pendingAutomationSource_, pendingOccurrenceKey_;
     quint64 commandFailureId_=0;
     AlertLatch alarmLatch_;
     QList<Alert> activeAlerts_;
     MonitorBar* monitorBar_;
-    QJsonObject status_, pending_;
+    QJsonObject status_, pending_, automationState_;
     QString error_, notice_, commandError_;
     std::array<PanelButton*,8> controls_{};
     QWidget* emblemBar_;

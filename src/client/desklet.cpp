@@ -3,6 +3,7 @@
  * @brief Desktop presentation, dialogs, confirmed-state controls, and alarms.
  */
 #include "desklet.hpp"
+#include "airctrl_automation_example.hpp"
 #include "diagnostics.hpp"
 #include <QApplication>
 #include <QCheckBox>
@@ -35,6 +36,7 @@
 #include <QGuiApplication>
 #include <QHeaderView>
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
@@ -71,10 +73,34 @@ QString endpointText(QString host, int port) {
     if(host.contains(':') && !(host.startsWith('[') && host.endsWith(']'))) host="["+host+"]";
     return host+":"+QString::number(port);
 }
+QString automationStateLabel(const QJsonObject& state) {
+    if (state.isEmpty()) return "Serverstatus unbekannt";
+    if (!state.value("error").toString().isEmpty()) return "Fehler";
+    if (!state.value("enabled").toBool()) return "aus";
+    return state.value("loaded").toBool() ? "aktiv" : "Fehler";
+}
+QString automationDiagnostics(const QJsonObject& state) {
+    if (state.isEmpty()) return "Serverstatus noch nicht empfangen.\n";
+    QString text="Ausführung = airctrl-server\n"
+        "Zustand = "+automationStateLabel(state)+"\n"
+        "Lua-Version = "+state.value("lua_version").toString("unbekannt")+" (im Server eingebettet)\n"
+        "Skript auf dem Server = "+state.value("script_path").toString("unbekannt")+"\n"
+        "Revision = "+QString::number(state.value("revision").toVariant().toULongLong())+"\n"
+        "Zeitpläne = "+QString::number(state.value("schedule_count").toInt())+"\n"
+        "Letztes Ereignis = "+state.value("last_event").toString("—")+"\n"
+        "Letzte Aktion = "+state.value("last_action").toString("—")+"\n";
+    if(!state.value("error").toString().isEmpty())
+        text+="Letzter Lua-Fehler = "+state.value("error").toString()+"\n";
+    const QJsonArray log=state.value("log").toArray();
+    if(!log.isEmpty()) {
+        text+="Lua-Protokoll:\n";
+        for(const QJsonValue& entry:log) text+="  "+entry.toString()+"\n";
+    }
+    return text;
+}
 }
 Desklet::Desklet(Preferences preferences, QString backend, bool demo)
-    : preferences_(std::move(preferences)), controller_(std::move(backend), this),
-      automation_(!demo,this), demo_(demo) {
+    : preferences_(std::move(preferences)), controller_(std::move(backend), this), demo_(demo) {
     monitorClock_.start();
     preferences_.ageWarningSeconds=qBound(5,preferences_.ageWarningSeconds,3599);
     preferences_.ageStaleSeconds=qBound(preferences_.ageWarningSeconds+1,preferences_.ageStaleSeconds,7200);
@@ -149,11 +175,8 @@ Desklet::Desklet(Preferences preferences, QString backend, bool demo)
     connect(&controller_,&Controller::statusPacketReceived,this,[this] { recordReception(); updateMonitoring(); });
     connect(&controller_,&Controller::failed,this,&Desklet::setConnectionError);
     connect(&controller_,&Controller::commandFailed,this,[this](const QString& error) {
-        const bool automated=pendingAutomation_; const QString source=pendingAutomationSource_;
         awaitingConfirmation_=false; pending_={}; notice_=error; commandError_=error;
         activeCommandError_=error; ++commandFailureId_;
-        pendingAutomation_=false; pendingAutomationSource_.clear(); pendingOccurrenceKey_.clear();
-        if(automated) automation_.commandEvent(source,false,error);
         qWarning().noquote()<<"AirControl – Schaltbefehl:"<<error;
         updateControls(); updateFooter();
     });
@@ -161,21 +184,15 @@ Desklet::Desklet(Preferences preferences, QString backend, bool demo)
     connect(&controller_,&Controller::controlAccepted,this,[this] {
         notice_="Befehl angenommen · Rückmeldung wird gelesen …"; updateFooter();
     });
-    connect(&automation_,&AutomationEngine::actionRequested,this,&Desklet::sendAutomationValues);
-    connect(&automation_,&AutomationEngine::problemChanged,this,[this](const QString& problem) {
-        automationProblem_=problem;
-        QTimer::singleShot(0,this,[this] { updateMonitoring(); });
-    });
-    connect(&automation_,&AutomationEngine::logMessage,this,[](const QString& message) {
-        qInfo().noquote()<<"AirControl Lua:"<<message;
+    connect(&controller_,&Controller::automationStateReceived,this,[this](const QJsonObject& state) {
+        automationState_=state;
+        updateMonitoring();
     });
     QShortcut* refresh=new QShortcut(QKeySequence("F5"),this);
     connect(refresh,&QShortcut::activated,this,[this] { if(!demo_ && !awaitingConfirmation_) controller_.refresh(); });
     QShortcut* diagnostics=new QShortcut(QKeySequence("F1"),this);
     connect(diagnostics,&QShortcut::activated,this,&Desklet::showDetails);
-    QTimer* timer=new QTimer(this); connect(timer,&QTimer::timeout,this,[this] {
-        automation_.processTime(); updateFooter();
-    }); timer->start(1000);
+    QTimer* timer=new QTimer(this); connect(timer,&QTimer::timeout,this,&Desklet::updateFooter); timer->start(1000);
     if(!demo_ && QSystemTrayIcon::isSystemTrayAvailable()) {
         tray_=new QSystemTrayIcon(windowIcon(),this); tray_->setToolTip("Philips AirControl");
         QMenu* menu=new QMenu(this);
@@ -190,7 +207,6 @@ Desklet::Desklet(Preferences preferences, QString backend, bool demo)
         });
         tray_->show();
     }
-    if(!demo_) automation_.setEnabled(preferences_.automationEnabled);
     applyAppearance(); updateControls(); updateFooter();
 }
 void Desklet::paintEvent(QPaintEvent*) {
@@ -252,29 +268,8 @@ void Desklet::updateEmblems() {
 }
 void Desklet::sendValues(const QJsonObject& values) {
     if(!connected_ || demo_ || awaitingConfirmation_ || controller_.busy()) return;
-    pendingAutomation_=false; pendingAutomationSource_.clear(); pendingOccurrenceKey_.clear();
     pending_=values; awaitingConfirmation_=true; notice_="Änderung wird ausgeführt …";
     updateControls(); updateFooter(); controller_.setPanelValues(values);
-}
-void Desklet::sendAutomationValues(const QJsonObject& values, const QString& source, const QString& occurrenceKey) {
-    if(!connected_ || demo_ || awaitingConfirmation_ || controller_.busy()) {
-        automation_.commandEvent(source,false,occurrenceKey.isEmpty() ?
-            "Gerät ist nicht schaltbereit; Ereignisauftrag wurde nicht wiederholt." :
-            "Gerät ist noch nicht schaltbereit; der Zeitplan wird beim nächsten Zeitimpuls erneut geprüft.");
-        return;
-    }
-    bool already=true;
-    for(QJsonObject::const_iterator i=values.begin();i!=values.end();++i) if(status_.value(i.key())!=i.value()) already=false;
-    if(already) {
-        automation_.actionAccepted(occurrenceKey);
-        automation_.commandEvent(source,true,"Gewünschter Zustand war bereits bestätigt.");
-        return;
-    }
-    pending_=values; awaitingConfirmation_=true; pendingAutomation_=true;
-    pendingAutomationSource_=source; pendingOccurrenceKey_=occurrenceKey;
-    automation_.actionAccepted(occurrenceKey); // one attempt per scheduled occurrence
-    notice_=source+" wird ausgeführt …"; updateControls(); updateFooter();
-    controller_.setPanelValues(values);
 }
 void Desklet::openControl(int index) {
     if(!controls_[index]->isEnabled()) return;
@@ -286,7 +281,6 @@ void Desklet::openControl(int index) {
         }
         const bool known=connected_ && powerKnown(status_);
         const bool turnOn=!known || status_["pwr"]!="1";
-        pendingAutomation_=false; pendingAutomationSource_.clear(); pendingOccurrenceKey_.clear();
         pending_={{"pwr",turnOn ? "1" : "0"}};
         awaitingConfirmation_=true;
         notice_=known ? "Änderung wird ausgeführt …" : "Keine aktuelle Rückmeldung · Einschalten wird versucht …";
@@ -321,8 +315,6 @@ void Desklet::openControl(int index) {
     menu.exec(controls_[index]->mapToGlobal(QPoint(0,controls_[index]->height())));
 }
 void Desklet::applyStatus(const QJsonObject& status) {
-    const bool automated=pendingAutomation_; const QString automationSource=pendingAutomationSource_;
-    bool commandConfirmed=false;
     status_=status; connected_=true; error_.clear(); updated_=QDateTime::currentDateTime();
     recordReception();
     setWindowTitle("Philips AirControl – "+status.value("name").toString("Luftreiniger"));
@@ -330,21 +322,17 @@ void Desklet::applyStatus(const QJsonObject& status) {
     if(awaitingConfirmation_) {
         bool confirmed=true;
         for(QJsonObject::iterator i=pending_.begin();i!=pending_.end();++i) if(status.value(i.key())!=i.value()) confirmed=false;
-        commandConfirmed=confirmed;
         notice_=confirmed ? "Änderung vom Gerät bestätigt." : "Gerät meldet noch den bisherigen Wert.";
         if(confirmed) activeCommandError_.clear();
         else { activeCommandError_="Gerät hat den gewünschten Schaltzustand nicht bestätigt.";
             commandError_=activeCommandError_; ++commandFailureId_; }
     }
-    if(automated) automation_.commandEvent(automationSource,commandConfirmed,notice_);
-    awaitingConfirmation_=false; pendingAutomation_=false; pendingAutomationSource_.clear(); pendingOccurrenceKey_.clear();
+    awaitingConfirmation_=false;
     updateEmblems(); updateValues(); updateControls(); updateFooter();
-    automation_.statusEvent(status_);
 }
 void Desklet::setConnectionError(const QString& error) {
     connected_=false; error_=error; notice_=error;
     receptionFailed_=true;
-    automation_.setConnected(false,error);
     if(!controller_.busy()) awaitingConfirmation_=false;
     updateEmblems(); updateValues();
     qWarning().noquote()<<"AirControl:"<<error; updateControls(); updateFooter();
@@ -412,8 +400,9 @@ void Desklet::updateMonitoring() {
     }
     if(!activeCommandError_.isEmpty()) activeAlerts_.append({"command-"+QString::number(commandFailureId_),
         AlertLevel::Error,"Schaltfehler: "+activeCommandError_});
-    automation_.alertsEvent(activeAlerts_);
-    if(!automationProblem_.isEmpty()) activeAlerts_.append({"automation",AlertLevel::Error,"Lua-Automatik: "+automationProblem_});
+    if(!automationState_.value("error").toString().isEmpty())
+        activeAlerts_.append({"automation",AlertLevel::Error,
+            "Lua-Automatik auf dem Server: "+automationState_.value("error").toString()});
     bool acknowledged=!activeAlerts_.isEmpty();
     for(const Alert& alert:activeAlerts_) acknowledged=acknowledged && alarmLatch_.acknowledged(alert);
     const QString state=freshness==DataFreshness::Waiting ? QString("Noch kein Datenempfang") :
@@ -510,46 +499,66 @@ void Desklet::showAutomationSettings() {
     dialog.setWindowTitle("AirControl – Lua-Automatik"); dialog.resize(760,610);
     QVBoxLayout* layout=new QVBoxLayout(&dialog);
     QCheckBox* enabled=new QCheckBox("Lua-Automatik aktivieren",&dialog);
-    enabled->setObjectName("automationEnabled"); enabled->setChecked(preferences_.automationEnabled);
+    enabled->setObjectName("automationEnabled"); enabled->setEnabled(false);
     layout->addWidget(enabled);
-    QLabel* path=new QLabel("Skript: "+AutomationEngine::scriptPath(),&dialog);
+    QLabel* path=new QLabel("Skript: wird vom Server geladen …",&dialog);
     path->setTextInteractionFlags(Qt::TextSelectableByMouse); path->setWordWrap(true); layout->addWidget(path);
-    QLabel* note=new QLabel("Zeitpläne und Ereignisse steuern nur die bekannten AirControl-Felder. "
-        "Das Skript hat keinen Datei-, Netzwerk-, Shell- oder Prozesszugriff. "
-        "Eine geplante Schaltung wird höchstens einmal je Termin versucht.",&dialog);
+    QLabel* note=new QLabel("Der Editor läuft auf diesem Client; gespeichert und ausgeführt wird das Skript "
+        "ausschließlich auf dem AirControl-Server. Während dieser Dialog geöffnet ist, kann kein anderer "
+        "Client das Skript bearbeiten.",&dialog);
     note->setWordWrap(true); layout->addWidget(note);
     QPlainTextEdit* editor=new QPlainTextEdit(&dialog); editor->setObjectName("automationScript");
     editor->setLineWrapMode(QPlainTextEdit::NoWrap);
     editor->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
-    QFile file(AutomationEngine::scriptPath());
-    if(file.open(QIODevice::ReadOnly)) editor->setPlainText(QString::fromUtf8(file.readAll()));
-    else editor->setPlainText(AutomationEngine::exampleScript());
+    editor->setEnabled(false);
     layout->addWidget(editor,1);
     QLabel* status=new QLabel(&dialog); status->setObjectName("automationStatus"); status->setWordWrap(true);
-    status->setText(automation_.lastError().isEmpty() ?
-        QString("%1 · %2 Zeitpläne geladen").arg(automation_.enabled() ? "Aktiv" : "Deaktiviert").arg(automation_.scheduleCount()) :
-        "Fehler: "+automation_.lastError());
+    status->setText("Fordere Editier-Sperre und aktuelles Skript vom Server an …");
     layout->addWidget(status);
     QDialogButtonBox* buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel,&dialog);
     QPushButton* example=buttons->addButton("Tag/Nacht-Beispiel",QDialogButtonBox::ResetRole);
     example->setObjectName("automationExample");
-    buttons->button(QDialogButtonBox::Save)->setText("Speichern und neu laden");
+    QPushButton* save=buttons->button(QDialogButtonBox::Save);
+    save->setText("Auf Server speichern und neu laden"); save->setEnabled(false);
+    example->setEnabled(false);
     buttons->button(QDialogButtonBox::Cancel)->setText("Abbrechen"); layout->addWidget(buttons);
-    connect(example,&QPushButton::clicked,&dialog,[editor] { editor->setPlainText(AutomationEngine::exampleScript()); });
-    connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
-    connect(buttons,&QDialogButtonBox::accepted,&dialog,[&] {
-        AutomationEngine validator(false);
-        if(!validator.loadScriptText(editor->toPlainText(),"Editorprüfung")) {
-            status->setText("Nicht gespeichert: "+validator.lastError()); return;
-        }
-        QString error;
-        if(!automation_.saveScript(editor->toPlainText(),&error)) { status->setText("Nicht gespeichert: "+error); return; }
-        preferences_.automationEnabled=enabled->isChecked(); preferences_.save();
-        if(preferences_.automationEnabled && automation_.enabled()) automation_.reload();
-        else automation_.setEnabled(preferences_.automationEnabled);
-        automationProblem_=automation_.lastError(); updateMonitoring(); dialog.accept();
+    bool lockHeld=false;
+    bool saving=false;
+    quint64 revision=0;
+    connect(example,&QPushButton::clicked,&dialog,[editor] {
+        editor->setPlainText(QString::fromUtf8(AirctrlAutomationExample));
     });
+    connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
+    connect(&controller_,&Controller::automationEditGranted,&dialog,
+        [&](const QString& script,bool active,quint64 serverRevision,const QJsonObject& state) {
+            lockHeld=true; revision=serverRevision; automationState_=state;
+            editor->setPlainText(script); enabled->setChecked(active);
+            editor->setEnabled(true); enabled->setEnabled(true); save->setEnabled(true); example->setEnabled(true);
+            path->setText("Skript auf dem Server: "+state.value("script_path").toString("unbekannt"));
+            status->setText(QString("Editier-Sperre erhalten · Revision %1 · %2 Zeitpläne geladen")
+                .arg(revision).arg(state.value("schedule_count").toInt()));
+        });
+    connect(&controller_,&Controller::automationEditFailed,&dialog,[&](const QString& error) {
+        saving=false; lockHeld=controller_.automationEditHeld();
+        status->setText("Nicht gespeichert: "+error);
+        if(lockHeld) {
+            editor->setEnabled(true); enabled->setEnabled(true); save->setEnabled(true); example->setEnabled(true);
+        } else {
+            editor->setEnabled(false); enabled->setEnabled(false); save->setEnabled(false); example->setEnabled(false);
+        }
+    });
+    connect(&controller_,&Controller::automationSaved,&dialog,[&](const QJsonObject& state) {
+        automationState_=state; lockHeld=false; saving=false; updateMonitoring(); dialog.accept();
+    });
+    connect(buttons,&QDialogButtonBox::accepted,&dialog,[&] {
+        if(!lockHeld || saving) return;
+        saving=true; editor->setEnabled(false); enabled->setEnabled(false); save->setEnabled(false); example->setEnabled(false);
+        status->setText("Übertrage Skript zum Server; dort wird es geprüft, gespeichert und neu geladen …");
+        controller_.saveAutomationEdit(editor->toPlainText(),enabled->isChecked(),revision);
+    });
+    controller_.beginAutomationEdit();
     dialog.exec();
+    if(lockHeld) controller_.cancelAutomationEdit();
 }
 void Desklet::applyWindowMode() {
     const bool x11 = QGuiApplication::platformName() == "xcb";
@@ -725,7 +734,7 @@ void Desklet::openMenu(const QPoint& point) {
     QAction* alarmSettings=menu.addAction("Datenalter und Alarme …",this,&Desklet::showAlarmSettings);
     alarmSettings->setObjectName("alarmSettings");
     QAction* automationSettings=menu.addAction(QString("Lua-Automatik … [%1]")
-        .arg(automation_.enabled() ? automation_.loaded() ? "aktiv" : "Fehler" : "aus"),this,&Desklet::showAutomationSettings);
+        .arg(automationStateLabel(automationState_)),this,&Desklet::showAutomationSettings);
     automationSettings->setObjectName("automationSettingsAction");
     menu.addSeparator();
     QAction* refresh=menu.addAction("Statusverbindung neu starten (F5)",this,[this] { controller_.refresh(); });
@@ -818,7 +827,7 @@ void Desklet::showDetails() {
         .arg(qEnvironmentVariable("XDG_SESSION_TYPE","unbekannt"),waylandSession_ ? "ja" : "nein");
     const QString errorText=(error_.isEmpty() ? QString() : "Letzter Verbindungsfehler:\n"+error_+"\n\n")+
         (commandError_.isEmpty() ? QString() : "Letzter Schaltfehler:\n"+commandError_+"\n\n");
-    const QString automationText="LUA-AUTOMATIK\n"+automation_.diagnostics()+"\n";
+    const QString automationText="LUA-AUTOMATIK\n"+automationDiagnostics(automationState_)+"\n";
     const QString rawJson=QString::fromUtf8(QJsonDocument(status_).toJson(QJsonDocument::Indented));
     const QList<DiagnosticField> deviceFields=describeDeviceFields(status_);
     const std::function<QTableWidget*(const QList<DiagnosticField>&,const QString&,bool)> table=
@@ -861,7 +870,7 @@ void Desklet::showDetails() {
         {"Plattform",QGuiApplication::platformName(),"Tatsächlich von Qt verwendetes Fenster-Backend, z.B. xcb oder wayland."},
         {"Desktopsitzung",qEnvironmentVariable("XDG_SESSION_TYPE","unbekannt"),"Vom Desktop gemeldeter Sitzungstyp. Er kann vom Qt-Fenster-Backend abweichen."},
         {"Wayland-Behandlung",waylandSession_ ? "ja" : "nein","Ob das Widget seine Wayland-spezifische Fensterbehandlung verwendet."},
-        {"Server",serverEndpoint,"TCP-Endpunkt für Desklet, Lua und Kommandozeilen-Clients."},
+        {"Server",serverEndpoint,"TCP-Endpunkt für Desklet, Lua-Editor und Kommandozeilen-Clients."},
         {"IPC-Transport","TCP","Nur der getrennte Server kennt das AC2729-Gerät und dessen UDP-Port."},
         {"Empfangsmodus","Zentraler Server mit einer I/O-Sitzung","Alle Clients erhalten denselben Statusstrom; nur airctrl-server besitzt UDP-Socket und Protokollzustand."},
         {"Empfangsphase",controller_.observationProgress(),"Vom Server gemeldeter Fortschritt der Geräte-I/O; das Desklet bleibt ein reiner IPC-Client."},
@@ -870,12 +879,12 @@ void Desklet::showDetails() {
         {"Letztes Statuspaket",packetReceivedAt_.isValid() ? packetReceivedAt_.toString(Qt::ISODate) : "noch keines","Empfangszeit des letzten gültigen Pakets, unabhängig von der Bestätigung eines Schaltbefehls."},
         {"Datenalter-Grenzen",QString("Gelb ab %1 s; Rot ab %2 s").arg(preferences_.ageWarningSeconds).arg(preferences_.ageStaleSeconds),"Lokale Alarmgrenzen. Verbindungsfehler sind sofort rot. Der CoAP-Timeout wird dadurch nicht verändert."},
         {"Filter-Vorwarngrenze",QString::number(FilterWarningHours)+" Betriebsstunden","Lokale Desklet-Grenze für AC2729: A3, C7 und F1 einzeln gelb bei 1–120 h, rot bei 0 h. Keine gesichert dokumentierte Philips-Frühwarnschwelle; keine Bitmasken-Deutung von err."},
-        {"Lua-Automatik",automation_.enabled() ? automation_.loaded() ? "aktiv" : "Fehler" : "deaktiviert","Lokale ereignis- und zeitgesteuerte Regeln. Standardmäßig aus; geplante Aufträge werden höchstens einmal pro Termin versucht."},
-        {"Lua-Version",AutomationEngine::luaRelease()+" (eingebettet)","Im Programm eingebettete Lua-Laufzeit mit begrenzter Sandbox."},
-        {"Lua-Skript",AutomationEngine::scriptPath(),"Lokale Skriptdatei; bearbeitbar über das Kontextmenü."},
-        {"Lua-Zeitpläne",QString::number(automation_.scheduleCount()),"Erfolgreich geladene airctrl.schedule-Regeln."},
-        {"Letztes Lua-Ereignis",automation_.lastEvent().isEmpty() ? "—" : automation_.lastEvent(),"Zuletzt an on_event übergebenes Ereignis."},
-        {"Letzte Lua-Aktion",automation_.lastAction().isEmpty() ? "—" : automation_.lastAction(),"Letzter von Lua angeforderter bzw. bestätigter Steuerauftrag."},
+        {"Lua-Automatik",automationStateLabel(automationState_),"Ereignis- und zeitgesteuerte Regeln laufen ausschließlich im zentralen Server."},
+        {"Lua-Version",automationState_.value("lua_version").toString("unbekannt")+" (Server)","Im Server eingebettete Lua-Laufzeit mit begrenzter Sandbox."},
+        {"Lua-Skript",automationState_.value("script_path").toString("unbekannt"),"Serverdatei; der Inhalt wird nur während einer exklusiven Editor-Sitzung übertragen."},
+        {"Lua-Zeitpläne",QString::number(automationState_.value("schedule_count").toInt()),"Vom Server erfolgreich geladene airctrl.schedule-Regeln."},
+        {"Letztes Lua-Ereignis",automationState_.value("last_event").toString("—"),"Zuletzt vom Server an on_event übergebenes Ereignis."},
+        {"Letzte Lua-Aktion",automationState_.value("last_action").toString("—"),"Letzter vom Server angeforderter bzw. bestätigter Lua-Steuerauftrag."},
         {"Aktive Alarme",alertReport(activeAlerts_),"Warnungen aus bekannten Gerätestatusfeldern sowie Fehler beim Empfang oder Schalten. Unbekannte err-Codes werden nicht geraten."},
         {"Beobachtungsstarts",QString::number(controller_.observationStarts()),"Serverweite Starts der Geräte-I/O-Sitzung; Clientfenster erzeugen keine zusätzlichen UDP-Sitzungen."},
         {"Serverkonfiguration","/etc/airctrld.cfg","Enthält ausschließlich serverseitig Geräteziel, UDP-Port sowie Geräte-Timeouts."},

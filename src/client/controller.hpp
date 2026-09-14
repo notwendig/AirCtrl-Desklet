@@ -1,6 +1,6 @@
 /**
  * @file controller.hpp
- * @brief Asynchronous TCP client used by the desklet and Lua automation.
+ * @brief Asynchronous TCP client used by the desklet and script editor.
  */
 #pragma once
 #include <QObject>
@@ -37,6 +37,7 @@ public:
     QString host() const { return serverHost_; }
     QString backendPath() const { return executable_; }
     QString serverEndpoint() const { return serverHost_+":"+QString::number(serverPort_); }
+    bool automationEditHeld() const { return automationEditHeld_; }
     /** @brief Override the command-response watchdog; intended for tests. */
     void setWatchdogInterval(int milliseconds);
     /** @brief Override the post-command status timeout; intended for tests. */
@@ -52,6 +53,12 @@ public slots:
     void setHumidity(int percent);
     /** @brief Submit an allow-listed set of panel values. */
     void setPanelValues(const QJsonObject& values);
+    /** Acquire the server-wide edit lock and download the current Lua script. */
+    void beginAutomationEdit();
+    /** Upload, validate and activate the edited script on the server. */
+    void saveAutomationEdit(const QString& script, bool enabled, quint64 revision);
+    /** Release this client's edit lock without changing the server script. */
+    void cancelAutomationEdit();
 signals:
     /** @brief Emitted for every valid status packet, before state processing. */
     void statusPacketReceived();
@@ -65,6 +72,14 @@ signals:
     void commandFailed(QString reason);
     /** @brief Indicates that the server accepted the pending command. */
     void controlAccepted();
+    /** Reports server-owned Lua runtime state without transferring script text. */
+    void automationStateReceived(QJsonObject state);
+    /** Delivers the script only after the server granted the exclusive lock. */
+    void automationEditGranted(QString script, bool enabled, quint64 revision, QJsonObject state);
+    /** Reports a denied, invalid or interrupted editor operation. */
+    void automationEditFailed(QString reason);
+    /** Confirms that the server stored the script and released the lock. */
+    void automationSaved(QJsonObject state);
 private:
     void connectServer();
     void launchServer();
@@ -88,5 +103,8 @@ private:
     QString progress_;
     QTcpSocket socket_;
     QTimer reconnect_, connectWatchdog_, writeWatchdog_, confirmation_;
+    QTimer automationWatchdog_;
     QByteArray stream_;
+    quint64 nextAutomationRequestId_ = 1, pendingAutomationRequestId_ = 0;
+    bool automationEditHeld_ = false;
 };

@@ -5,7 +5,7 @@
 Sicherheitskorrekturen sind für den aktuellen Standardbranch und die jeweils neueste
 1.x-Veröffentlichung vorgesehen. Das ist ein gemeinschaftlich gepflegtes Projekt,
 kein Produkt mit garantierter Reaktionszeit. Alte ZIP-Versionen erhalten keine
-zugesicherte Rückportierung. Der aktuelle vorbereitete Anwendungsstand ist 1.06.
+zugesicherte Rückportierung. Der aktuelle vorbereitete Anwendungsstand ist 1.07.
 
 ## Vertraulich melden
 
@@ -27,7 +27,7 @@ gegebenenfalls ein Korrekturvorschlag. Keine Versuche an fremden Geräten.
 
 - Nur `airctrl-server` kommuniziert mit dem lokalen Gerät über UDP/CoAP
   (standardmäßig Port 5683). Stelle diesen Port nicht durch Routerfreigaben ins Internet.
-- Desklet, Lua und CLI benutzen TCP, standardmäßig Port 5680. Das Protokoll
+- Desklet, Lua-Skripteditor und CLI benutzen TCP, standardmäßig Port 5680. Das Protokoll
   besitzt keine eigene Authentifizierung oder Transportverschlüsselung. Die
   Server-Firewall muss den Port auf vertrauenswürdige Rechner im lokalen Netz
   begrenzen; keine Routerfreigabe und keine Veröffentlichung im Internet.
@@ -53,6 +53,10 @@ gegebenenfalls ein Korrekturvorschlag. Keine Versuche an fremden Geräten.
   Instruktionen. Sie ist dennoch keine Garantie für unvertrauenswürdige Skripte:
   nur selbst geprüften Code aktivieren. Lua-Aufträge können das reale Gerät
   schalten und gehören deshalb wie manuelle Befehle in ein kontrolliertes Netz.
+  Das maßgebliche Skript und die Lua-Laufzeit liegen auf dem Server. Da das
+  TCP-Protokoll nicht authentifiziert ist, darf der Editorport nur für
+  vertrauenswürdige Clients erreichbar sein; die exklusive Editier-Sperre ist
+  kein Zugriffsschutz.
 
 Filter- und Datenalteralarme sind Komfortfunktionen, keine sicherheitskritische
 Überwachung. Herstellerhinweise und die Anzeige des tatsächlichen Geräts haben

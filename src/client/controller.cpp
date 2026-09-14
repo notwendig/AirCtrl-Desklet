@@ -14,7 +14,8 @@
 Controller::Controller(QString serverExecutable, QObject* parent)
     : QObject(parent), executable_(std::move(serverExecutable)),
       serverHost_(defaultAirctrlServerHost()), serverPort_(defaultAirctrlServerPort()) {
-    for (QTimer* timer : {&reconnect_, &connectWatchdog_, &writeWatchdog_, &confirmation_})
+    for (QTimer* timer : {&reconnect_, &connectWatchdog_, &writeWatchdog_, &confirmation_,
+                          &automationWatchdog_})
         timer->setSingleShot(true);
     connect(&reconnect_, &QTimer::timeout, this, &Controller::connectServer);
     connect(&connectWatchdog_, &QTimer::timeout, this, [this] {
@@ -27,6 +28,10 @@ Controller::Controller(QString serverExecutable, QObject* parent)
     connect(&confirmation_, &QTimer::timeout, this, [this] {
         failCommand("Keine neue Statusbestätigung nach dem Schaltbefehl · keine automatische Wiederholung.");
     });
+    connect(&automationWatchdog_, &QTimer::timeout, this, [this] {
+        cancelAutomationEdit();
+        emit automationEditFailed("Keine Serverantwort auf die Lua-Editor-Anforderung.");
+    });
     connect(&socket_, &QTcpSocket::connected, this, [this] {
         connectWatchdog_.stop();
         failureReported_ = false;
@@ -37,6 +42,12 @@ Controller::Controller(QString serverExecutable, QObject* parent)
         connectWatchdog_.stop();
         launchAttempted_ = false;
         hasStatus_ = false;
+        if (automationEditHeld_ || pendingAutomationRequestId_ != 0) {
+            automationEditHeld_ = false;
+            pendingAutomationRequestId_ = 0;
+            automationWatchdog_.stop();
+            emit automationEditFailed("Serververbindung während der Lua-Bearbeitung beendet; Sperre wurde freigegeben.");
+        }
         if (busy_) failCommand("Serververbindung wurde während des Schaltbefehls beendet · keine Wiederholung.");
         if (active_) connectionFailed("Verbindung zum AirControl-Server wurde beendet.");
     });
@@ -96,9 +107,12 @@ void Controller::stop() {
     connectWatchdog_.stop();
     writeWatchdog_.stop();
     confirmation_.stop();
+    automationWatchdog_.stop();
     awaitingConfirmation_ = false;
     pendingCommandId_ = 0;
     hasStatus_ = false;
+    automationEditHeld_ = false;
+    pendingAutomationRequestId_ = 0;
     stream_.clear();
     socket_.abort();
     setBusy(false);
@@ -185,6 +199,49 @@ void Controller::readServer() {
 }
 void Controller::handleEnvelope(const QJsonObject& envelope) {
     const QString kind = envelope.value("_airctrl").toString();
+    if (kind == "automation_state") {
+        emit automationStateReceived(envelope);
+        return;
+    }
+    if (kind == "automation_edit") {
+        const qulonglong id = envelope.value("id").toVariant().toULongLong();
+        if (id == 0 || id != pendingAutomationRequestId_) return;
+        automationWatchdog_.stop();
+        pendingAutomationRequestId_ = 0;
+        if (!envelope.value("ok").toBool()) {
+            emit automationEditFailed(envelope.value("error").toString(
+                "Lua-Editor konnte nicht geöffnet werden."));
+            return;
+        }
+        if (!envelope.value("script").isString() || !envelope.value("state").isObject()) {
+            cancelAutomationEdit();
+            emit automationEditFailed("Unvollständige Lua-Editor-Antwort des Servers.");
+            return;
+        }
+        automationEditHeld_ = true;
+        const QJsonObject state = envelope.value("state").toObject();
+        emit automationEditGranted(envelope.value("script").toString(),
+            state.value("enabled").toBool(),
+            envelope.value("revision").toVariant().toULongLong(), state);
+        return;
+    }
+    if (kind == "automation_saved") {
+        const qulonglong id = envelope.value("id").toVariant().toULongLong();
+        if (id == 0 || id != pendingAutomationRequestId_) return;
+        automationWatchdog_.stop();
+        pendingAutomationRequestId_ = 0;
+        if (!envelope.value("ok").toBool()) {
+            emit automationEditFailed(envelope.value("error").toString(
+                "Lua-Skript wurde vom Server abgelehnt."));
+            return;
+        }
+        automationEditHeld_ = false;
+        const QJsonObject state = envelope.value("state").toObject();
+        emit automationStateReceived(state);
+        emit automationSaved(state);
+        return;
+    }
+    if (kind == "automation_edit_released") return;
     if (kind == "state") {
         observationStarts_ = envelope.value("starts").toVariant().toULongLong();
         const QString state = envelope.value("state").toString();
@@ -249,6 +306,40 @@ void Controller::setPanelValues(const QJsonObject& values) {
         return;
     }
     launchWrite(values);
+}
+
+void Controller::beginAutomationEdit() {
+    if (pendingAutomationRequestId_ != 0 || automationEditHeld_) return;
+    if (!active_ || socket_.state() != QAbstractSocket::ConnectedState) {
+        emit automationEditFailed("Keine Verbindung zum AirControl-Server.");
+        return;
+    }
+    pendingAutomationRequestId_ = nextAutomationRequestId_++;
+    send({{"_airctrl", "automation_edit_begin"},
+          {"id", static_cast<qint64>(pendingAutomationRequestId_)}});
+    automationWatchdog_.start(10000);
+}
+
+void Controller::saveAutomationEdit(const QString& script, bool enabled, quint64 revision) {
+    if (pendingAutomationRequestId_ != 0) return;
+    if (!automationEditHeld_ || socket_.state() != QAbstractSocket::ConnectedState) {
+        emit automationEditFailed("Dieser Client besitzt keine Lua-Editier-Sperre.");
+        return;
+    }
+    pendingAutomationRequestId_ = nextAutomationRequestId_++;
+    send({{"_airctrl", "automation_edit_save"},
+          {"id", static_cast<qint64>(pendingAutomationRequestId_)},
+          {"revision", static_cast<qint64>(revision)},
+          {"enabled", enabled}, {"script", script}});
+    automationWatchdog_.start(10000);
+}
+
+void Controller::cancelAutomationEdit() {
+    automationWatchdog_.stop();
+    pendingAutomationRequestId_ = 0;
+    if (socket_.state() == QAbstractSocket::ConnectedState)
+        send({{"_airctrl", "automation_edit_cancel"}});
+    automationEditHeld_ = false;
 }
 void Controller::launchWrite(const QJsonObject& values) {
     if (busy_) return;

@@ -1,5 +1,19 @@
 # Änderungsübersicht
 
+## v1.07 – 2026-09-14
+
+- Lua 5.4.9, Ereignisse und Zeitpläne laufen ausschließlich im Qt-freien
+  `airctrl-server` und bleiben ohne geöffnetes Desklet aktiv.
+- Der Client enthält nur noch den Skripteditor und keine Lua-Laufzeit.
+- Beim Öffnen wird das maßgebliche Skript mit Revision vom Server geladen; beim
+  Speichern serverseitig validiert, atomar geschrieben und neu geladen.
+- Eine serverweite Sperre lässt genau einen Client bearbeiten. Abbrechen oder
+  TCP-Verbindungsabbruch gibt sie automatisch frei.
+- Aktivierung und behandelte Zeitplantermine werden auf dem Server dauerhaft
+  gespeichert. Diagnose und IPC melden den zentralen Lua-Zustand an alle Clients.
+- Lua verwendet den portablen `switch`-Dispatcher statt der GCC-Erweiterung für
+  berechnete Sprünge; dadurch bleibt der strikte Build bei **0 Warnungen**.
+
 ## v1.06 – 2026-09-10
 
 - Jede gültige Gerätestatusmeldung wird mit UTC-Zeitstempel und stabiler

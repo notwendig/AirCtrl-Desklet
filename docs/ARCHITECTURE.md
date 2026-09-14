@@ -12,13 +12,14 @@ JavaScript-Erweiterung. Die Oberfläche bleibt deutsch; C++-Bezeichner sind engl
 | `src/client/alerts.*` | Datenalter, Warnungsidentitäten, Quittierung und Benachrichtigung |
 | `src/client/diagnostics.*` | Rohwert-Erklärungen, Hexcodes und Kopierbericht |
 | `src/client/preferences.*` | Benutzereinstellungen und Autostart |
-| `src/client/automation.*` | Eingebettete Lua-Sandbox, Ereignisse, Zeitpläne und Skriptprotokoll |
+| `src/server/automation.*` | Qt-freie Lua-Sandbox, Ereignisse, Zeitpläne, Zustandsdatei und Skriptprotokoll |
 | `examples/automation.lua` | Kanonische Editorvorlage und kommentierte Lua-/Statusreferenz |
-| `src/common/version.hpp.in` | Einzige, Qt-freie gemeinsame Versionsvorlage |
+| `src/common/*.in` | Qt-freie Vorlagen für Version und Lua-Beispiel |
 | `src/client/controlvalues.*` | Qt-seitige Positivliste und Kodierung erlaubter Steuerwerte |
 | `src/client/ipc.*` | Qt-seitige TCP-Standardwerte für Desklet und CLI |
-| `src/server/main.cpp` | Qt-freier POSIX-TCP-Server, Befehlswarteschlange und Geräte-I/O |
-| `src/client/controller.*` | Reiner Desklet-Client, IPC-Zustand und Befehlsbestätigung |
+| `src/server/main.cpp` | Start des Qt-freien POSIX-TCP-Servers |
+| `src/server/server.*` | TCP-Clients, exklusive Editor-Sperre, Befehlswarteschlange und Geräte-I/O |
+| `src/client/controller.*` | Reiner Desklet-Client, IPC-Zustand, Remote-Editor und Befehlsbestätigung |
 | `src/client/cli_main.cpp` | Kommandozeilen-Client für Status, Beobachtung, Schalten und F5-Ersatz |
 | `third_party/aioairctrl` | Nur vom Server verwendete C++-Implementierung des Philips-CoAP-Protokolls |
 | `third_party/lua` | Verifizierter offizieller Lua-5.4.9-Quellstand |
@@ -29,14 +30,15 @@ Die Produktionsquellen sind damit physisch getrennt: Der Server-Unterbaum und
 sein CMake-Zweig enthalten keinerlei Qt-Abhängigkeit. Der Server verwendet
 C++17, POSIX-Sockets, nlohmann/json, OpenSSL und Threads. Der Client-Unterbaum
 enthält keine Geräte-/CoAP-Quelle; seine Qt-Helfer gehören ausschließlich zum
-Target `airctrl_client_common`. Gemeinsam ist nur die generierte Versionsnummer.
+Target `airctrl_client_common`. Lua wird nur im Serverzweig kompiliert; der
+Client erhält lediglich die aus `examples/automation.lua` erzeugte Editorvorlage.
 
 ## Server, Clients und Geräte-I/O
 
 `airctrl-server` ist der einzige
 installierte Prozess mit Zugriff auf `aioairctrl`. Er hält genau einen UDP-Socket
 und einen über `/sys/dev/sync` initialisierten Protokollzustand. Weder Desklet
-noch Lua noch `airctrl-client` öffnen UDP oder kontaktieren den AC2729 direkt.
+noch Skripteditor noch `airctrl-client` öffnen UDP oder kontaktieren den AC2729 direkt.
 
 Die Clients verbinden sich mit dem im Client eingestellten TCP-Endpunkt,
 standardmäßig `nadhh:5680`. Nachrichten sind auf 1 MiB begrenzte, mit Zeilenumbruch abgeschlossene JSON-
@@ -115,12 +117,22 @@ einer Observe-Neuanmeldung mit gleichem Token und Socket; erst deren Fehlschlag
 ersetzt Socket und Synchronisierung. Der [Mitschnitt vom 13. September](PROTOCOL_VALIDATION_2026-09-13.md)
 belegt die zuvor nicht bekannte Firewallablehnung verzögerter Meldungen.
 
-Lua läuft im GUI-Prozess und erhält nur kopierte JSON-/Ereignisdaten. Ein
-`airctrl.set`-Auftrag geht wie ein Klick über den Controller und die TCP-Verbindung
-durch dieselbe Feldprüfung, Ein-Befehl-Sperre und Statusbestätigung. Zeitpläne speichern ihre ausgeführte
-Terminidentität; nach einem Neustart wird nur der jüngste fällige Tag-/Nacht-
-Zustand berücksichtigt. Datei-, Betriebssystem-, Paket- und Debug-Bibliotheken
-werden weder geöffnet noch als API angeboten.
+Lua läuft ausschließlich im Serverprozess und erhält dort bestätigte JSON-
+Statusdaten, Verbindungswechsel, Gerätealarme und den lokalen Minutenimpuls. Ein
+`airctrl.set`-Auftrag benutzt dieselbe Positivliste, serialisierte
+Gerätewarteschlange und Statusbestätigung wie ein Clientauftrag. Zeitpläne
+speichern ihre ausgeführte Terminidentität serverseitig; nach einem Neustart wird
+nur der jüngste fällige Tag-/Nacht-Zustand berücksichtigt. Datei-,
+Betriebssystem-, Paket- und Debug-Bibliotheken werden weder geöffnet noch als
+API angeboten.
+
+Das maßgebliche Skript liegt standardmäßig unter
+`~/.config/airctrl-server/automation.lua`; Aktivierung, Revision und behandelte
+Termine liegen daneben in `automation-state.json`. Beim Öffnen des Dialogs
+fordert ein Client eine serverweite Editier-Sperre an. Nur dem Eigentümer sendet
+der Server den Skripttext. Speichern prüft Revision, Größe, Lua-Syntax und API,
+schreibt atomar und gibt die Sperre nach erfolgreichem Neuladen frei. Abbrechen
+oder das Schließen der TCP-Verbindung löst dieselbe Freigabe aus.
 
 Die Power-Taste bleibt bedienbar, startet aber keinen zweiten bereits laufenden
 Schreibauftrag. Ein Schreibfehler ist ein anderer Zustand als ein ausgefallener
@@ -155,5 +167,5 @@ Interaktive Tests auf einem echten Desktop bleiben notwendig.
 
 Keine Cloud-Anmeldung, keine Telemetrie, kein automatisches Zurücksetzen von
 Gerätewartung, kein Firmware-Update und keine automatischen Eingriffe aufgrund
-einer Warnung ohne eine ausdrücklich aktivierte lokale Lua-Regel. Das Projekt
+einer Warnung ohne eine ausdrücklich aktivierte serverseitige Lua-Regel. Das Projekt
 ist keine universelle Philips-Geräteintegration.

@@ -3,8 +3,10 @@
 Die eigenen C++-Schnittstellen unter `src/**/*.hpp` sind auf Englisch im Doxygen-
 Stil dokumentiert. Die Kommentare beschreiben Zuständigkeit, Parameter,
 Rückgabewerte und wichtige Zustands- oder Sicherheitsgrenzen. Insbesondere ist
-festgehalten, dass `Controller`, `Desklet` und `AutomationEngine` ausschließlich
-Clients des TCP-Servers sind und keine direkte Geräteverbindung öffnen.
+festgehalten, dass `Controller` und `Desklet` ausschließlich Clients des
+TCP-Servers sind und keine direkte Geräteverbindung öffnen. Die serverseitige
+`AutomationEngine` führt Lua-Regeln aus und reicht Geräteaufträge nur über die
+vorhandene Befehlswarteschlange des Servers weiter.
 
 Die HTML-Dokumentation wird optional erzeugt; sie ist keine Build-Abhängigkeit:
 

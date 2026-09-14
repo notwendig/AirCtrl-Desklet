@@ -2,7 +2,7 @@
 
 **Your Philips air purifier, right on your Linux desktop.**
 
-C++17 · Qt 6 · Lua 5.4 · TCP server/clients · MIT · **v1.06**
+C++17 · Qt 6 · Lua 5.4 · TCP server/clients · MIT · **v1.07**
 
 [Deutsch](README.md) · [Development](docs/DEVELOPMENT.md) · [C++ API](docs/CPP_API.md) · [Changelog](CHANGELOG.md)
 
@@ -19,8 +19,8 @@ It is a standalone Qt application, **not a Cinnamon JavaScript desklet**.
 
 - Eight controls: power, child lock, automatic mode, fan speed, humidity target,
   lighting, purification/2-in-1 and shutdown timer.
-- One persistent `airctrl-server` is the only process that contacts the AC2729.
-  The desklet, Lua and `airctrl-client` use only its TCP endpoint.
+- One persistent `airctrl-server` is the only process that contacts the AC2729
+  and the only process containing the Lua runtime. Editors and other clients use its TCP endpoint.
 - One UDP I/O session is shared by all clients. A fixed source port and CoAP
   keepalive preserve host-firewall state; the server first refreshes Observe on
   that session before performing a complete reconnect.
@@ -28,8 +28,8 @@ It is a standalone Qt application, **not a Cinnamon JavaScript desklet**.
 - Per-filter warnings, acknowledgement, desktop notifications and optional sound.
 - Configurable colours, background transparency, fonts, window decoration and autostart.
 - Diagnostics with raw JSON, hexadecimal codes and a full copyable report.
-- Sandboxed Lua automation for status, connection, alarm and time events,
-  including day/night schedules.
+- Server-side sandboxed Lua automation for status, connection, alarm and time
+  events, including day/night schedules, with an exclusive editor on clients.
 
 ![Light theme rendered by the actual Qt application in demo mode](docs/images/desklet-light.png)
 
@@ -67,6 +67,9 @@ port=5680
 
 [logging]
 status_file=/var/log/airctrl.log
+
+[automation]
+enabled=false
 
 [device]
 host=AC2729-10
@@ -116,10 +119,10 @@ or encryption; expose TCP port 5680 only to trusted hosts on the local network.
 Allow the fixed UDP device port only from the AC2729 address so delayed Observe
 notifications are not rejected after connection tracking expires.
 
-Server dependencies: a C++17 compiler, CMake ≥ 3.16, OpenSSL Crypto,
+Server dependencies: C and C++17 compilers, CMake ≥ 3.16, OpenSSL Crypto,
 nlohmann/json ≥ 3.9 and Threads; **Qt is not required**. Matplotlib is optional
 and used only for the status PDF. The client additionally
-needs a C compiler and Qt ≥ 6.2 (Core/Gui/Widgets/DBus/Network). Presets require
+needs Qt ≥ 6.2 (Core/Gui/Widgets/DBus/Network). Presets require
 CMake ≥ 3.21 and Ninja.
 [Build instructions and other distributions](docs/DEVELOPMENT.md)
 
@@ -134,15 +137,21 @@ The alarm circle is independent of data freshness. Both are 26 px at the default
 
 ## Lua automation
 
-Open **right-click → Lua-Automatik** to edit and enable the local script. It is
-disabled by default. The supplied example schedules night mode at 22:00 and
+Open **right-click → Lua-Automatik** to acquire the server-wide edit lock and
+download the current server script. Saving sends it back for validation, atomic
+storage and reload. Only one client may edit at a time; closing the editor or
+losing the TCP connection releases the lock.
+
+Automation is disabled by default. Once enabled it runs only in
+`airctrl-server`, even when no desklet is open. The supplied example schedules night mode at 22:00 and
 automatic day mode at 07:00. Its comments also form a complete event, status-field
 and control-value reference. `on_event(event)` receives `startup`, `time`,
 `connected`, `disconnected`, `status`, `alarm` and `command`; status events expose
 both `event.status` and `event.changed`. `airctrl.set { ... }` uses the same field
-allow-list, local IPC connection and confirmed-state command path as the UI.
+allow-list, serialized device queue and confirmed-state command path as the UI.
 
-The verified official Lua 5.4.9 sources are embedded. The sandbox exposes no API
+The verified official Lua 5.4.9 sources are embedded only in the Qt-free server.
+The sandbox exposes no API
 for arbitrary file, network, process, shell, package or debug access and applies
 memory/instruction limits. Only `airctrl.set` can send allow-listed values to the
 configured device. Scheduled commands are attempted at most once per occurrence;

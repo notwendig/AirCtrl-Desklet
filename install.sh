@@ -191,7 +191,7 @@ if ((install_client)); then
 fi
 
 # The daemon owns all device parameters. Preserve an existing administrator
-# configuration; create the system file only on the first v1.06 installation.
+# configuration; create the system file only when no earlier installation has one.
 if ((install_server)) && [[ "${AIRCTRL_SKIP_SYSTEM_CONFIG:-0}" != "1" ]]; then
     if [[ ! -e /etc/airctrld.cfg ]]; then
         if [[ ${EUID} -eq 0 ]]; then

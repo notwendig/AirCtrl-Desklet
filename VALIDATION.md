@@ -1,6 +1,34 @@
-# Validierung – v1.06
+# Validierung – v1.07
 
-Stand: 2026-09-13.
+Stand: 2026-09-14.
+
+## Prüfungen in v1.07
+
+- Lua 5.4.9 wird ausschließlich im Qt-freien Serverzweig gebaut. Der Clientzweig
+  enthält nur den Editor und lädt das maßgebliche Skript erst nach erteilter
+  serverweiter Editier-Sperre.
+- Frischer Server-Debug-Build mit GCC 13.3.0 erfolgreich. `coap`, `statuslog`
+  und die neue serverseitige `automation`-Suite bestehen: **3/3 CTest-Ziele**
+  in 0,27 Sekunden.
+- Frischer Client-Debug-Build mit Qt 6.8.3 erfolgreich. `coap`, `statuslog` und
+  `desklet` bestehen: **3/3 CTest-Ziele** in 38,02 Sekunden.
+- Der Desklet-Integrationstest startet einen echten `airctrl-server` sowie zwei
+  TCP-Controller. Er bestätigt, dass nur der erste Client die Sperre erhält,
+  der zweite abgelehnt wird, Speichern die Sperre freigibt und der zweite danach
+  exakt das zuvor gespeicherte Serverskript erhält.
+- Die Automation-Suite prüft die kanonische Beispielvorlage, Syntax-/API-Fehler,
+  Statusereignisse mit Geräteauftrag sowie dauerhaft gespeicherte Aktivierung,
+  Revision und Skripttext ohne Zugriff auf ein reales Gerät.
+- Lua wurde mit seinem portablen `switch`-Dispatcher aus einem leeren Buildbaum
+  neu erstellt. Vollständige Server- und Client-Builds mit
+  `-Wall -Wextra -Wpedantic` melden jeweils **0 Warnungen**; die anschließenden
+  Server- und Desklet-Testläufe bestehen vollständig.
+- Der Repositoryprüfer und **24 Python-Repositorytests** bestehen; die öffentliche
+  Positivliste umfasst 180 Quelldateien.
+- Die neue Verteilung wurde nicht am physischen AC2729/10 ausgeführt. Die
+  bestehende Geräte-/Keepalive-Bewertung aus v1.06 bleibt davon unberührt.
+
+## Historischer Stand v1.06
 
 Physischer Nachtrag 2026-09-13: Der installierte Server hat auf `gnubbel`
 nachweislich eine stabile CSV-Kopfzeile und fortlaufend gültige AC2729-Stati in

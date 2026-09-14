@@ -8,9 +8,9 @@ if(NOT AIRCTRL_COMPONENT STREQUAL "server" AND NOT AIRCTRL_COMPONENT STREQUAL "c
         "debug-server, debug-client, release-server or release-client.")
 endif()
 if(AIRCTRL_COMPONENT STREQUAL "server")
-    project(airctrl_desklet VERSION 1.06 LANGUAGES CXX)
+    project(airctrl_desklet VERSION 1.07 LANGUAGES C CXX)
 else()
-    project(airctrl_desklet VERSION 1.06 LANGUAGES C CXX)
+    project(airctrl_desklet VERSION 1.07 LANGUAGES CXX)
 endif()
 
 set(CMAKE_CXX_STANDARD 17)
@@ -22,6 +22,9 @@ include(CTest)
 option(AIRCTRL_TEST_WITH_DBUS "Run tests with a private D-Bus notification service" OFF)
 
 configure_file(src/common/version.hpp.in generated/airctrl_version.hpp @ONLY)
+file(READ "${PROJECT_SOURCE_DIR}/examples/automation.lua" AIRCTRL_AUTOMATION_EXAMPLE)
+configure_file(src/common/automation_example.hpp.in
+    generated/airctrl_automation_example.hpp @ONLY)
 
 # The Philips protocol is production code only for the server. Client tests use
 # it solely for the loopback UDP device simulator. This branch has no Qt lookup.
@@ -41,14 +44,26 @@ if(AIRCTRL_COMPONENT STREQUAL "server" OR BUILD_TESTING)
 endif()
 
 if(AIRCTRL_COMPONENT STREQUAL "server")
+    set(AIRCTRL_LUA_SOURCE "${PROJECT_SOURCE_DIR}/third_party/lua/src")
+    set(AIRCTRL_LUA_FILES
+        lapi.c lcode.c lctype.c ldebug.c ldo.c ldump.c lfunc.c lgc.c llex.c
+        lmem.c lobject.c lopcodes.c lparser.c lstate.c lstring.c ltable.c ltm.c
+        lundump.c lvm.c lzio.c lauxlib.c lbaselib.c lmathlib.c lstrlib.c
+        ltablib.c lutf8lib.c)
+    list(TRANSFORM AIRCTRL_LUA_FILES PREPEND "${AIRCTRL_LUA_SOURCE}/")
+    add_library(airctrl_lua STATIC ${AIRCTRL_LUA_FILES})
+    set_target_properties(airctrl_lua PROPERTIES AUTOMOC OFF)
+    target_include_directories(airctrl_lua PUBLIC ${AIRCTRL_LUA_SOURCE})
+    # Lua defaults to GCC computed-goto dispatch, which is valid but emits one
+    # -Wpedantic warning per opcode. Its portable switch dispatcher keeps the
+    # strict build genuinely warning-free without suppressing diagnostics.
+    target_compile_definitions(airctrl_lua PRIVATE LUA_USE_JUMPTABLE=0)
+    target_link_libraries(airctrl_lua PUBLIC ${CMAKE_DL_LIBS} m)
     add_subdirectory(src/server)
 else()
     set(CMAKE_AUTOMOC ON)
     set(CMAKE_AUTORCC ON)
     find_package(Qt6 6.2 REQUIRED COMPONENTS Core Network Gui Widgets DBus)
-    file(READ "${PROJECT_SOURCE_DIR}/examples/automation.lua" AIRCTRL_AUTOMATION_EXAMPLE)
-    configure_file(src/client/automation_example.hpp.in
-        generated/airctrl_automation_example.hpp @ONLY)
     add_subdirectory(src/client)
 endif()
 
@@ -67,10 +82,27 @@ if(BUILD_TESTING)
     target_link_libraries(statuslog-tests PRIVATE nlohmann_json::nlohmann_json)
     add_test(NAME statuslog COMMAND statuslog-tests)
     set_tests_properties(statuslog PROPERTIES TIMEOUT 10)
+
+    if(AIRCTRL_COMPONENT STREQUAL "server")
+        add_executable(automation-tests
+            tests/test_server_automation.cpp
+            src/server/automation.cpp
+            src/server/automation.h)
+        target_include_directories(automation-tests PRIVATE
+            src/server
+            "${PROJECT_BINARY_DIR}/generated")
+        target_link_libraries(automation-tests PRIVATE
+            airctrl_lua
+            nlohmann_json::nlohmann_json)
+        target_compile_definitions(automation-tests PRIVATE
+            AUTOMATION_EXAMPLE_FILE="${PROJECT_SOURCE_DIR}/examples/automation.lua")
+        add_test(NAME automation COMMAND automation-tests)
+        set_tests_properties(automation PROPERTIES TIMEOUT 30)
+    endif()
 endif()
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    foreach(target airctrl_client_common aioairctrl coap-tests statuslog-tests desklet_ui airctrl-server airctrl-client airctrl-desklet)
+    foreach(target airctrl_client_common airctrl_lua aioairctrl coap-tests statuslog-tests automation-tests desklet_ui airctrl-server airctrl-client airctrl-desklet)
         if(TARGET ${target})
             target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
         endif()
@@ -86,11 +118,7 @@ if(BUILD_TESTING AND AIRCTRL_COMPONENT STREQUAL "client")
     target_link_libraries(diagnostics-preview PRIVATE desklet_ui)
 
     add_executable(desklet-tests tests/test_desklet.cpp assets/resources.qrc)
-    add_executable(automation-tests tests/test_automation.cpp)
     target_link_libraries(desklet-tests PRIVATE desklet_ui aioairctrl Qt6::Test)
-    target_link_libraries(automation-tests PRIVATE desklet_ui Qt6::Test)
-    target_compile_definitions(automation-tests PRIVATE
-        AUTOMATION_EXAMPLE_FILE="${PROJECT_SOURCE_DIR}/examples/automation.lua")
     target_include_directories(desklet-tests PRIVATE ${AIRCTRL_PROTOCOL_SOURCE}/src)
 
     get_filename_component(AIRCTRL_CONFIGURATION_DIR "${CMAKE_BINARY_DIR}" DIRECTORY)
@@ -112,9 +140,7 @@ if(BUILD_TESTING AND AIRCTRL_COMPONENT STREQUAL "client")
     else()
         add_test(NAME desklet COMMAND desklet-tests -platform offscreen)
     endif()
-    add_test(NAME automation COMMAND automation-tests)
     set_tests_properties(desklet PROPERTIES TIMEOUT 300)
-    set_tests_properties(automation PROPERTIES TIMEOUT 30)
 endif()
 
 if(AIRCTRL_COMPONENT STREQUAL "server")
@@ -122,11 +148,11 @@ if(AIRCTRL_COMPONENT STREQUAL "server")
     install(FILES config/airctrld.cfg DESTINATION ${CMAKE_INSTALL_DATADIR}/airctrl-desklet)
     install(PROGRAMS scripts/plot-airctrl.py DESTINATION ${CMAKE_INSTALL_BINDIR}
         RENAME airctrl-plot)
+    install(FILES third_party/lua/LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/airctrl-desklet RENAME LUA-LICENSE)
+    install(FILES examples/automation.lua DESTINATION ${CMAKE_INSTALL_DATADIR}/airctrl-desklet/examples)
 else()
     install(TARGETS airctrl-desklet airctrl-client RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
     install(FILES assets/airctrl-desklet.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
     install(FILES assets/airctrl-desklet.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
-    install(FILES third_party/lua/LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/airctrl-desklet RENAME LUA-LICENSE)
-    install(FILES examples/automation.lua DESTINATION ${CMAKE_INSTALL_DATADIR}/airctrl-desklet/examples)
 endif()
 install(FILES LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/airctrl-desklet)

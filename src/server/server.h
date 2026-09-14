@@ -5,6 +5,7 @@
 #pragma once
 
 #include <aioairctrl/client.hpp>
+#include "automation.h"
 #include "statuslog.h"
 
 #include <atomic>
@@ -39,12 +40,16 @@ struct ServerConfig {
     std::uint16_t listenPort = 5680;
     std::string statusLogPath = "/var/log/airctrl.log";
     DeviceConfig device;
+    AutomationConfig automation;
 };
 
 struct DeviceCommand {
     std::uint64_t client = 0;
     std::uint64_t id = 0;
     Json values;
+    bool automated = false;
+    std::string source;
+    std::string occurrenceKey;
 };
 
 enum class EventKind { Start, State, Status, Control };
@@ -57,6 +62,10 @@ struct ServerEvent {
     Json data;
     std::string state;
     std::string error;
+    Json values;
+    bool automated = false;
+    std::string source;
+    std::string occurrenceKey;
 };
 
 struct ClientConnection {
@@ -91,6 +100,10 @@ private:
     void flushClient(std::uint64_t id);
     void broadcast(const Json& object);
     Json stateEnvelope() const;
+    Json automationEnvelope() const;
+    void broadcastAutomationState();
+    void handleAutomationAction(AutomationAction action);
+    void confirmAutomationAction(const Json& status);
     void postEvent(ServerEvent event);
     void processEvents();
     void postStart();
@@ -105,12 +118,15 @@ private:
     ServerConfig config_;
     const bool exitOnIdle_;
     StatusCsvLog statusLog_;
+    AutomationEngine automation_;
     bool statusLogErrorReported_ = false;
     int listener_ = -1;
     int wakeRead_ = -1;
     int wakeWrite_ = -1;
     std::unordered_map<std::uint64_t, ClientConnection> clients_;
     std::uint64_t nextClient_ = 1;
+    std::uint64_t automationEditor_ = 0;
+    std::uint64_t nextAutomationCommandId_ = 1;
     std::string state_ = "starting";
     std::string stateError_;
     std::uint64_t starts_ = 0;
@@ -126,6 +142,7 @@ private:
     std::uint64_t configGeneration_ = 1;
     bool reconnectRequested_ = false;
     std::deque<DeviceCommand> commands_;
+    DeviceCommand pendingAutomationConfirmation_;
     std::thread worker_;
     std::mutex eventMutex_;
     std::deque<ServerEvent> events_;

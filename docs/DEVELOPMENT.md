@@ -4,15 +4,14 @@
 
 ## Voraussetzungen
 
-Für den Server: Linux, C++17-Compiler, CMake ab 3.16, OpenSSL Crypto,
+Für den Server: Linux, C- und C++17-Compiler, CMake ab 3.16, OpenSSL Crypto,
 nlohmann/json ab 3.9 und Threads; Qt wird weder gesucht noch gelinkt. Der Client
-benötigt zusätzlich einen C-Compiler und Qt ab 6.2 (Core, Gui, Widgets, DBus,
+benötigt nur einen C++17-Compiler und Qt ab 6.2 (Core, Gui, Widgets, DBus,
 Network; zusätzlich Test für Tests).
 Die optionalen CMake-Presets benötigen **CMake ab 3.21** und Ninja.
 Die Repository-/Paketprüfungen verwenden Python ab 3.9 und nur die Standardbibliothek.
-Lua 5.4.9 wird aus `third_party/lua` statisch gebaut; ein systemweites
-`lua-devel`/`liblua-dev` ist nicht erforderlich. Der Build benötigt deshalb
-neben dem C++- auch einen C-Compiler.
+Lua 5.4.9 wird nur für den Server aus `third_party/lua` statisch gebaut; ein
+systemweites `lua-devel`/`liblua-dev` ist nicht erforderlich.
 
 Fedora:
 
@@ -40,6 +39,7 @@ Alle Befehle im Projektverzeichnis ausführen:
 ```bash
 cmake --preset debug-server
 cmake --build --preset debug-server --parallel 2
+ctest --preset debug-server
 cmake --preset debug-client
 cmake --build --preset debug-client --parallel 2
 ctest --preset debug-client
@@ -67,8 +67,9 @@ Klassisch, ohne Presets/Ninja:
 
 ```bash
 cmake -S . -B build/RELEASE/server -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release -DAIRCTRL_COMPONENT=server -DBUILD_TESTING=OFF
+  -DCMAKE_BUILD_TYPE=Release -DAIRCTRL_COMPONENT=server -DBUILD_TESTING=ON
 cmake --build build/RELEASE/server --parallel 2
+ctest --test-dir build/RELEASE/server --output-on-failure
 cmake -S . -B build/RELEASE/client -G Ninja \
   -DCMAKE_BUILD_TYPE=Release -DAIRCTRL_COMPONENT=client -DBUILD_TESTING=ON
 cmake --build build/RELEASE/client --parallel 2
@@ -83,10 +84,11 @@ GUI-Versuche `--demo` als Programmargument setzen.
 CTest startet QtTest mit `-platform offscreen`. Fake-Server und lokaler
 UDP-Simulator ersetzen das Gerät. Der UDP-Test verwendet nur `127.0.0.1` und
 einen dynamischen Port; keine IP des echten Geräts wird getestet.
-`automation-tests` prüft die Lua-Sandbox, die bytegleiche Beispielvorlage,
-Zeitpläne, Wochentage, Nachholen, Ereignisdaten, erlaubte Steuerfelder und das
-Ausführungslimit ohne Gerätezugriff. Die Desklet-Suite prüft zusätzlich, dass
-zwei Clients denselben TCP-Server, UDP-Port und Statusstrom verwenden. Der
+`automation-tests` prüft die bytegleiche Beispielvorlage, Syntaxfehler,
+Ereignisaufrufe und den dauerhaft gespeicherten Aktivierungs-/Revisionszustand
+ohne Gerätezugriff. Die Desklet-Suite prüft zusätzlich, dass zwei Clients
+denselben TCP-Server, UDP-Port und Statusstrom verwenden und nur einer zugleich
+das Serverskript bearbeiten kann. Der
 Geräteendpunkt stammt dabei ausschließlich aus einer temporären Serverkonfiguration.
 Kann die isolierte Umgebung keine TCP-Loopback-Sockets anlegen, wird diese Suite
 ausdrücklich übersprungen; das ist kein bestandener nativer IPC-Test. Für die vollständige Desklet-/Server-

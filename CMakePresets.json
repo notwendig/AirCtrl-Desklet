@@ -19,7 +19,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "AIRCTRL_COMPONENT": "server",
-        "BUILD_TESTING": "OFF"
+        "BUILD_TESTING": "ON"
       }
     },
     {
@@ -41,7 +41,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "AIRCTRL_COMPONENT": "server",
-        "BUILD_TESTING": "OFF"
+        "BUILD_TESTING": "ON"
       }
     },
     {
@@ -63,7 +63,9 @@
     { "name": "release-client", "configurePreset": "release-client" }
   ],
   "testPresets": [
+    { "name": "debug-server", "configurePreset": "debug-server", "output": { "outputOnFailure": true } },
     { "name": "debug-client", "configurePreset": "debug-client", "output": { "outputOnFailure": true } },
+    { "name": "release-server", "configurePreset": "release-server", "output": { "outputOnFailure": true } },
     { "name": "release-client", "configurePreset": "release-client", "output": { "outputOnFailure": true } }
   ]
 }

@@ -1,15 +1,17 @@
-# Philips AirControl – Qt6-Gerätepanel v1.06
+# Philips AirControl – Qt6-Gerätepanel v1.07
 
 Kompaktes C++/Qt6-Desktopwidget für den Philips AC2729/10 unter Cinnamon.
 Geräteadresse und UDP-Port stehen ausschließlich in `/etc/airctrld.cfg`.
 Der bereits am Gerät funktionierende C++-CoAP-Code ist vollständig enthalten.
 
-**v1.06** verwendet einen dauerhaften TCP-Server als einzigen Geräteprozess.
-Desklet, Lua und Kommandozeile kennen nur den Server, standardmäßig `nadhh:5680`.
+**v1.07** verwendet einen dauerhaften TCP-Server als einzigen Geräteprozess und
+führt dort auch die Lua-Automatik aus. Desklet und Kommandozeile kennen nur den
+Server, standardmäßig `nadhh:5680`.
 Der Server hält genau einen UDP-I/O-Socket samt synchronisiertem Protokollzustand
 für alle Clients. Erst ein Status-Timeout erneuert diese Geräte-I/O. Die seit
 v1.02 vorhandene, standardmäßig ausgeschaltete
-Lua-Automatik verarbeitet Ereignisse und lokale Zeitpläne. Das Beispiel schaltet Tag/Nacht; alle Aufträge
+Lua-Automatik verarbeitet dort Ereignisse und Zeitpläne, auch wenn kein Client
+läuft. Das Beispiel schaltet Tag/Nacht; alle Aufträge
 verwenden die vorhandene Feldprüfung und bestätigte Gerätesteuerung.
 Änderungsübersicht: [CHANGELOG.md](../CHANGELOG.md). Prüfungen und verbleibende
 Umgebungsgrenzen: [VALIDATION.md](../VALIDATION.md).
@@ -226,15 +228,20 @@ Diese Optionen verändern das Widget; die Lichttaste oben steuert das reale Ger�
 
 ## Lua-Automatik
 
-**Rechtsklick → Lua-Automatik** öffnet Editor, Aktivierung und Ladezustand. Die
+**Rechtsklick → Lua-Automatik** fordert zunächst die exklusive Editier-Sperre
+vom Server an. Nach Erteilung überträgt der Server sein aktuelles Skript samt
+Revision zum Client und öffnet Editor, Aktivierung und Ladezustand. Die
 Taste **Tag/Nacht-Beispiel** setzt einen Entwurf mit Nachtmodus um 22:00 Uhr und
 Automatikmodus um 07:00 Uhr ein. Seine Kommentare erklären sämtliche Ereignisse,
-bekannten Statusfelder und erlaubten Steuerwerte. Erst **Speichern und neu laden** übernimmt ihn.
+bekannten Statusfelder und erlaubten Steuerwerte. Erst **Auf Server speichern
+und neu laden** sendet den Entwurf zurück; der Server prüft, speichert und lädt ihn.
 
 Lua kann auf Statusänderungen, Verbindung, Alarme, Befehlsresultate und den
-Minutentakt reagieren. Zeitpläne werden lokal ausgewertet. Ist das Widget beim
-Termin nicht aktiv, wird beim nächsten Start nur der jüngste fällige Zustand
-nachgeholt. Ein übergebener Geräteauftrag wird nicht automatisch wiederholt.
+Minutentakt reagieren. Zeitpläne werden dauerhaft im Server ausgewertet. Ist der
+Server beim Termin nicht aktiv, wird beim nächsten Start nur der jüngste fällige
+Zustand nachgeholt. Ein übergebener Geräteauftrag wird nicht automatisch
+wiederholt. Gleichzeitig darf genau ein verbundener Client bearbeiten; Abbrechen
+oder ein Verbindungsabbruch gibt die Sperre frei.
 
 Die Automatik ist nach der Installation aus. Skripte haben keinen Datei-,
 Netzwerk-, Shell- oder Prozesszugriff; Speicher und Ausführung sind begrenzt.
@@ -419,13 +426,21 @@ werden bis zu dessen Rückmeldung ignoriert. Es werden keine Doppelbefehle vorge
 
 ## Verbindung und Rückmeldungen
 
-Der Installer legt beim ersten v1.06-Start diese Administratorkonfiguration an
+Der Installer legt beim ersten v1.07-Start diese Administratorkonfiguration an
 und überschreibt spätere Änderungen nicht:
 
 ```ini
 [server]
 listen_address=0.0.0.0
 port=5680
+
+[logging]
+status_file=/var/log/airctrl.log
+
+[automation]
+# Ohne Pfadangabe: ~/.config/airctrl-server/automation.lua und
+# ~/.config/airctrl-server/automation-state.json
+enabled=false
 
 [device]
 host=AC2729-10
@@ -447,10 +462,10 @@ AirControl-Server, TCP-Port und die Client-Wiederverbindung.
 Ein langlebiger `airctrl-server` besitzt genau einen UDP-Socket sowie einen
 synchronisierten Protokollzustand. Er verteilt getypte JSON-Nachrichten über
 TCP-Port 5680 an alle verbundenen Clients.
-Desklet und Lua besitzen keine eigene Geräteverbindung. Es gibt keinen
+Desklet und serverseitiges Lua besitzen keine eigene Geräteverbindung. Es gibt keinen
 periodischen Neustart und keine zyklische Neusynchronisierung.
 
-| Grenze | Serverregel in v1.06 |
+| Grenze | Serverregel in v1.07 |
 |---|---|
 | Synchronisierung | Bis zu 60 s |
 | Erste Statusantwort | Bis zu 120 s; danach eine Observe-Neuanmeldung auf demselben Socket |

@@ -2,15 +2,28 @@
 
 [Projektübersicht](../README.md) · [Architektur](ARCHITECTURE.md) · [Sicherheit](../SECURITY.md)
 
-AirCtrl-Desklet 1.06 enthält Lua 5.4.9 als eingebettetes Automatikmodul. Es kann
+AirCtrl-Desklet 1.07 enthält Lua 5.4.9 als ausschließlich in `airctrl-server`
+eingebettetes Automatikmodul. Es kann
 auf bestätigte Gerätezustände und lokale Ereignisse reagieren oder zu festen
 Uhrzeiten schalten. Nach der Installation ist es **deaktiviert**.
 
-Öffnen: **Rechtsklick → Lua-Automatik**. Der Dialog zeigt den Skriptpfad, einen
-Editor, den Ladezustand und die Taste **Tag/Nacht-Beispiel**. Erst **Speichern
-und neu laden** prüft den Text, schreibt die Datei und übernimmt die Aktivierung.
+Öffnen: **Rechtsklick → Lua-Automatik**. Der Client fordert zunächst die
+serverweite Editier-Sperre an. Nach Erteilung überträgt der Server das aktuelle
+Skript samt Revision zum Editor. Erst **Auf Server speichern und neu laden**
+sendet den Text zurück; der Server prüft ihn, schreibt die Datei atomar und
+übernimmt die Aktivierung.
 Ein Syntax- oder API-Fehler bleibt im Dialog und erscheint bei aktivierter
 Automatik außerdem als roter Widget-Alarm und in der Diagnose.
+
+Gleichzeitig kann genau ein Client bearbeiten. Ein zweiter Dialog meldet, dass
+das Skript bereits auf einem anderen Client geöffnet ist. Abbrechen und ein
+TCP-Verbindungsabbruch geben die Sperre automatisch frei. Bei einem Prüfungsfehler
+bleibt sie erhalten, damit der Text korrigiert und erneut gespeichert werden kann.
+
+Das maßgebliche Skript liegt standardmäßig auf dem Server unter
+`~/.config/airctrl-server/automation.lua`. Aktivierung, Revision und bereits
+behandelte Termine werden daneben in `automation-state.json` gespeichert. Beide
+Pfade können im Abschnitt `[automation]` von `/etc/airctrld.cfg` festgelegt werden.
 
 Die mitgelieferte Datei `examples/automation.lua` ist zugleich die im Editor
 eingesetzte Vorlage. Ihre Kommentare führen alle Ereignisse, bekannten
@@ -37,7 +50,7 @@ airctrl.schedule {
 
 `at` ist lokale Rechnerzeit im Format `HH:MM`. Die Wochentage sind Montag `1`
 bis Sonntag `7`; ohne `days` gilt der Termin täglich. `catch_up` ist standardmäßig
-`true`: Startet das Widget nach dem Termin, wird nur der **jüngste** fällige
+`true`: Startet der Server nach dem Termin, wird nur der **jüngste** fällige
 Zeitplan berücksichtigt. Mit `catch_up=false` gilt die Regel ausschließlich in
 der exakten Minute. Zwei Zeitpläne dürfen sich an denselben Wochentagen nicht zur
 gleichen Uhrzeit überschneiden.
@@ -119,9 +132,9 @@ beobachtet, nicht von Philips bestätigt; fehlende Werte bleiben `nil`.
 `dtrs` darf nicht mit `airctrl.set` geschrieben werden. Dieser Gerätetimer ist
 unabhängig von den lokalen Uhrzeitregeln in `airctrl.schedule`.
 
-Lua-Schaltungen verwenden seit v1.06 wie die Tasten ausschließlich die TCP-
-Verbindung zum zentralen `airctrl-server`. Lua öffnet niemals selbst UDP oder
-eine Verbindung zum Gerät. Alle Clients teilen dieselbe Geräte-I/O-Sitzung.
+Lua-Schaltungen laufen seit v1.07 direkt im zentralen `airctrl-server`. Das
+Skript öffnet niemals selbst UDP oder eine Verbindung zum Gerät. Alle Clients
+und Lua teilen dieselbe serverseitige Geräte-I/O-Sitzung.
 Dabei wird Observe kurz ab- und wieder angemeldet; ein neuer Socket oder Sync
 ist dafür nicht nötig. Erst ein gültiger Status bestätigt den neuen Zustand.
 Ein Status-Timeout erneuert die Sitzung nach der Wiederverbindungspause;

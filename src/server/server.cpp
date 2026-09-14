@@ -3,6 +3,7 @@
  * @brief Qt-independent multi-client TCP server and Philips UDP-session owner.
  */
 #include "server.h"
+#include "airctrl_version.hpp"
 
 #include <arpa/inet.h>
 #include <fcntl.h>
@@ -19,6 +20,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <utility>
@@ -49,6 +51,21 @@ bool parseInteger(const std::string& text, int minimum, int maximum, int* value)
         return false;
     *value = parsed;
     return true;
+}
+
+bool parseBoolean(const std::string& text, bool* value) {
+    if (text == "true" || text == "1" || text == "yes") { *value = true; return true; }
+    if (text == "false" || text == "0" || text == "no") { *value = false; return true; }
+    return false;
+}
+
+std::string defaultAutomationDirectory() {
+    const char* xdg = std::getenv("XDG_CONFIG_HOME");
+    if (xdg != nullptr && *xdg != '\0' && std::filesystem::path(xdg).is_absolute())
+        return (std::filesystem::path(xdg) / "airctrl-server").string();
+    const char* home = std::getenv("HOME");
+    if (home == nullptr || *home == '\0') return {};
+    return (std::filesystem::path(home) / ".config" / "airctrl-server").string();
 }
 
 /** @brief Parse the mandatory INI configuration without a Qt dependency. */
@@ -84,9 +101,27 @@ bool loadConfig(const std::string& path, ServerConfig* config, std::string* erro
     const std::unordered_map<std::string, std::string>::const_iterator host = values.find("device/host");
     const std::unordered_map<std::string, std::string>::const_iterator statusLog =
         values.find("logging/status_file");
+    const std::unordered_map<std::string, std::string>::const_iterator automationScript =
+        values.find("automation/script_file");
+    const std::unordered_map<std::string, std::string>::const_iterator automationState =
+        values.find("automation/state_file");
+    const std::unordered_map<std::string, std::string>::const_iterator automationEnabled =
+        values.find("automation/enabled");
     config->listenAddress = address == values.end() ? "0.0.0.0" : trim(address->second);
     config->device.host = host == values.end() ? "AC2729-10" : trim(host->second);
     config->statusLogPath = statusLog == values.end() ? "/var/log/airctrl.log" : trim(statusLog->second);
+    const std::string automationDirectory = defaultAutomationDirectory();
+    config->automation.scriptPath = automationScript == values.end()
+        ? (std::filesystem::path(automationDirectory) / "automation.lua").string()
+        : trim(automationScript->second);
+    config->automation.statePath = automationState == values.end()
+        ? (std::filesystem::path(automationDirectory) / "automation-state.json").string()
+        : trim(automationState->second);
+    if (automationEnabled != values.end() &&
+        !parseBoolean(trim(automationEnabled->second), &config->automation.enabledByDefault)) {
+        if (error) *error = "Ungültiger Wert in " + path + ": automation/enabled";
+        return false;
+    }
     int listenPort = 5680;
     int devicePort = 5683;
     int localPort = 5680;
@@ -129,7 +164,13 @@ bool loadConfig(const std::string& path, ServerConfig* config, std::string* erro
          inet_pton(AF_INET6, config->listenAddress.c_str(), &ipv6) != 1) ||
         config->device.host.empty() || config->statusLogPath.empty() ||
         config->statusLogPath.front() != '/' ||
-        config->statusLogPath.find_first_of("\r\n") != std::string::npos) {
+        config->statusLogPath.find_first_of("\r\n") != std::string::npos ||
+        config->automation.scriptPath.empty() || config->automation.statePath.empty() ||
+        !std::filesystem::path(config->automation.scriptPath).is_absolute() ||
+        !std::filesystem::path(config->automation.statePath).is_absolute() ||
+        config->automation.scriptPath == config->automation.statePath ||
+        config->automation.scriptPath.find_first_of("\r\n") != std::string::npos ||
+        config->automation.statePath.find_first_of("\r\n") != std::string::npos) {
         if (error) *error = "Ungültiger Wert in " + path;
         return false;
     }
@@ -193,6 +234,20 @@ bool requestId(const Json& request, std::uint64_t* id) {
     return *id != 0U;
 }
 
+bool unsignedValue(const Json& value, std::uint64_t* result) {
+    try {
+        if (value.is_number_unsigned()) *result = value.get<std::uint64_t>();
+        else if (value.is_number_integer()) {
+            const std::int64_t signedValue = value.get<std::int64_t>();
+            if (signedValue < 0) return false;
+            *result = static_cast<std::uint64_t>(signedValue);
+        } else return false;
+    } catch (const Json::exception&) {
+        return false;
+    }
+    return true;
+}
+
 int setNonBlocking(int descriptor) {
     const int flags = fcntl(descriptor, F_GETFL, 0);
     return flags < 0 ? -1 : fcntl(descriptor, F_SETFL, flags | O_NONBLOCK);
@@ -202,12 +257,19 @@ int setNonBlocking(int descriptor) {
 
 AirCtrlServer::AirCtrlServer(ServerConfig config)
     : config_(std::move(config)), exitOnIdle_(environmentFlag("AIRCTRL_SERVER_EXIT_ON_IDLE")),
-      statusLog_(config_.statusLogPath) {}
+      statusLog_(config_.statusLogPath), automation_(config_.automation, AIRCTRL_VERSION) {}
 
 AirCtrlServer::~AirCtrlServer() { shutdown(); }
 
 bool AirCtrlServer::start(std::string* error) {
-    if (!statusLog_.initialize(error) || !openWakePipe(error) || !openListener(error)) return false;
+    if (!statusLog_.initialize(error)) return false;
+    automation_.setActionHandler([this](AutomationAction action) {
+        handleAutomationAction(std::move(action));
+    });
+    std::string automationError;
+    if (!automation_.initialize(&automationError))
+        std::cerr << "AirControl-Server: Lua-Automatik nicht geladen: " << automationError << '\n';
+    if (!openWakePipe(error) || !openListener(error)) return false;
     worker_ = std::thread([this] { deviceLoop(); });
     initialIdleDeadline_ = std::chrono::steady_clock::now() + std::chrono::seconds(5);
     return true;
@@ -247,6 +309,7 @@ int AirCtrlServer::run() {
         if (exitOnIdle_ && clients_.empty() && !acceptedAnyClient_ &&
             std::chrono::steady_clock::now() >= initialIdleDeadline_)
             quitRequested_ = true;
+        automation_.processTime();
     }
     return 0;
 }
@@ -344,6 +407,7 @@ void AirCtrlServer::acceptClients() {
         send(id, stateEnvelope());
         if (state_ == "connected" && lastStatus_.is_object() && !lastStatus_.empty())
             send(id, {{"_airctrl", "status"}, {"data", lastStatus_}});
+        send(id, automationEnvelope());
         flushClient(id);
     }
 }
@@ -353,6 +417,10 @@ void AirCtrlServer::closeClient(std::uint64_t id) {
     if (found == clients_.end()) return;
     close(found->second.descriptor);
     clients_.erase(found);
+    if (automationEditor_ == id) {
+        automationEditor_ = 0;
+        broadcastAutomationState();
+    }
     if (exitOnIdle_ && acceptedAnyClient_ && clients_.empty()) quitRequested_ = true;
 }
 
@@ -408,6 +476,71 @@ void AirCtrlServer::handle(std::uint64_t client, const Json& request) {
     const Json::const_iterator kindValue = request.find("_airctrl");
     const std::string kind = kindValue != request.end() && kindValue->is_string()
         ? kindValue->get<std::string>() : std::string{};
+    if (kind == "automation_edit_begin") {
+        std::uint64_t id = 0;
+        if (!requestId(request, &id)) {
+            send(client, {{"_airctrl", "automation_edit"}, {"id", id}, {"ok", false},
+                {"error", "Ungültige Anforderungskennung."}});
+            return;
+        }
+        if (automationEditor_ != 0U && automationEditor_ != client) {
+            send(client, {{"_airctrl", "automation_edit"}, {"id", id}, {"ok", false},
+                {"error", "Das Lua-Skript wird bereits auf einem anderen Client bearbeitet."}});
+            return;
+        }
+        std::string script;
+        std::string error;
+        if (!automation_.readScript(&script, &error)) {
+            send(client, {{"_airctrl", "automation_edit"}, {"id", id}, {"ok", false},
+                {"error", error}});
+            return;
+        }
+        automationEditor_ = client;
+        send(client, {{"_airctrl", "automation_edit"}, {"id", id}, {"ok", true},
+            {"script", script}, {"revision", automation_.revision()},
+            {"state", automation_.stateJson()}});
+        broadcastAutomationState();
+        return;
+    }
+    if (kind == "automation_edit_save") {
+        std::uint64_t id = 0;
+        const Json::const_iterator script = request.find("script");
+        const Json::const_iterator enabled = request.find("enabled");
+        const Json::const_iterator revision = request.find("revision");
+        std::uint64_t requestedRevision = 0;
+        if (!requestId(request, &id) || automationEditor_ != client ||
+            script == request.end() || !script->is_string() ||
+            enabled == request.end() || !enabled->is_boolean() ||
+            revision == request.end() || !unsignedValue(*revision, &requestedRevision)) {
+            send(client, {{"_airctrl", "automation_saved"}, {"id", id}, {"ok", false},
+                {"error", automationEditor_ == client ? "Ungültige Speichern-Anforderung." :
+                    "Dieser Client besitzt die Editier-Sperre nicht."}});
+            return;
+        }
+        if (requestedRevision != automation_.revision()) {
+            send(client, {{"_airctrl", "automation_saved"}, {"id", id}, {"ok", false},
+                {"error", "Das Server-Skript wurde zwischenzeitlich geändert; bitte Editor neu öffnen."}});
+            return;
+        }
+        std::string error;
+        if (!automation_.saveScript(script->get<std::string>(), enabled->get<bool>(), &error)) {
+            send(client, {{"_airctrl", "automation_saved"}, {"id", id}, {"ok", false},
+                {"error", error}});
+            return;
+        }
+        automationEditor_ = 0;
+        send(client, {{"_airctrl", "automation_saved"}, {"id", id}, {"ok", true},
+            {"state", automation_.stateJson()}});
+        broadcastAutomationState();
+        return;
+    }
+    if (kind == "automation_edit_cancel") {
+        const bool owned = automationEditor_ == client;
+        if (owned) automationEditor_ = 0;
+        send(client, {{"_airctrl", "automation_edit_released"}, {"ok", owned}});
+        if (owned) broadcastAutomationState();
+        return;
+    }
     if (kind == "configure") {
         send(client, {{"_airctrl", "error"},
             {"error", "Geräteeinstellungen gehören ausschließlich in /etc/airctrld.cfg."}});
@@ -445,7 +578,11 @@ void AirCtrlServer::handle(std::uint64_t client, const Json& request) {
         }
         {
             std::lock_guard<std::mutex> lock(commandMutex_);
-            commands_.push_back({client, id, values});
+            DeviceCommand command;
+            command.client = client;
+            command.id = id;
+            command.values = values;
+            commands_.push_back(std::move(command));
         }
         commandWake_.notify_all();
         return;
@@ -501,6 +638,74 @@ Json AirCtrlServer::stateEnvelope() const {
     return object;
 }
 
+Json AirCtrlServer::automationEnvelope() const {
+    Json object = automation_.stateJson();
+    object["_airctrl"] = "automation_state";
+    object["editor_busy"] = automationEditor_ != 0U;
+    return object;
+}
+
+void AirCtrlServer::broadcastAutomationState() { broadcast(automationEnvelope()); }
+
+void AirCtrlServer::handleAutomationAction(AutomationAction action) {
+    if (!deviceReady_.load()) {
+        automation_.commandEvent(action.source, false,
+            action.occurrenceKey.empty()
+                ? "Gerät ist nicht schaltbereit; Ereignisauftrag wurde nicht wiederholt."
+                : "Gerät ist noch nicht schaltbereit; der Zeitplan wird beim nächsten Zeitimpuls erneut geprüft.");
+        broadcastAutomationState();
+        return;
+    }
+    bool already = lastStatus_.is_object() && !lastStatus_.empty();
+    for (Json::const_iterator item = action.values.begin(); already && item != action.values.end(); ++item) {
+        const Json::const_iterator current = lastStatus_.find(item.key());
+        already = current != lastStatus_.end() && *current == item.value();
+    }
+    if (already) {
+        automation_.actionAccepted(action.occurrenceKey);
+        automation_.commandEvent(action.source, true, "Gewünschter Zustand war bereits bestätigt.");
+        broadcastAutomationState();
+        return;
+    }
+    bool automationBusy = pendingAutomationConfirmation_.automated;
+    {
+        std::lock_guard<std::mutex> lock(commandMutex_);
+        for (const DeviceCommand& command : commands_) automationBusy = automationBusy || command.automated;
+        if (!automationBusy) {
+            DeviceCommand command;
+            command.id = nextAutomationCommandId_++;
+            command.values = std::move(action.values);
+            command.automated = true;
+            command.source = std::move(action.source);
+            command.occurrenceKey = std::move(action.occurrenceKey);
+            automation_.actionAccepted(command.occurrenceKey);
+            commands_.push_back(std::move(command));
+        }
+    }
+    if (automationBusy) {
+        automation_.commandEvent(action.source, false,
+            "Ein anderer Lua-Auftrag läuft bereits; keine automatische Wiederholung.");
+        broadcastAutomationState();
+        return;
+    }
+    commandWake_.notify_all();
+    broadcastAutomationState();
+}
+
+void AirCtrlServer::confirmAutomationAction(const Json& status) {
+    if (!pendingAutomationConfirmation_.automated) return;
+    bool confirmed = true;
+    for (Json::const_iterator item = pendingAutomationConfirmation_.values.begin();
+         item != pendingAutomationConfirmation_.values.end(); ++item) {
+        const Json::const_iterator actual = status.find(item.key());
+        if (actual == status.end() || *actual != item.value()) confirmed = false;
+    }
+    automation_.commandEvent(pendingAutomationConfirmation_.source, confirmed,
+        confirmed ? "Änderung vom Gerät bestätigt." :
+            "Gerät hat den gewünschten Schaltzustand nicht bestätigt.");
+    pendingAutomationConfirmation_ = {};
+}
+
 void AirCtrlServer::postEvent(ServerEvent event) {
     {
         std::lock_guard<std::mutex> lock(eventMutex_);
@@ -525,11 +730,20 @@ void AirCtrlServer::processEvents() {
             refreshScheduled_ = false;
             state_ = "connecting";
             stateError_.clear();
+            automation_.setConnected(false, "Geräte-I/O wird neu aufgebaut.");
             broadcast(stateEnvelope());
+            broadcastAutomationState();
         } else if (event.kind == EventKind::State) {
             state_ = event.state;
             stateError_ = event.error;
+            if (state_ != "connected") automation_.setConnected(false, stateError_);
+            if (pendingAutomationConfirmation_.automated) {
+                automation_.commandEvent(pendingAutomationConfirmation_.source, false,
+                    stateError_.empty() ? "Geräte-I/O wurde vor der Statusbestätigung unterbrochen." : stateError_);
+                pendingAutomationConfirmation_ = {};
+            }
             broadcast(stateEnvelope());
+            broadcastAutomationState();
         } else if (event.kind == EventKind::Status) {
             if (!event.data.is_object() || event.data.empty()) continue;
             std::string logError;
@@ -541,8 +755,24 @@ void AirCtrlServer::processEvents() {
             lastStatus_ = std::move(event.data);
             state_ = "connected";
             stateError_.clear();
+            confirmAutomationAction(lastStatus_);
+            automation_.statusEvent(lastStatus_);
             broadcast({{"_airctrl", "status"}, {"data", lastStatus_}});
+            broadcastAutomationState();
         } else {
+            if (event.automated) {
+                if (event.ok) {
+                    pendingAutomationConfirmation_.id = event.id;
+                    pendingAutomationConfirmation_.values = std::move(event.values);
+                    pendingAutomationConfirmation_.automated = true;
+                    pendingAutomationConfirmation_.source = std::move(event.source);
+                    pendingAutomationConfirmation_.occurrenceKey = std::move(event.occurrenceKey);
+                } else {
+                    automation_.commandEvent(event.source, false, event.error);
+                    broadcastAutomationState();
+                }
+                continue;
+            }
             Json result = {{"_airctrl", "control"}, {"id", event.id}, {"ok", event.ok}};
             if (!event.error.empty()) result["error"] = event.error;
             send(event.client, result);
@@ -578,6 +808,10 @@ void AirCtrlServer::postControl(DeviceCommand command, bool ok, std::string erro
     event.id = command.id;
     event.ok = ok;
     event.error = std::move(error);
+    event.values = std::move(command.values);
+    event.automated = command.automated;
+    event.source = std::move(command.source);
+    event.occurrenceKey = std::move(command.occurrenceKey);
     postEvent(std::move(event));
 }
 

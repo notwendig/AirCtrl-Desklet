@@ -2,7 +2,7 @@
 
 **Dein Philips-Luftreiniger. Direkt auf dem Linux-Desktop.**
 
-C++17 · Qt 6 · Lua 5.4 · TCP-Server/Clients · MIT · Version **v1.06**
+C++17 · Qt 6 · Lua 5.4 · TCP-Server/Clients · MIT · Version **v1.07**
 
 [English](README.en.md) · [Bedienung](docs/USER_GUIDE.de.md) · [Entwicklung](docs/DEVELOPMENT.md) · [C++-API](docs/CPP_API.md) · [Änderungen](CHANGELOG.md)
 
@@ -26,8 +26,8 @@ Die Oberfläche ist derzeit deutschsprachig.
   Luftreinigung/2-in-1 und Abschalttimer.
 - Feuchte, Zielfeuchte, Temperatur, PM2,5 und IAI einzeln einblendbar.
 - Aktive Modus- und Wartungssymbole aus bestätigten Statusmeldungen.
-- Ein dauerhafter `airctrl-server` als einziger AC2729-Teilnehmer. Desklet,
-  Lua und `airctrl-client` verwenden ausschließlich seine TCP-Schnittstelle.
+- Ein dauerhafter `airctrl-server` als einziger AC2729-Teilnehmer und einzige
+  Lua-Laufzeit. Desklet, Skripteditor und `airctrl-client` verwenden seine TCP-Schnittstelle.
 - Genau eine UDP-I/O-Sitzung für alle Clients; fester Quellport und CoAP-
   Keepalive halten die Host-Firewall offen. Vor einem vollständigen Neuaufbau
   versucht der Server eine Observe-Neuanmeldung auf derselben Sitzung.
@@ -35,8 +35,8 @@ Die Oberfläche ist derzeit deutschsprachig.
 - Filtervorwarnungen, Quittierung, Desktop-Benachrichtigungen und optionaler Ton.
 - Farben, Hintergrundtransparenz, Schrift, Fensterdekoration und Autostart im Kontextmenü.
 - Diagnose mit deutschen Feldbeschreibungen, Hexcodes und kopierbarem Gesamtbericht.
-- Sichere Lua-Automatik für Status-, Verbindungs-, Alarm- und Zeitereignisse,
-  einschließlich Tag/Nacht-Zeitplänen.
+- Serverseitige Lua-Automatik für Status-, Verbindungs-, Alarm- und
+  Zeitereignisse einschließlich Tag/Nacht-Zeitplänen; exklusiver Editor auf den Clients.
 
 ![Helle Standarddarstellung des Widgets](docs/images/desklet-light.png)
 
@@ -45,10 +45,10 @@ Ausgegraute Gerätetasten sind in der Demo absichtlich nicht bedienbar.*
 
 ## Schnellstart auf Fedora
 
-Server-Voraussetzungen: C++17-Compiler, CMake ≥ 3.16, OpenSSL Crypto,
+Server-Voraussetzungen: C- und C++17-Compiler, CMake ≥ 3.16, OpenSSL Crypto,
 nlohmann/json ≥ 3.9 und Threads – **kein Qt**. Matplotlib ist nur für die optionale
-Status-PDF erforderlich. Der Client benötigt zusätzlich
-einen C-Compiler und Qt ≥ 6.2 (Core/Gui/Widgets/DBus/Network). Python 3 wird vom
+Status-PDF erforderlich. Der Client benötigt Qt ≥ 6.2
+(Core/Gui/Widgets/DBus/Network). Python 3 wird vom
 Installer verwendet.
 
 ```bash
@@ -84,6 +84,9 @@ port=5680
 
 [logging]
 status_file=/var/log/airctrl.log
+
+[automation]
+enabled=false
 
 [device]
 host=AC2729-10
@@ -169,7 +172,13 @@ Die Kreise messen bei Standardschrift 26 px und wachsen mit der Schriftgröße.
 ## Lua-Automatik
 
 Unter **Rechtsklick → Lua-Automatik** öffnet sich der integrierte Skripteditor.
-Die Automatik ist nach Installation zunächst ausgeschaltet. Das mitgelieferte
+Beim Öffnen fordert er eine serverweite Sperre an und lädt danach das aktuelle
+Skript vom Server. Beim Speichern wird der Text zum Server zurückgesendet, dort
+geprüft, atomar gespeichert und neu geladen. Gleichzeitig kann genau ein Client
+bearbeiten; Abbrechen oder ein Verbindungsabbruch gibt die Sperre frei.
+
+Die Automatik ist nach Installation zunächst ausgeschaltet und läuft nach der
+Aktivierung ausschließlich im `airctrl-server` – auch ohne geöffnetes Desklet. Das mitgelieferte
 Beispiel enthält als Kommentare die vollständige Ereignis-, Statusfeld- und
 Steuerwertreferenz. Aktiv schaltet es täglich um 22:00 Uhr auf Nacht und um
 07:00 Uhr auf Tag:
@@ -190,11 +199,12 @@ airctrl.schedule {
 `on_event(event)` erhält `startup`, `time`, `connected`, `disconnected`,
 `status`, `alarm` und `command`. Statusereignisse enthalten den vollständigen
 bestätigten Zustand in `event.status` sowie Änderungen in `event.changed`.
-`airctrl.set { ... }` verwendet dieselbe Positivliste, IPC-Verbindung und
-Bestätigungslogik wie die Gerätetasten. Pro Zeitplantermin gibt es höchstens einen Schaltversuch;
+`airctrl.set { ... }` verwendet im Server dieselbe Positivliste,
+Gerätewarteschlange und Bestätigungslogik wie die Gerätetasten. Pro Zeitplantermin gibt es höchstens einen Schaltversuch;
 bereits passende Zustände erzeugen keinen Netzwerkbefehl.
 
-Lua 5.4.9 wird aus dem geprüften offiziellen Quellstand eingebettet. Die Sandbox
+Lua 5.4.9 wird aus dem geprüften offiziellen Quellstand ausschließlich in den
+Qt-freien Server eingebettet. Die Sandbox
 stellt nur Basis-, Tabellen-, String-, Mathematik- und UTF-8-Funktionen bereit:
 keine API für beliebige Datei-, Netzwerk- oder Prozesszugriffe und kein `io`,
 `os`, `package`, `debug`, `dofile`, `loadfile` oder `load`. Nur `airctrl.set`
