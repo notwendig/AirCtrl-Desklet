@@ -338,6 +338,10 @@ mehreren Optionen öffnet ein Auswahlmenü; erst eine Auswahl schreibt zum Gerä
 | 7 · 2-in-1 | Reinigung oder Reinigung mit Befeuchtung | `func`: `P` / `PH` |
 | 8 · Timer | Aus oder 1–12 Stunden bis zum Ausschalten | `dt` als Integer |
 
+Ein kurzer Klick auf die Timer-Taste öffnet weiterhin das Auswahlmenü. Wird sie
+mindestens 800 ms gedrückt gehalten, bleibt das Menü geschlossen und der Server
+führt stattdessen die optionale Lua-Funktion `on_long_timer()` aus.
+
 Die Zuordnung der Bedienelemente folgt der
 [Philips-Kurzanleitung](https://dam.versuni.com/m/7a41a3a71a50dea9/original/Quick-start-guide-Philips-Series-2000i-2-in-1-air-purifier-and-humidifier-AC2729_11.pdf).
 Die CoAP-Modi folgen der auf dem AC2729/10 erprobten

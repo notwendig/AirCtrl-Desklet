@@ -57,6 +57,8 @@ public slots:
     void setPanelValues(const QJsonObject& values);
     /** @brief Clear the server-wide manual override and re-evaluate Lua immediately. */
     void resumeAutomation();
+    /** @brief Ask the server to execute the Lua callback on_long_timer(). */
+    void triggerLongTimer();
     /** Acquire the server-wide edit lock and download the current Lua script. */
     void beginAutomationEdit();
     /** Upload, validate and activate the edited script on the server. */

@@ -2,6 +2,12 @@
 
 ## v1.09 – 2026-09-14
 
+- Ein mindestens 800 ms langer Druck auf die Timer-Taste sendet ein eigenes
+  Ereignis an den Server und führt dort die optionale Lua-Funktion
+  `on_long_timer()` aus; das normale Timermenü bleibt dabei geschlossen.
+- `on_long_timer()` erhält keine Argumente und darf genau einen
+  `airctrl.set { ... }`-Auftrag auslösen. Als ausdrückliche Benutzeraktion
+  funktioniert der Langdruck auch bei aktiver manueller Automatik-Sperre.
 - Manuelle Änderungen von Power, Betriebsart/Lüfterstufe, Zielfeuchte,
   Gerätefunktion oder Timer sperren die serverseitige Lua-Automatik für alle
   Clients.

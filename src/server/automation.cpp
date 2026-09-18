@@ -538,9 +538,10 @@ int AutomationEngine::luaSet(lua_State* state) {
     AutomationEngine* self = fromLua(state);
     if (self == nullptr) return 0;
     if (self->currentEvent_ != "connected" && self->currentEvent_ != "status" &&
-        self->currentEvent_ != "alarm" && self->currentEvent_ != "time")
+        self->currentEvent_ != "alarm" && self->currentEvent_ != "time" &&
+        self->currentEvent_ != "long_timer")
         return luaL_error(state,
-            "airctrl.set ist nur in connected-, status-, alarm- oder time-Ereignissen erlaubt");
+            "airctrl.set ist nur in connected-, status-, alarm-, time- oder long_timer-Ereignissen erlaubt");
     if (!self->pendingActions_.empty())
         return luaL_error(state, "pro Ereignis ist nur ein airctrl.set-Auftrag erlaubt");
     std::string error;
@@ -729,6 +730,40 @@ bool AutomationEngine::callEvent(const std::string& type, Json detail) {
         return false;
     }
     lastEvent_ = type + " · " + formatLocal(std::time(nullptr), "%Y-%m-%dT%H:%M:%S%z");
+    flushActions();
+    return true;
+}
+
+bool AutomationEngine::longTimerEvent() {
+    // A deliberate long press is an explicit user action. It remains available
+    // while scheduled/status automation is suspended by a manual override.
+    if (state_ == nullptr || dispatching_ || !lastError_.empty()) return false;
+    lua_getglobal(state_, "on_long_timer");
+    if (lua_isnil(state_, -1)) {
+        lua_pop(state_, 1);
+        lastEvent_ = "long_timer · keine Funktion";
+        return true;
+    }
+    if (!lua_isfunction(state_, -1)) {
+        lua_pop(state_, 1);
+        setProblem("Lua: on_long_timer ist keine Funktion.");
+        return false;
+    }
+    currentEvent_ = "long_timer";
+    dispatching_ = true;
+    lua_sethook(state_, &AutomationEngine::instructionHook, LUA_MASKCOUNT, instructionBudget_);
+    const int result = lua_pcall(state_, 0, 0, 0);
+    lua_sethook(state_, nullptr, 0, 0);
+    dispatching_ = false;
+    currentEvent_.clear();
+    if (result != LUA_OK) {
+        const std::string problem = "Lua-Funktion on_long_timer: " + luaString(state_, -1);
+        lua_pop(state_, 1);
+        pendingActions_.clear();
+        setProblem(problem);
+        return false;
+    }
+    lastEvent_ = "long_timer · " + formatLocal(std::time(nullptr), "%Y-%m-%dT%H:%M:%S%z");
     flushActions();
     return true;
 }

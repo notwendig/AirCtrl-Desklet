@@ -90,8 +90,10 @@ private:
     bool mouseMoved_ = false;
     bool menuPending_ = false;
     bool menuOpen_ = false;
+    bool longTimerTriggered_ = false;
     QPoint pressPosition_;
     QPoint dragOffset_;
+    QTimer longTimerPress_;
     QDateTime updated_;
     QDateTime packetReceivedAt_;
     QElapsedTimer monitorClock_;

@@ -14,8 +14,9 @@
 -- airctrl.version                AirCtrl-Desklet-Version
 -- airctrl.lua_version            eingebettete Lua-Version
 --
--- airctrl.set ist nur in connected, time, status und alarm erlaubt, höchstens
--- einmal je Ereignis. startup, disconnected und command dürfen nicht schalten.
+-- airctrl.set ist nur in connected, time, status, alarm und on_long_timer
+-- erlaubt, höchstens einmal je Ereignis. startup, disconnected und command
+-- dürfen nicht schalten.
 -- Ein Auftrag benutzt dieselbe Positivliste und Statusbestätigung wie die GUI.
 --
 -- ==========================================================================
@@ -59,6 +60,19 @@
 --   event.ok       true = bestätigt, false = fehlgeschlagen
 --   event.message  Ergebnistext
 --   Aus command darf kein neuer Auftrag gestartet werden (Schleifenschutz).
+--
+-- ==========================================================================
+-- LANGES DRÜCKEN AUF DIE TIMER-TASTE: function on_long_timer()
+-- ==========================================================================
+-- Wird auf dem Server genau einmal aufgerufen, wenn die Timer-Taste am Client
+-- mindestens 800 ms gedrückt bleibt. Das normale Timermenü wird dann nicht
+-- geöffnet. Die Funktion erhält keine Argumente und darf einen airctrl.set-
+-- Auftrag auslösen. Fehlt die Funktion, bleibt der lange Druck ohne Aktion.
+--
+-- Beispiel:
+-- function on_long_timer()
+--     airctrl.set { mode="P", uil="1" }
+-- end
 --
 -- ==========================================================================
 -- BESTÄTIGTE/BEOBACHTETE STATUSFELDER UND BEDEUTUNG

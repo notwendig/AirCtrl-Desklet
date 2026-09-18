@@ -135,11 +135,30 @@ Desklet::Desklet(Preferences preferences, QString backend, bool demo)
     QHBoxLayout* row=new QHBoxLayout(bar); row->setContentsMargins(0,0,0,0); row->setSpacing(0);
     const QStringList names{"Ein / Aus","Kindersicherung","Automatikmodus","Lüfterstufe","Zielfeuchte","Beleuchtung","2-in-1-Modus","Timer"};
     const QStringList ids{"power","childLock","autoMode","fanSpeed","humidityTarget","light","function","timer"};
+    longTimerPress_.setSingleShot(true);
+    longTimerPress_.setInterval(800);
+    connect(&longTimerPress_,&QTimer::timeout,this,[this] {
+        longTimerTriggered_=true;
+        controller_.triggerLongTimer();
+    });
     for(int i=0;i<8;++i) {
         PanelButton* b=new PanelButton(static_cast<PanelIcon>(i),names[i],bar); controls_[i]=b;
         b->setObjectName(ids[i]); b->setMinimumWidth(29); b->setFixedHeight(31); row->addWidget(b,1);
         b->installEventFilter(this);
-        connect(b,&QPushButton::clicked,this,[this,i] { openControl(i); });
+        if(i==7) {
+            connect(b,&QPushButton::pressed,this,[this] {
+                longTimerTriggered_=false;
+                longTimerPress_.start();
+            });
+            connect(b,&QPushButton::released,&longTimerPress_,&QTimer::stop);
+        }
+        connect(b,&QPushButton::clicked,this,[this,i] {
+            if(i==7 && longTimerTriggered_) {
+                longTimerTriggered_=false;
+                return;
+            }
+            openControl(i);
+        });
     }
     root->addWidget(bar);
     QWidget* statusArea=new QWidget(this); statusArea->setObjectName("statusArea");

@@ -339,6 +339,14 @@ void Controller::resumeAutomation() {
     send({{"_airctrl", "automation_resume"}});
 }
 
+void Controller::triggerLongTimer() {
+    if (!active_ || socket_.state() != QAbstractSocket::ConnectedState) {
+        emit commandFailed("Keine Verbindung zum AirControl-Server für on_long_timer().");
+        return;
+    }
+    send({{"_airctrl", "long_timer"}});
+}
+
 void Controller::beginAutomationEdit() {
     if (pendingAutomationRequestId_ != 0 || automationEditHeld_) return;
     if (!active_ || socket_.state() != QAbstractSocket::ConnectedState) {

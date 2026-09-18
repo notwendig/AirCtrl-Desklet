@@ -319,6 +319,40 @@ private slots:
         second.cancelAutomationEdit();
         second.stop();
     }
+    void longTimerExecutesServerLuaCallback() {
+        UdpDevice device;
+        QVERIFY(writeServerConfig(device.port));
+        Controller client(REAL_BACKEND);
+        QSignalSpy status(&client,&Controller::statusReceived);
+        QSignalSpy granted(&client,&Controller::automationEditGranted);
+        QSignalSpy saved(&client,&Controller::automationSaved);
+        QSignalSpy automationState(&client,&Controller::automationStateReceived);
+        client.start();
+        QTRY_VERIFY(!status.isEmpty());
+
+        client.beginAutomationEdit();
+        QTRY_COMPARE(granted.size(),1);
+        client.saveAutomationEdit(R"lua(
+            function on_long_timer()
+                airctrl.set { mode="S", om="s" }
+            end
+        )lua",true,granted.first()[2].toULongLong());
+        QTRY_COMPARE(saved.size(),1);
+
+        const int controlsBefore=device.controls.load();
+        client.triggerLongTimer();
+        QTRY_COMPARE(device.controls.load(),controlsBefore+1);
+        const auto receivedLongTimerState=[&] {
+            for(const QList<QVariant>& arguments:automationState)
+                if(arguments[0].toJsonObject().value("last_event").toString().startsWith("long_timer"))
+                    return true;
+            return false;
+        };
+        QTRY_VERIFY(receivedLongTimerState());
+        QTRY_COMPARE(status.last()[0].toJsonObject().value("mode").toString(),QString("S"));
+        QCOMPARE(status.last()[0].toJsonObject().value("om").toString(),QString("s"));
+        client.stop();
+    }
     void manualRelevantControlsSuspendAutomationForAllClients() {
         UdpDevice device;
         QVERIFY(writeServerConfig(device.port));

@@ -65,6 +65,8 @@ public:
     void setConnected(bool connected, const std::string& reason = {});
     void statusEvent(const Json& status);
     void commandEvent(const std::string& source, bool ok, const std::string& message);
+    /** Execute the optional global Lua callback on_long_timer() without arguments. */
+    bool longTimerEvent();
     void processTime(std::chrono::system_clock::time_point now = std::chrono::system_clock::now());
     void actionAccepted(const std::string& occurrenceKey);
 

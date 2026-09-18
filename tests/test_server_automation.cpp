@@ -98,6 +98,30 @@ int main() {
     }
 
     {
+        airctrl::AutomationEngine engine(configFor(directory, "long-timer"), "1.09");
+        std::vector<airctrl::AutomationAction> actions;
+        engine.setActionHandler([&](airctrl::AutomationAction action) {
+            actions.push_back(std::move(action));
+        });
+        std::string error;
+        require(engine.saveScript(R"lua(
+            function on_long_timer()
+                airctrl.set { mode="P", uil="1" }
+            end
+        )lua", true, &error), "on_long_timer-Skript wird geladen: " + error);
+        require(engine.setManualOverride(true, "Test-Sperre"),
+            "Manuelle Sperre wird für den Langdrucktest aktiviert.");
+        require(engine.longTimerEvent(), "on_long_timer wird trotz manueller Sperre ausgeführt.");
+        require(actions.size() == 1U, "on_long_timer erzeugt genau einen Auftrag.");
+        if (!actions.empty()) {
+            require(actions.front().values == airctrl::Json{{"mode", "P"}, {"uil", "1"}},
+                "on_long_timer übergibt die erwarteten Steuerwerte.");
+            require(actions.front().source == "Lua-Ereignis long_timer",
+                "Der Langdruckauftrag hat eine eindeutige Quelle.");
+        }
+    }
+
+    {
         const airctrl::AutomationConfig config = configFor(directory, "persistent");
         std::string error;
         {

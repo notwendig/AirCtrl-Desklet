@@ -99,12 +99,30 @@ Jedes Ereignis enthält außerdem `timestamp`. `nil` in Lua bedeutet bei
 `event.changed.<tag>.old` oder `.new`, dass das Feld vorher fehlte beziehungsweise
 entfernt wurde.
 
+## Langes Drücken auf den Timer
+
+Bleibt die Timer-Taste im Desklet mindestens 800 ms gedrückt, ruft der Server
+einmal die optionale globale Funktion `on_long_timer()` auf. Das normale
+Timermenü wird bei diesem langen Druck nicht geöffnet. Die Funktion erhält
+keine Argumente und darf genau einen Geräteauftrag auslösen:
+
+```lua
+function on_long_timer()
+    airctrl.set { mode="P", uil="1" }
+end
+```
+
+Der Aufruf geschieht als ausdrückliche Benutzeraktion auch dann, wenn eine
+manuelle Einstellung die zeit- und statusgesteuerte Automatik vorübergehend
+gesperrt hat. Ist `on_long_timer` nicht definiert, passiert nichts.
+
 ## API
 
 ### `airctrl.set { ... }`
 
-Fordert genau eine Schaltung aus einem `connected`-, `status`-, `alarm`- oder
-`time`-Ereignis an. Pro Ereignis ist höchstens ein Auftrag erlaubt. Er durchläuft
+Fordert genau eine Schaltung aus einem `connected`-, `status`-, `alarm`-,
+`time`-Ereignis oder aus `on_long_timer()` an. Pro Aufruf ist höchstens ein
+Auftrag erlaubt. Er durchläuft
 dieselben Sperren und die Statusbestätigung wie ein manueller Klick.
 
 | Feld | Lua-Typ | Erlaubte Werte |

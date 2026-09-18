@@ -557,6 +557,11 @@ void AirCtrlServer::handle(std::uint64_t client, const Json& request) {
         broadcastAutomationState();
         return;
     }
+    if (kind == "long_timer") {
+        automation_.longTimerEvent();
+        broadcastAutomationState();
+        return;
+    }
     if (kind == "configure") {
         send(client, {{"_airctrl", "error"},
             {"error", "Geräteeinstellungen gehören ausschließlich in /etc/airctrld.cfg."}});

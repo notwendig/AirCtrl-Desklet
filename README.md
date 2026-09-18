@@ -23,7 +23,8 @@ Die Oberfläche ist derzeit deutschsprachig.
 ## Funktionen
 
 - Acht Tasten: Ein/Aus, Kindersicherung, Automatik, Lüfter, Zielfeuchte, Licht,
-  Luftreinigung/2-in-1 und Abschalttimer.
+  Luftreinigung/2-in-1 und Abschalttimer. Ein mindestens 800 ms langer Druck
+  auf die Timer-Taste ruft serverseitig die Lua-Funktion `on_long_timer()` auf.
 - Feuchte, Zielfeuchte, Temperatur, PM2,5 und IAI einzeln einblendbar.
 - Aktive Modus- und Wartungssymbole aus bestätigten Statusmeldungen.
 - Ein dauerhafter `airctrl-server` als einziger AC2729-Teilnehmer und einzige
@@ -205,6 +206,8 @@ airctrl.schedule {
 `on_event(event)` erhält `startup`, `time`, `connected`, `disconnected`,
 `status`, `alarm` und `command`. Statusereignisse enthalten den vollständigen
 bestätigten Zustand in `event.status` sowie Änderungen in `event.changed`.
+Ein mindestens 800 ms langer Druck auf die Timer-Taste ruft zusätzlich die
+globale Serverfunktion `on_long_timer()` ohne Argumente auf.
 `airctrl.set { ... }` verwendet im Server dieselbe Positivliste,
 Gerätewarteschlange und Bestätigungslogik wie die Gerätetasten. Pro Zeitplantermin gibt es höchstens einen Schaltversuch;
 bereits passende Zustände erzeugen keinen Netzwerkbefehl.

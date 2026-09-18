@@ -18,7 +18,8 @@ It is a standalone Qt application, **not a Cinnamon JavaScript desklet**.
 ## Features
 
 - Eight controls: power, child lock, automatic mode, fan speed, humidity target,
-  lighting, purification/2-in-1 and shutdown timer.
+  lighting, purification/2-in-1 and shutdown timer. Holding the timer button
+  for at least 800 ms invokes the server-side Lua function `on_long_timer()`.
 - One persistent `airctrl-server` is the only process that contacts the AC2729
   and the only process containing the Lua runtime. Editors and other clients use its TCP endpoint.
 - Ping/pong monitoring detects a silently broken TCP connection without waiting
@@ -152,7 +153,9 @@ Automation is disabled by default. Once enabled it runs only in
 automatic day mode at 07:00. Its comments also form a complete event, status-field
 and control-value reference. `on_event(event)` receives `startup`, `time`,
 `connected`, `disconnected`, `status`, `alarm` and `command`; status events expose
-both `event.status` and `event.changed`. `airctrl.set { ... }` uses the same field
+both `event.status` and `event.changed`. Holding the timer button for at least
+800 ms additionally calls the global server function `on_long_timer()` without
+arguments. `airctrl.set { ... }` uses the same field
 allow-list, serialized device queue and confirmed-state command path as the UI.
 
 The verified official Lua 5.4.9 sources are embedded only in the Qt-free server.
