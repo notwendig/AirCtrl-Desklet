@@ -3,6 +3,7 @@
  * @brief Qt-independent multi-client TCP server and Philips UDP-session owner.
  */
 #include "server.h"
+#include "control_values.hpp"
 #include "airctrl_version.hpp"
 
 #include <arpa/inet.h>
@@ -185,37 +186,6 @@ bool loadConfig(const std::string& path, ServerConfig* config, std::string* erro
     config->device.observeRefreshes = observeRefreshes;
     config->device.cancelGraceMs = cancelGraceMs;
     return true;
-}
-
-std::string controlValuesError(const Json& values) {
-    if (!values.is_object() || values.empty()) return "Leerer Steuerauftrag.";
-    const bool numbers = values.begin().value().is_number();
-    for (Json::const_iterator item = values.begin(); item != values.end(); ++item) {
-        const Json& value = item.value();
-        const std::string& key = item.key();
-        const bool isNumber = value.is_number();
-        double number = -1.0;
-        if (isNumber) number = value.get<double>();
-        const bool valid =
-            (key == "pwr" && value.is_string() && (value == "0" || value == "1")) ||
-            (key == "cl" && value.is_boolean()) ||
-            (key == "mode" && value.is_string() &&
-             (value == "P" || value == "A" || value == "S" || value == "M")) ||
-            (key == "om" && value.is_string() &&
-             (value == "1" || value == "2" || value == "3" || value == "s" || value == "t")) ||
-            (key == "func" && value.is_string() && (value == "P" || value == "PH")) ||
-            (key == "uil" && value.is_string() && (value == "0" || value == "1")) ||
-            (key == "rhset" && isNumber &&
-             (number == 40.0 || number == 50.0 || number == 60.0 || number == 70.0)) ||
-            (key == "aqil" && isNumber &&
-             (number == 0.0 || number == 25.0 || number == 50.0 || number == 75.0 || number == 100.0)) ||
-            (key == "dt" && isNumber && number >= 0.0 && number <= 12.0 &&
-             number == static_cast<double>(static_cast<int>(number)));
-        if (!valid) return "Ungültiger Steuerwert: " + key;
-        if (isNumber != numbers)
-            return "Ein Steuerauftrag darf Ganzzahlen nicht mit Text- oder Boolean-Werten mischen.";
-    }
-    return {};
 }
 
 bool requestId(const Json& request, std::uint64_t* id) {

@@ -15,6 +15,9 @@ add_library(desklet_ui STATIC
     diagnostics.cpp diagnostics.hpp
     panel.cpp panel.hpp
     desklet.cpp desklet.hpp
+    desklet_events.cpp
+    desklet_rendering.cpp
+    desklet_support.cpp desklet_support.hpp
     preferences.cpp preferences.hpp)
 target_include_directories(desklet_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(desklet_ui PUBLIC

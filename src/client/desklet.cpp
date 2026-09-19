@@ -4,6 +4,7 @@
  */
 #include "desklet.hpp"
 #include "airctrl_automation_example.hpp"
+#include "desklet_support.hpp"
 #include "diagnostics.hpp"
 #include <QApplication>
 #include <QCheckBox>
@@ -50,58 +51,7 @@
 #include <QTableWidget>
 #include <QVBoxLayout>
 
-namespace {
-const QStringList metricKeys{"rh","rhset","temp","pm25","iaql"};
-const QStringList metricNames{"Luftfeuchtigkeit","Zielfeuchte","Temperatur","PM2,5","IAI"};
-QString metricText(const QString& key, const QJsonValue& value) {
-    bool ok=value.isDouble();
-    const double n=ok ? value.toDouble() : value.toString().toDouble(&ok);
-    const bool humidity=key=="rh" || key=="rhset";
-    ok=ok && std::isfinite(n) && n<=(humidity ? 100 : 999) && n>=(key=="temp" ? -100 : 0);
-    const QString number=ok ? QString::number(n,'f',n==std::floor(n) ? 0 : 1) : QString("—");
-    if(key=="rh") return "Feuchte " + number + (ok ? " %" : "");
-    if(key=="rhset") return "Ziel " + number + (ok ? " %" : "");
-    if(key=="temp") return number + " °C";
-    if(key=="pm25") return "PM2,5 " + number + (ok ? " µg/m³" : "");
-    return "IAI " + number;
-}
-bool powerKnown(const QJsonObject& state) {
-    const QString v=state.value("pwr").toString(); return v=="0" || v=="1";
-}
-QString endpointText(QString host, int port) {
-    host=host.trimmed();
-    if(host.contains(':') && !(host.startsWith('[') && host.endsWith(']'))) host="["+host+"]";
-    return host+":"+QString::number(port);
-}
-QString automationStateLabel(const QJsonObject& state) {
-    if (state.isEmpty()) return "Serverstatus unbekannt";
-    if (!state.value("error").toString().isEmpty()) return "Fehler";
-    if (!state.value("enabled").toBool()) return "aus";
-    if (state.value("manual_override").toBool()) return "manuell gesperrt";
-    return state.value("loaded").toBool() ? "aktiv" : "Fehler";
-}
-QString automationDiagnostics(const QJsonObject& state) {
-    if (state.isEmpty()) return "Serverstatus noch nicht empfangen.\n";
-    QString text="Ausführung = airctrl-server\n"
-        "Zustand = "+automationStateLabel(state)+"\n"
-        "Lua-Version = "+state.value("lua_version").toString("unbekannt")+" (im Server eingebettet)\n"
-        "Skript auf dem Server = "+state.value("script_path").toString("unbekannt")+"\n"
-        "Revision = "+QString::number(state.value("revision").toVariant().toULongLong())+"\n"
-        "Zeitpläne = "+QString::number(state.value("schedule_count").toInt())+"\n"
-        "Letztes Ereignis = "+state.value("last_event").toString("—")+"\n"
-        "Letzte Aktion = "+state.value("last_action").toString("—")+"\n";
-    if(state.value("manual_override").toBool())
-        text+="Automatik-Sperre = manuelle Geräteeinstellung; Power-Taste zum Freigeben\n";
-    if(!state.value("error").toString().isEmpty())
-        text+="Letzter Lua-Fehler = "+state.value("error").toString()+"\n";
-    const QJsonArray log=state.value("log").toArray();
-    if(!log.isEmpty()) {
-        text+="Lua-Protokoll:\n";
-        for(const QJsonValue& entry:log) text+="  "+entry.toString()+"\n";
-    }
-    return text;
-}
-}
+using namespace desklet_support;
 Desklet::Desklet(Preferences preferences, QString backend, bool demo)
     : preferences_(std::move(preferences)), controller_(std::move(backend), this), demo_(demo) {
     monitorClock_.start();
@@ -232,63 +182,6 @@ Desklet::Desklet(Preferences preferences, QString backend, bool demo)
         tray_->show();
     }
     applyAppearance(); updateControls(); updateFooter();
-}
-void Desklet::paintEvent(QPaintEvent*) {
-    QPainter p(this); p.setCompositionMode(QPainter::CompositionMode_Source);
-    QColor color=preferences_.background; color.setAlphaF((100-preferences_.transparency)/100.0);
-    p.fillRect(rect(),color);
-}
-void Desklet::resizeToContent() {
-    layout()->invalidate(); layout()->activate();
-    setFixedSize(layout()->sizeHint().expandedTo(QSize(287,0)));
-}
-void Desklet::applyAppearance() {
-    while(QLayoutItem* item=valueLayout_->takeAt(0)) delete item;
-    int visible=0;
-    for(int i=0;i<5;++i) {
-        QLabel* value=values_[i];
-        value->setFont(preferences_.valueFont);
-        const bool show=preferences_.visibleValues.contains(metricKeys[i]); value->setVisible(show);
-        if(show) { valueLayout_->addWidget(value,visible/2,visible%2); ++visible; }
-    }
-    valueArea_->setVisible(visible>0);
-    for(PanelButton* button:controls_) { button->setForeground(preferences_.foreground); button->setFont(preferences_.valueFont); }
-    monitorBar_->setFont(preferences_.valueFont);
-    monitorBar_->setFixedSize(monitorBar_->sizeHint());
-    updateEmblems(); updateValues(); updateMonitoring(); update();
-}
-void Desklet::saveAppearance() {
-    applyAppearance();
-    if(!demo_) preferences_.save();
-    if(isVisible()) showAndPosition();
-}
-void Desklet::updateValues() {
-    QColor color=preferences_.foreground;
-    if(!connected_ && updated_.isValid()) color.setAlpha(140);
-    for(int i=0;i<5;++i) {
-        QLabel* value=values_[i]; value->setText(metricText(metricKeys[i],status_.value(metricKeys[i])));
-        QPalette palette=value->palette(); palette.setColor(QPalette::WindowText,color); value->setPalette(palette);
-        value->setAccessibleName(metricNames[i]+": "+value->text());
-    }
-    resizeToContent();
-}
-void Desklet::updateEmblems() {
-    // Reserve two rows of six emblems; alarms must not resize the whole window.
-    const int side=qMax(24,QFontMetrics(preferences_.valueFont).height()+4);
-    emblemBar_->setFixedHeight(2*side+4);
-    emblemBar_->setMinimumWidth(6*side+5*4);
-    while(QLayoutItem* item=emblemLayout_->takeAt(0)) delete item;
-    int index=0;
-    const QList<EmblemState> active=currentEmblems(status_,connected_);
-    for(Emblem* emblem:emblems_) {
-        const QList<EmblemState>::const_iterator found=std::find_if(active.begin(),active.end(),[&](const EmblemState& state) {
-            return emblem->objectName()=="emblem_"+state.id;
-        });
-        if(found!=active.end()) emblem->configure(*found,preferences_.foreground,preferences_.valueFont,
-                                                connected_,updated_.isValid());
-        emblem->setVisible(found!=active.end());
-        if(found!=active.end()) { emblemLayout_->addWidget(emblem,index/6,index%6); ++index; }
-    }
 }
 void Desklet::sendValues(const QJsonObject& values) {
     if(!connected_ || demo_ || awaitingConfirmation_ || controller_.busy()) return;
@@ -601,194 +494,6 @@ void Desklet::showAutomationSettings() {
     dialog.exec();
     if(lockHeld) controller_.cancelAutomationEdit();
 }
-void Desklet::applyWindowMode() {
-    const bool x11 = QGuiApplication::platformName() == "xcb";
-    const bool desktop = preferences_.desktop && x11 && !waylandSession_;
-    // Dock + BELOW is Muffin's BOTTOM layer: above Nemo, below normal windows.
-    // Desktop type uses the same layer as Nemo and lets its icons cover us.
-    // Do not use Qt::Tool here: utility windows can be promoted with their group.
-    setAttribute(Qt::WA_X11NetWmWindowTypeDesktop, false);
-    setAttribute(Qt::WA_X11NetWmWindowTypeDock, false);
-    Qt::WindowFlags flags=demo_ && !desktop && !waylandSession_ ? Qt::Tool : Qt::Window;
-    if(preferences_.hideDecoration) flags|=Qt::FramelessWindowHint;
-    if(desktop) flags|=Qt::WindowStaysOnBottomHint;
-    setWindowFlags(flags);
-    // Dock windows have no WM decoration. Use a normal BELOW window when a
-    // title bar is requested; restoring frameless mode restores the Dock layer.
-    setAttribute(Qt::WA_X11NetWmWindowTypeDock, desktop && preferences_.hideDecoration);
-    // No strut is set: this is not a panel and reserves no screen area.
-}
-void Desklet::setDecorationHidden(bool hidden) {
-    if(preferences_.hideDecoration==hidden) return;
-    if(!waylandSession_) preferences_.position=pos();
-    preferences_.hideDecoration=hidden;
-    if(!demo_) preferences_.save();
-    applyWindowMode(); showAndPosition();
-}
-void Desklet::start() {
-    if (demo_) return;
-    controller_.configure(preferences_.serverHost,preferences_.serverPort,preferences_.serverReconnectSeconds);
-    controller_.start();
-}
-void Desklet::showAndPosition() {
-    adjustSize();
-    if (waylandSession_) { show(); return; } // The compositor owns global placement.
-    const QPoint desired = preferences_.position;
-    QScreen* target = nullptr;
-    for (QScreen* screen : QGuiApplication::screens()) {
-        if (screen->availableGeometry().contains(desired)) { target = screen; break; }
-    }
-    if (!target) target = QGuiApplication::primaryScreen();
-    if (target) {
-        const QRect available = target->availableGeometry();
-        QPoint point = desired;
-        if (!available.contains(point)) point = available.topRight() - QPoint(width()+24, -24);
-        point.setX(qBound(available.left(), point.x(), qMax(available.left(), available.right()-width()+1)));
-        point.setY(qBound(available.top(), point.y(), qMax(available.top(), available.bottom()-height()+1)));
-        move(point);
-    }
-    show();
-}
-bool Desklet::eventFilter(QObject* watched, QEvent* event) {
-    if (event->type() == QEvent::ContextMenu) {
-        // Native context events may arrive on press or release; a right-button
-        // sequence is handled on release below and must only open one menu.
-        if (!rightPressed_) {
-            const QContextMenuEvent* context=static_cast<QContextMenuEvent*>(event);
-            requestMenu(context->reason()==QContextMenuEvent::Keyboard ? mapToGlobal(rect().center()) : context->globalPos());
-        }
-        return true;
-    }
-    if (event->type() == QEvent::MouseButtonPress) {
-        const QMouseEvent* mouse=static_cast<QMouseEvent*>(event);
-        if (mouse->button()==Qt::RightButton) { rightPressed_=true; return true; }
-        // Device buttons keep their left-click action. Values and free space
-        // use the left button only for moving; menus are right-click only.
-        if (mouse->button()==Qt::LeftButton && !qobject_cast<QAbstractButton*>(watched)) {
-            leftPressed_=true; mouseMoved_=false;
-            pressPosition_=mouse->globalPosition().toPoint(); dragOffset_=pressPosition_-pos();
-            return true;
-        }
-    } else if (event->type()==QEvent::MouseMove && leftPressed_) {
-        const QPoint global=static_cast<QMouseEvent*>(event)->globalPosition().toPoint();
-        mouseMoved_=mouseMoved_ || (global-pressPosition_).manhattanLength()>=QApplication::startDragDistance();
-        if (mouseMoved_ && !preferences_.locked && (preferences_.desktop || preferences_.hideDecoration)) {
-            if (waylandSession_) {
-                // Called while the original left-button press is still active:
-                // Wayland requires its input serial for a compositor move.
-                leftPressed_=false;
-                if (!startNativeMove()) qWarning("AirControl: Fenstermanager hat das Verschieben nicht angenommen");
-            } else move(global-dragOffset_);
-        }
-        return true;
-    } else if (event->type()==QEvent::MouseButtonRelease) {
-        const QMouseEvent* mouse=static_cast<QMouseEvent*>(event);
-        if (mouse->button()==Qt::RightButton) {
-            rightPressed_=false; requestMenu(mouse->globalPosition().toPoint()); return true;
-        }
-        if (mouse->button()==Qt::LeftButton && leftPressed_) {
-            leftPressed_=false;
-            if (mouseMoved_) {
-                if (!preferences_.locked && (preferences_.desktop || preferences_.hideDecoration)) rememberPosition();
-            } else if(watched==monitorBar_) QTimer::singleShot(0,this,&Desklet::showAlarms);
-            return true;
-        }
-    }
-    return false;
-}
-bool Desklet::startNativeMove() {
-    return windowHandle() && windowHandle()->startSystemMove();
-}
-void Desklet::rememberPosition() {
-    if (!demo_) {
-        if (!waylandSession_) preferences_.position=pos();
-        preferences_.save();
-    }
-}
-void Desklet::contextMenuEvent(QContextMenuEvent* event) { event->accept(); requestMenu(event->globalPos()); }
-void Desklet::requestMenu(const QPoint& point) {
-    if (menuPending_ || menuOpen_) return;
-    menuPending_=true;
-    // Finish the mouse release first so it cannot immediately close the popup.
-    QTimer::singleShot(0,this,[this,point] { menuPending_=false; openMenu(point); });
-}
-void Desklet::openMenu(const QPoint& point) {
-    if (menuOpen_) return;
-    QScopedValueRollback<bool> guard(menuOpen_,true);
-    qInfo("AirControl: Kontextmenü angefordert");
-    QMenu menu(this); menu.setObjectName("deskletContextMenu");
-    const QString connection=demo_ ? QString("Vorschau") : connected_ ? QString("Verbunden") : QString("Keine Verbindung");
-    menu.addSection(status_.value("name").toString("AirControl")+" · "+connection);
-    QAction* decoration=menu.addAction("Fensterdekoration ausblenden");
-    decoration->setObjectName("hideWindowDecoration"); decoration->setCheckable(true);
-    decoration->setChecked(preferences_.hideDecoration);
-    connect(decoration,&QAction::triggered,this,[this](bool hidden) {
-        // Changing native flags hides/recreates the window. Do it after menu exec.
-        QTimer::singleShot(0,this,[this,hidden] { setDecorationHidden(hidden); });
-    });
-    QMenu* appearance=menu.addMenu("Darstellung");
-    appearance->addAction("Hintergrundfarbe …",this,[this] {
-        const QColor color=QColorDialog::getColor(preferences_.background,this,"Hintergrundfarbe");
-        if(color.isValid()) { preferences_.background=color; saveAppearance(); }
-    });
-    QAction* transparency=appearance->addAction("Hintergrundtransparenz …",this,[this] {
-        bool ok=false;
-        const int percent=QInputDialog::getInt(this,"Hintergrundtransparenz", "Transparenz in % (0 = deckend, 100 = durchsichtig):",
-                                               preferences_.transparency,0,100,5,&ok);
-        if(ok) { preferences_.transparency=percent; saveAppearance(); }
-    });
-    transparency->setObjectName("appearanceTransparency");
-    appearance->addAction("Vordergrundfarbe …",this,[this] {
-        const QColor color=QColorDialog::getColor(preferences_.foreground,this,"Farbe der Werte und Symbole");
-        if(color.isValid()) { preferences_.foreground=color; saveAppearance(); }
-    });
-    appearance->addAction("Schriftart und Schriftschnitt …",this,[this] {
-        bool ok=false;
-        QFont font=QFontDialog::getFont(&ok,preferences_.valueFont,this,"Schrift der Messwerte");
-        if(ok) { font.setPointSizeF(qBound(6.0,font.pointSizeF()>0 ? font.pointSizeF() : 10.0,48.0)); preferences_.valueFont=font; saveAppearance(); }
-    });
-    appearance->addAction("Schriftgröße …",this,[this] {
-        bool ok=false;
-        const int size=QInputDialog::getInt(this,"Schriftgröße","Größe in Punkt:",qRound(preferences_.valueFont.pointSizeF()),6,48,1,&ok);
-        if(ok) { preferences_.valueFont.setPointSize(size); saveAppearance(); }
-    });
-    appearance->addSeparator();
-    appearance->addAction("Darstellung zurücksetzen",this,[this] {
-        const Preferences defaults;
-        preferences_.background=defaults.background; preferences_.foreground=defaults.foreground;
-        preferences_.transparency=defaults.transparency; preferences_.valueFont=defaults.valueFont;
-        saveAppearance();
-    });
-    QMenu* values=menu.addMenu("Angezeigte Werte");
-    for(int i=0;i<5;++i) {
-        QAction* action=values->addAction(metricNames[i]); action->setCheckable(true);
-        action->setChecked(preferences_.visibleValues.contains(metricKeys[i]));
-        connect(action,&QAction::toggled,this,[this,i](bool on) {
-            if(on) preferences_.visibleValues.append(metricKeys[i]); else preferences_.visibleValues.removeAll(metricKeys[i]);
-            saveAppearance();
-        });
-    }
-    menu.addSeparator();
-    QAction* alarms=menu.addAction("Aktive Alarme …",this,&Desklet::showAlarms); alarms->setObjectName("showAlarms");
-    QAction* acknowledge=menu.addAction("Alarme quittieren",this,&Desklet::acknowledgeAlarms);
-    acknowledge->setObjectName("acknowledgeAlarms"); acknowledge->setEnabled(!activeAlerts_.isEmpty());
-    QAction* alarmSettings=menu.addAction("Datenalter und Alarme …",this,&Desklet::showAlarmSettings);
-    alarmSettings->setObjectName("alarmSettings");
-    QAction* automationSettings=menu.addAction(QString("Lua-Automatik … [%1]")
-        .arg(automationStateLabel(automationState_)),this,&Desklet::showAutomationSettings);
-    automationSettings->setObjectName("automationSettingsAction");
-    menu.addSeparator();
-    QAction* refresh=menu.addAction("Statusverbindung neu starten (F5)",this,[this] { controller_.refresh(); });
-    refresh->setEnabled(!controller_.busy() && !awaitingConfirmation_ && !demo_);
-    QAction* settings=menu.addAction("Verbindung und Autostart …",this,&Desklet::showSettings);
-    settings->setEnabled(!controller_.busy() && !awaitingConfirmation_ && !demo_);
-    // Let the popup release its input grab before opening the focused dialog.
-    menu.addAction("Diagnose / Gerätedaten (F1) …",this,[this] { QTimer::singleShot(0,this,&Desklet::showDetails); });
-    if (!waylandSession_) menu.addAction("Position festlegen …",this,&Desklet::showPositionDialog);
-    QAction* locked=menu.addAction("Position sperren"); locked->setCheckable(true); locked->setChecked(preferences_.locked);
-    connect(locked,&QAction::toggled,this,[this](bool value) { preferences_.locked=value; rememberPosition(); });
-    menu.addSeparator(); menu.addAction("Beenden",this,&QWidget::close); menu.exec(point);
-}
 void Desklet::showPositionDialog() {
     if (waylandSession_) return;
     QDialog dialog(this); dialog.setWindowTitle("Widget-Position"); dialog.setObjectName("positionDialog");
@@ -977,10 +682,4 @@ void Desklet::showDetails() {
     });
     buttons->button(QDialogButtonBox::Close)->setText("Schließen");
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject); layout->addWidget(buttons); dialog.exec();
-}
-void Desklet::closeEvent(QCloseEvent* event) {
-    rememberPosition(); controller_.stop();
-    if (tray_) tray_->hide();
-    event->accept();
-    if (!demo_) QCoreApplication::quit();
 }

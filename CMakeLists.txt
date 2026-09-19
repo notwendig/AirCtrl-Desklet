@@ -68,6 +68,15 @@ else()
 endif()
 
 if(BUILD_TESTING)
+    add_executable(control-values-tests
+        tests/test_control_values.cpp
+        src/common/control_values.cpp
+        src/common/control_values.hpp)
+    target_include_directories(control-values-tests PRIVATE src/common)
+    target_link_libraries(control-values-tests PRIVATE nlohmann_json::nlohmann_json)
+    add_test(NAME control-values COMMAND control-values-tests)
+    set_tests_properties(control-values PROPERTIES TIMEOUT 10)
+
     add_executable(coap-tests tests/test_coap.cpp)
     target_include_directories(coap-tests PRIVATE ${AIRCTRL_PROTOCOL_SOURCE}/src)
     target_link_libraries(coap-tests PRIVATE aioairctrl Threads::Threads)
@@ -87,9 +96,12 @@ if(BUILD_TESTING)
         add_executable(automation-tests
             tests/test_server_automation.cpp
             src/server/automation.cpp
-            src/server/automation.h)
+            src/server/automation.h
+            src/common/control_values.cpp
+            src/common/control_values.hpp)
         target_include_directories(automation-tests PRIVATE
             src/server
+            src/common
             "${PROJECT_BINARY_DIR}/generated")
         target_link_libraries(automation-tests PRIVATE
             airctrl_lua
@@ -102,7 +114,7 @@ if(BUILD_TESTING)
 endif()
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    foreach(target airctrl_client_common airctrl_lua aioairctrl coap-tests statuslog-tests automation-tests desklet_ui airctrl-server airctrl-client airctrl-desklet)
+    foreach(target airctrl_client_common airctrl_lua aioairctrl control-values-tests coap-tests statuslog-tests automation-tests desklet_ui airctrl-server airctrl-client airctrl-desklet)
         if(TARGET ${target})
             target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
         endif()
