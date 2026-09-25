@@ -23,7 +23,7 @@ int main(int argc, char** argv) {
         return 2;
     }
     Preferences preferences;
-    preferences.serverHost = "nadhh";
+    preferences.serverHost = "server.example";
     preferences.serverPort = 5680;
     // Demo mode never starts the controller and never sends device commands.
     Desklet widget(preferences, "/demo/airctrl-backend", true);

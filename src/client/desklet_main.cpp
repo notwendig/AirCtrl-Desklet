@@ -26,7 +26,7 @@ int main(int argc, char** argv) {
     parser.setApplicationDescription("Qt6-Desktopwidget für Philips AC2729/10");
     parser.addHelpOption(); parser.addVersionOption();
     parser.addOptions({
-        {{"H","server"}, "Hostname oder IP-Adresse des AirControl-Servers (Standard: nadhh)", "host"},
+        {{"H","server"}, "Hostname oder IP-Adresse des AirControl-Servers (Standard: localhost)", "host"},
         {{"P","server-port"}, "TCP-Port des AirControl-Servers (Standard: 5680)", "port"},
         {"window", "Als normales Fenster starten"},
         {"demo", "Vorschau ohne Geräteverbindung oder Speichern von Einstellungen"},

@@ -2,13 +2,13 @@
 
 **Your Philips air purifier, right on your Linux desktop.**
 
-C++17 · Qt 6 · Lua 5.4 · TCP server/clients · MIT · **v1.09**
+C++17 · Qt 6 · Lua 5.4 · TCP server/clients · MIT · **v2.00 Stable**
 
 [Deutsch](README.md) · [Development](docs/DEVELOPMENT.md) · [C++ API](docs/CPP_API.md) · [Changelog](CHANGELOG.md)
 
 ![AirCtrl-Desklet running on Cinnamon with a customized dark theme](docs/images/desklet-dark.png)
 
-*Actual screenshot supplied by Jürgen, running Cinnamon on X11. Not a mockup.*
+*Actual client screenshot, running Cinnamon on X11. Not a mockup.*
 
 A compact, German-language Qt desktop widget for the **Philips AC2729/10**.
 Control the device, read humidity/temperature/PM2.5/IAI, and see maintenance
@@ -50,14 +50,14 @@ bash install.sh --server
 sudo dnf install -y gcc-c++ cmake ninja-build qt6-qtbase-devel qt6-qtsvg \
   python3 dejavu-sans-fonts
 bash install.sh --client
-~/.local/bin/airctrl-desklet --demo
+$HOME/.local/bin/airctrl-desklet --demo
 ```
 
 Running `bash install.sh` without a role installs both components on the same
 machine. `-s` and `-c` are the short forms and may be combined. Use
 `--prefix /absolute/path` to override the prefix for all selected roles. By
 default the server is installed in `/usr/local/bin`, while the client and
-desklet remain in `~/.local/bin`. Run the script itself without `sudo`; it asks
+desklet remain in `$HOME/.local/bin`. Run the script itself without `sudo`; it asks
 for elevated privileges only for the server install and initial system config.
 The installer also writes `compile_commands.json` in the project directory so
 clangd/VSCodium can resolve generated headers such as `airctrl_version.hpp`.
@@ -106,18 +106,18 @@ Text columns and device identifiers remain in the CSV but are not coerced onto
 numeric axes.
 
 The desklet settings contain only the AirControl server endpoint, by default
-`nadhh:5680`. Clients never receive the device hostname or UDP port. The server
-is installed under `/usr/local`; the client remains per-user under `~/.local`.
+`localhost:5680`. Clients never receive the device hostname or UDP port. The server
+is installed under `/usr/local`; the client remains per-user under `$HOME/.local`.
 Python is used by the installer; GUI, server and command-line client are C++ programs.
 
-The installer enables the per-user `airctrl-server.service`. Useful client calls:
+The installer enables the per-user `airctrl-server.service`. In these client calls, replace `server` with the actual hostname or IP address:
 
 ```bash
-airctrl-client --host nadhh --port 5680 status
-airctrl-client --host nadhh --port 5680 watch
-airctrl-client --host nadhh --port 5680 set pwr=1
-airctrl-client set mode=S om=s uil=0
-airctrl-client refresh
+airctrl-client --host server --port 5680 status
+airctrl-client --host server --port 5680 watch
+airctrl-client --host server --port 5680 set pwr=1
+airctrl-client --host server set mode=S om=s uil=0
+airctrl-client --host server refresh
 ```
 
 Clients use line-delimited JSON over TCP. This protocol has no authentication
@@ -208,7 +208,7 @@ later. This supports interpreting `dtrs` as remaining timer minutes, but is
 an observation, not a Philips specification. The raw field remains read-only.
 
 Real-device reception/control and Fedora 44 + Cinnamon + X11 are confirmed by
-Jürgen. Wayland-aware handling exists, but full native Wayland verification is
+the project maintainer. Wayland-aware handling exists, but full native Wayland verification is
 outstanding. The v1.06 TCP multi-client build, central configuration and new UDP
 hardening tests are locally verified; the hardened build still needs a physical
 post-installation confirmation on Fedora.
@@ -231,12 +231,12 @@ python3 scripts/check_repository.py
 
 | Contributor | Role |
 |---|---|
-| **Jürgen Sievers** | Project initiator, product owner and maintainer; requirements, UX direction, priorities, physical-device testing and release decisions |
+| **Project initiator (role)** | Project initiator, product owner and maintainer; requirements, UX direction, priorities, physical-device testing and release decisions |
 | **OpenAI Codex** | AI development partner; collaborative C++/Qt/Lua implementation, protocol analysis, debugging, tests and documentation |
 | **betaboon** | Author of upstream Python `aioairctrl`, underlying the server's internal C++ device transport |
 
 Codex is credited as AI assistance, not a human maintainer or independent support
-contact. Jürgen owns project decisions and publication. [Credits](AUTHORS.md)
+contact. The maintainer owns project decisions and publication. [Credits](AUTHORS.md)
 
 ## License
 

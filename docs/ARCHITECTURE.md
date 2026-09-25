@@ -41,7 +41,7 @@ und einen über `/sys/dev/sync` initialisierten Protokollzustand. Weder Desklet
 noch Skripteditor noch `airctrl-client` öffnen UDP oder kontaktieren den AC2729 direkt.
 
 Die Clients verbinden sich mit dem im Client eingestellten TCP-Endpunkt,
-standardmäßig `nadhh:5680`. Nachrichten sind auf 1 MiB begrenzte, mit Zeilenumbruch abgeschlossene JSON-
+standardmäßig `localhost:5680`. Nachrichten sind auf 1 MiB begrenzte, mit Zeilenumbruch abgeschlossene JSON-
 Objekte. Status- und Serverzustände werden an alle verbundenen Clients verteilt.
 Eine Schaltantwort geht ausschließlich an den Client, der ihre Kennung erzeugt hat.
 Mehrere Clientaufträge werden serverweit serialisiert; vor dem nächsten Versuch
@@ -127,7 +127,7 @@ Betriebssystem-, Paket- und Debug-Bibliotheken werden weder geöffnet noch als
 API angeboten.
 
 Das maßgebliche Skript liegt standardmäßig unter
-`~/.config/airctrl-server/automation.lua`; Aktivierung, Revision und behandelte
+`$HOME/.config/airctrl-server/automation.lua`; Aktivierung, Revision und behandelte
 Termine liegen daneben in `automation-state.json`. Beim Öffnen des Dialogs
 fordert ein Client eine serverweite Editier-Sperre an. Nur dem Eigentümer sendet
 der Server den Skripttext. Speichern prüft Revision, Größe, Lua-Syntax und API,

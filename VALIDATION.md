@@ -1,8 +1,15 @@
-# Validierung – v1.09
+# Validierung – v2.00 Stable
 
-Stand: 2026-09-14.
+Stand: 2026-09-25. Die historischen Messungen stammen aus v1.09; die Prüfung von v2.00 steht im nächsten Abschnitt.
 
-## Prüfungen in v1.09
+## Prüfung v2.00
+
+- `scripts/check_repository.py`: 191 öffentliche Dateien, Version 2.00, bestanden.
+- 24 Python-Repositorytests bestanden.
+- `git diff --check` und `bash -n einspielen-v2.00.sh` ohne Befund.
+- C++-Build und CTest konnten in dieser Arbeitsumgebung nicht ausgeführt werden (CMake fehlt). Die in den folgenden Abschnitten genannten C++-Ergebnisse gelten für ältere Versionen.
+
+## Historische Prüfungen in v1.09
 
 - Frische Server- und Client-Debug-Builds mit GCC 13.3.0, Qt 6.8.3 und
   `-Wall -Wextra -Wpedantic` bestehen ohne C++-Warnung.
@@ -63,7 +70,7 @@ Stand: 2026-09-14.
 
 ## Historischer Stand v1.06
 
-Physischer Nachtrag 2026-09-13: Der installierte Server hat auf `gnubbel`
+Physischer Nachtrag 2026-09-13: Der installierte Server hat auf dem Server
 nachweislich eine stabile CSV-Kopfzeile und fortlaufend gültige AC2729-Stati in
 `/var/log/airctrl.log` geschrieben. Die frühere extrem hohe Einseiten-Grafik
 blieb trotz gültiger Daten ohne sichtbare Zeichenflächen. Sie wurde deshalb

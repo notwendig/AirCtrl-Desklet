@@ -1,3 +1,9 @@
+## v2.00 Stable – 2026-09-25
+
+- Dokumentation und Beispiele auf Client-, Server- und Benutzerrollen umgestellt; persönliche Host- und Home-Verzeichnisangaben entfernt.
+- Client-Standardziel ist `localhost:5680`; für einen getrennten Server dessen Hostname oder IP-Adresse konfigurieren.
+- Versionsnummer in Build und Dokumentation auf 2.00 gesetzt. Ein Einspielskript mit HTTPS-Remote ergänzt. Keine neuen Gerätefunktionen.
+
 # Änderungsübersicht
 
 ## v1.09 – 2026-09-14
@@ -76,7 +82,7 @@
   Konfiguration und Benutzerdienst; `-c|--client` installiert nur Desklet und
   CLI. Ohne Rollenoption bleibt die bisherige Vollinstallation erhalten.
 - Der Serverstandard ist wieder `/usr/local/bin`; Client und Desklet bleiben
-  unter `~/.local/bin`. Nur der privilegierte Server-Installationsschritt wird
+  unter `$HOME/.local/bin`. Nur der privilegierte Server-Installationsschritt wird
   bei Bedarf über `sudo` ausgeführt, nicht der gesamte Installer.
 - Der Installer fasst die ausgewählten CMake-Kompilierungsdatenbanken im
   Projektstamm zusammen. clangd findet dadurch `airctrl_version.hpp` und die
@@ -90,7 +96,7 @@
 - Geräteadresse, UDP-Port und Gerätefristen aus allen Clients entfernt und in
   `/etc/airctrld.cfg` zentralisiert.
 - Server-/Client-Verbindung vollständig auf TCP umgestellt; Standardserver im
-  Desklet ist `nadhh:5680`.
+  Desklet verwendete einen vorkonfigurierten Serverhost auf Port `5680`.
 - Das Clientmenü enthält nur Serverhost, TCP-Port und Client-Wiederverbindung.
 - Nur `airctrl-server` bindet die Philips-CoAP-Bibliothek ein und kennt
   `AC2729-10:5683`; Desklet, Lua und CLI öffnen keine Geräteverbindung.
@@ -222,7 +228,7 @@ Dokumentationsnachtrag vom **2026-09-08**, Anwendungsversion weiterhin 1.04:
 Anwendungsstand bleibt **v1.01**; kein neues Protokoll- oder Geräteverhalten.
 
 - Deutsche und englische README mit echtem Nutzerbild und neutralen Qt-Demobildern.
-- Rollen von Jürgen Sievers und OpenAI Codex sowie betaboons Ursprung dokumentiert.
+- Rollen des Projektinitiators und von OpenAI Codex sowie betaboons Ursprung dokumentiert.
 - MIT-/Herkunftshinweise, Beitragsregeln, Sicherheitshinweise und Issue-/PR-Vorlagen.
 - CMake-Presets; gemeinsame generierte Versionskennung für Anwendung und Tests.
 - Vorbereitete Ubuntu-/Fedora-CI und taggebundener Release-Entwurf, SHA-gepinnte Actions.

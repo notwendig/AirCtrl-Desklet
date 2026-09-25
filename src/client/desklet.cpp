@@ -519,7 +519,7 @@ void Desklet::showSettings() {
     QDialog dialog(this); dialog.setWindowTitle("AirControl – Einstellungen");
     QVBoxLayout* layout = new QVBoxLayout(&dialog); QFormLayout* form = new QFormLayout;
     QLineEdit host(preferences_.serverHost); host.setObjectName("serverHost"); host.setMinimumWidth(240);
-    host.setPlaceholderText("nadhh");
+    host.setPlaceholderText("localhost");
     host.setToolTip("Hostname oder IP-Adresse des AirControl-Servers; nicht die Adresse des Luftreinigers.");
     QSpinBox port; port.setObjectName("serverPort"); port.setRange(1,65535); port.setValue(preferences_.serverPort);
     QSpinBox interval; interval.setRange(1,300); interval.setSuffix(" Sekunden"); interval.setValue(preferences_.serverReconnectSeconds);

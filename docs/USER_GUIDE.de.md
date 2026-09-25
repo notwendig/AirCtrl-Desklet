@@ -1,12 +1,12 @@
-# Philips AirControl – Qt6-Gerätepanel v1.07
+# Philips AirControl – Bedienungsanleitung v2.00 Stable
 
 Kompaktes C++/Qt6-Desktopwidget für den Philips AC2729/10 unter Cinnamon.
 Geräteadresse und UDP-Port stehen ausschließlich in `/etc/airctrld.cfg`.
 Der bereits am Gerät funktionierende C++-CoAP-Code ist vollständig enthalten.
 
-**v1.07** verwendet einen dauerhaften TCP-Server als einzigen Geräteprozess und
+**v2.00 Stable** verwendet einen dauerhaften TCP-Server als einzigen Geräteprozess und
 führt dort auch die Lua-Automatik aus. Desklet und Kommandozeile kennen nur den
-Server, standardmäßig `nadhh:5680`.
+Server, standardmäßig `localhost:5680`.
 Der Server hält genau einen UDP-I/O-Socket samt synchronisiertem Protokollzustand
 für alle Clients. Erst ein Status-Timeout erneuert diese Geräte-I/O. Die seit
 v1.02 vorhandene, standardmäßig ausgeschaltete
@@ -260,13 +260,13 @@ bash install.sh --server
 
 # Auf dem Desktop-Rechner:
 bash install.sh --client &&
-env -u QT_QPA_PLATFORM ~/.local/bin/airctrl-desklet
+env -u QT_QPA_PLATFORM $HOME/.local/bin/airctrl-desklet
 ```
 
 Laufen Server und Desklet auf demselben Rechner, installiert `bash install.sh`
 weiterhin beide Rollen. Die Kurzformen lauten `-s` und `-c`; ein abweichendes
 Ziel wird etwa mit `--prefix /opt/airctrl` angegeben. Ohne Überschreibung wird
-der Server nach `/usr/local/bin`, Desklet und CLI nach `~/.local/bin` installiert.
+der Server nach `/usr/local/bin`, Desklet und CLI nach `$HOME/.local/bin` installiert.
 Das Skript nicht vollständig mit `sudo` starten: Es fordert die benötigten
 Root-Rechte für die Serverdateien und `/etc/airctrld.cfg` selbst an.
 
@@ -286,7 +286,7 @@ sudo dnf install -y gcc-c++ cmake ninja-build qt6-qtbase-devel qt6-qtsvg python3
 ```
 
 Serverinstallation unter `/usr/local`, Clientinstallation für deinen Benutzer
-unter `~/.local`. Menüeintrag: **Philips AirControl**.
+unter `$HOME/.local`. Menüeintrag: **Philips AirControl**.
 Der Quellordner darf frei gewählt werden; die persönlichen Einstellungen liegen
 unabhängig davon in deinem Benutzerprofil.
 Zusätzlich wird jetzt das Qt6-DBus-Modul aus Qt Base zum Bauen benötigt.
@@ -442,8 +442,8 @@ port=5680
 status_file=/var/log/airctrl.log
 
 [automation]
-# Ohne Pfadangabe: ~/.config/airctrl-server/automation.lua und
-# ~/.config/airctrl-server/automation-state.json
+# Ohne Pfadangabe: $HOME/.config/airctrl-server/automation.lua und
+# $HOME/.config/airctrl-server/automation-state.json
 enabled=false
 
 [device]
@@ -595,17 +595,17 @@ ein normales BELOW-Fenster, weil der Fenstermanager Dock-Fenster üblicherweise 
 dekoriert. Beim erneuten Ausblenden wird die bisherige Dock-Einstellung wiederhergestellt.
 
 Unter **Rechtsklick → Verbindung und Autostart → Bei der Anmeldung starten** wird ein eigener Eintrag
-unter `${XDG_CONFIG_HOME:-~/.config}/autostart/airctrl-desklet.desktop` angelegt.
+unter `${XDG_CONFIG_HOME:-$HOME/.config}/autostart/airctrl-desklet.desktop` angelegt.
 Der Installer aktiviert den Autostart nicht selbst. Einstellungen liegen unter
-`~/.config/AirControl/airctrl-desklet.conf`; ein Update erhält sie.
+`$HOME/.config/AirControl/airctrl-desklet.conf`; ein Update erhält sie.
 
 ## Weitere Startmöglichkeiten
 
 ```bash
-~/.local/bin/airctrl-desklet --window
-~/.local/bin/airctrl-desklet --server nadhh --server-port 5680
-~/.local/bin/airctrl-desklet --reset-position
-~/.local/bin/airctrl-desklet --demo
+$HOME/.local/bin/airctrl-desklet --window
+$HOME/.local/bin/airctrl-desklet --server server --server-port 5680
+$HOME/.local/bin/airctrl-desklet --reset-position
+$HOME/.local/bin/airctrl-desklet --demo
 ```
 
 Im Clientmenü und bei `--server` wird ausschließlich der Hostname oder die IP des

@@ -2,13 +2,13 @@
 
 **Dein Philips-Luftreiniger. Direkt auf dem Linux-Desktop.**
 
-C++17 · Qt 6 · Lua 5.4 · TCP-Server/Clients · MIT · Version **v1.09**
+C++17 · Qt 6 · Lua 5.4 · TCP-Server/Clients · MIT · Version **v2.00 Stable**
 
 [English](README.en.md) · [Bedienung](docs/USER_GUIDE.de.md) · [Entwicklung](docs/DEVELOPMENT.md) · [C++-API](docs/CPP_API.md) · [Änderungen](CHANGELOG.md)
 
 ![AirCtrl-Desklet mit dunklem Hintergrund, Gerätetasten, Statussymbolen und Messwerten](docs/images/desklet-dark.png)
 
-*Echter Screenshot von Jürgen: Cinnamon unter X11, angepasste Farben und Schrift,
+*Echter Screenshot des Clients: Cinnamon unter X11, angepasste Farben und Schrift,
 fünf Messwerte. Kein Design-Mockup.*
 
 AirCtrl-Desklet ist ein schlankes Desktopwidget für den **Philips AC2729/10**.
@@ -67,13 +67,13 @@ bash install.sh --server
 sudo dnf install -y gcc-c++ cmake ninja-build qt6-qtbase-devel qt6-qtsvg \
   python3 dejavu-sans-fonts
 bash install.sh --client
-~/.local/bin/airctrl-desklet --demo
+$HOME/.local/bin/airctrl-desklet --demo
 ```
 
 `bash install.sh` ohne Rollenoption installiert beide Komponenten auf demselben
 Rechner. `-s` und `-c` sind die Kurzformen; beide Optionen können gemeinsam
 angegeben werden. Standardmäßig landet der Server in `/usr/local/bin`, Client
-und Desklet in `~/.local/bin`. Ein anderer Präfix wird mit
+und Desklet in `$HOME/.local/bin`. Ein anderer Präfix wird mit
 `--prefix /absoluter/pfad` für die ausgewählten Rollen gesetzt. Das Skript selbst
 wird ohne `sudo` gestartet und fordert Root-Rechte nur für die Serverinstallation
 und die erstmalige Systemkonfiguration an.
@@ -126,10 +126,10 @@ eine numerische Achse gezwungen. Ohne Argumente verwendet das Programm
 `/var/log/airctrl.log` und schreibt `airctrl-status.pdf` in das aktuelle Verzeichnis.
 
 Im Desklet wird unter **Rechtsklick → Verbindung und Autostart** nur der
-AirControl-Server eingetragen, standardmäßig `nadhh` und TCP-Port `5680`.
+AirControl-Server eingetragen, standardmäßig `localhost` und TCP-Port `5680`; auf einem anderen Rechner dessen Hostname oder IP-Adresse.
 Der Client kennt weder Gerätehostname noch UDP-Port.
 
-Serverinstallation unter `/usr/local`, Clientinstallation unter `~/.local`, ohne
+Serverinstallation unter `/usr/local`, Clientinstallation unter `$HOME/.local`, ohne
 `sudo` vor dem Installationsskript. Menüeintrag: **Philips AirControl**.
 Bestehende Einstellungen bleiben erhalten.
 Der Installer aktiviert außerdem den systemd-Benutzerdienst `airctrl-server`.
@@ -137,19 +137,19 @@ Ohne verfügbare systemd-Benutzersitzung muss `airctrl-server` separat gestartet
 Weitere Distributionen: [Build und Installation](docs/DEVELOPMENT.md).
 Update und Entfernen: [Bedienungsanleitung](docs/USER_GUIDE.de.md).
 
-Server und Kommandozeilen-Clients:
+Server und Kommandozeilen-Clients (`server` durch den tatsächlichen Hostnamen oder die IP-Adresse ersetzen):
 
 ```bash
 systemctl --user status airctrl-server.service
-airctrl-client --host nadhh --port 5680 status
-airctrl-client --host nadhh --port 5680 watch
-airctrl-client --host nadhh --port 5680 set pwr=1
-airctrl-client set mode=S om=s uil=0
-airctrl-client refresh
+airctrl-client --host server --port 5680 status
+airctrl-client --host server --port 5680 watch
+airctrl-client --host server --port 5680 set pwr=1
+airctrl-client --host server set mode=S om=s uil=0
+airctrl-client --host server refresh
 ```
 
 Nur `airctrl-server` enthält die Philips-CoAP-Anbindung. Alle Clients sprechen
-zeilenbasiertes JSON über TCP, standardmäßig mit `nadhh:5680`. Dieses Protokoll
+zeilenbasiertes JSON über TCP, standardmäßig mit `localhost:5680`. Dieses Protokoll
 hat keine eigene Anmeldung oder Verschlüsselung; Port 5680 darf in der Firewall
 nur für vertrauenswürdige Rechner im lokalen Netz freigegeben werden. Zusätzlich
 muss der feste lokale Geräteport UDP 5680 ausschließlich für Pakete von der
@@ -306,14 +306,14 @@ Presets benötigen CMake ≥ 3.21 und Ninja. Klassischer Build ohne Presets:
 
 | Beteiligter | Rolle |
 |---|---|
-| **Jürgen Sievers** | Projektinitiator, Product Owner und Maintainer; Anforderungen, Bedienkonzept, Prioritäten, Gerätetests und Freigaben |
+| **Projektinitiator (Rolle)** | Product Owner und Maintainer; Anforderungen, Bedienkonzept, Prioritäten, Gerätetests und Freigaben |
 | **OpenAI Codex** | KI-Entwicklungspartner; gemeinsame C++-/Qt-/Lua-Implementierung, Protokollanalyse, Fehlersuche, Tests und Dokumentation |
 | **betaboon** | Autor des Python-Projekts `aioairctrl`, Grundlage der internen C++-Geräteanbindung im Server |
 
 Entstanden im gemeinsamen, iterativen Entwickeln — vom ersten funktionierenden
 Statusabruf bis zum alltagstauglichen Desktopwidget. Codex wird transparent als
 KI-Unterstützung genannt, nicht als menschlicher Maintainer oder Supportkontakt.
-Entscheidungen und Veröffentlichung liegen bei Jürgen. [Credits](AUTHORS.md)
+Entscheidungen und Veröffentlichung liegen beim Maintainer. [Credits](AUTHORS.md)
 
 ## Lizenz und Unabhängigkeit
 

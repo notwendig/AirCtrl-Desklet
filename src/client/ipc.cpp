@@ -6,7 +6,7 @@
 
 QString defaultAirctrlServerHost() {
     const QString testHost=qEnvironmentVariable("AIRCTRL_TEST_SERVER_HOST").trimmed();
-    return testHost.isEmpty() ? QStringLiteral("nadhh") : testHost;
+    return testHost.isEmpty() ? QStringLiteral("localhost") : testHost;
 }
 
 quint16 defaultAirctrlServerPort() {

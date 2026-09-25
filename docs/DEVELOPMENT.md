@@ -140,7 +140,7 @@ Die reproduzierbare ZIP-Struktur ersetzt keine signierte Herkunftsbestätigung.
 Das Übergabe-ZIP kann zusätzlich ein versionsbezogenes Einspielskript enthalten. Dieses Skript
 prüft ein sauberes vorhandenes Git-Arbeitsverzeichnis, kopiert nur die durch die
 Repository-Positivliste freigegebenen Dateien, baut und testet, installiert
-unter `~/.local` und erstellt danach Commit und annotierten Tag. Der abschließende
+unter `$HOME/.local` und erstellt danach Commit und annotierten Tag. Der abschließende
 Push erfolgt atomar über den ausdrücklich gesetzten SSH-Remote und niemals mit
 `--force`. Das Skript ist kein CI-Ersatz; der GitHub-Lauf beginnt erst nach dem Push.
 
@@ -148,10 +148,10 @@ Push erfolgt atomar über den ausdrücklich gesetzten SSH-Remote und niemals mit
 
 ```bash
 ./build/DEBUG/server/airctrl-server --config /etc/airctrld.cfg
-./build/DEBUG/client/airctrl-client --host nadhh --port 5680 server-status
-./build/DEBUG/client/airctrl-client --host nadhh --port 5680 status
-./build/DEBUG/client/airctrl-client --host nadhh --port 5680 watch
-./build/DEBUG/client/airctrl-client --host nadhh --port 5680 set pwr=1
+./build/DEBUG/client/airctrl-client --host server --port 5680 server-status
+./build/DEBUG/client/airctrl-client --host server --port 5680 status
+./build/DEBUG/client/airctrl-client --host server --port 5680 watch
+./build/DEBUG/client/airctrl-client --host server --port 5680 set pwr=1
 ```
 
 `airctrl-server` bleibt beim Schließen eines Clients aktiv. `airctrl-client refresh`

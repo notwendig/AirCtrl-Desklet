@@ -2,7 +2,7 @@
 
 [Projektübersicht](../README.md) · [Architektur](ARCHITECTURE.md) · [Sicherheit](../SECURITY.md)
 
-AirCtrl-Desklet 1.09 enthält Lua 5.4.9 als ausschließlich in `airctrl-server`
+AirCtrl-Desklet v2.00 enthält Lua 5.4.9 als ausschließlich in `airctrl-server`
 eingebettetes Automatikmodul. Es kann
 auf bestätigte Gerätezustände und lokale Ereignisse reagieren oder zu festen
 Uhrzeiten schalten. Nach der Installation ist es **deaktiviert**.
@@ -21,7 +21,7 @@ TCP-Verbindungsabbruch geben die Sperre automatisch frei. Bei einem Prüfungsfeh
 bleibt sie erhalten, damit der Text korrigiert und erneut gespeichert werden kann.
 
 Das maßgebliche Skript liegt standardmäßig auf dem Server unter
-`~/.config/airctrl-server/automation.lua`. Aktivierung, Revision und bereits
+`$HOME/.config/airctrl-server/automation.lua`. Aktivierung, Revision und bereits
 behandelte Termine werden daneben in `automation-state.json` gespeichert. Beide
 Pfade können im Abschnitt `[automation]` von `/etc/airctrld.cfg` festgelegt werden.
 

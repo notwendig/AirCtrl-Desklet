@@ -2,7 +2,7 @@
 
 | Datei | Herkunft und Aussage |
 |---|---|
-| [desklet-dark.png](desklet-dark.png) | Unveränderter Screenshot von Jürgen Sievers, bereitgestellt am 2026-09-03: echtes kompaktes Widget mit dunkler Gestaltung auf seinem Desktop. |
+| [desklet-dark.png](desklet-dark.png) | Unveränderter Screenshot des Clients unter Cinnamon/X11: kompaktes Widget mit dunkler Gestaltung. |
 | [desklet-light.png](desklet-light.png) | Direkt aus der Qt-Anwendung mit Demo-Werten gerendert; kein Foto und kein Hardwaretest. |
 | [diagnostics-demo.png](diagnostics-demo.png) | Echte Qt-Diagnoseoberfläche aus `diagnostics-preview` mit synthetischem Status, einschließlich `demo-device`/`demo-product`. Kein unveränderter Diagnosebericht des realen Geräts. |
 | [alarms-demo.png](alarms-demo.png) | Zusammengesetzte Qt-Testdarstellungen der Datenalter-/Alarmzustände; alle Zustände sind simuliert. |

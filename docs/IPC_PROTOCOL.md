@@ -2,7 +2,7 @@
 
 Seit v1.06 kommuniziert ausschließlich `airctrl-server` mit dem Philips AC2729.
 Desklet, Lua-Skripteditor und `airctrl-client` kennen nur den TCP-Endpunkt des
-Servers, standardmäßig `nadhh:5680`. Gerätehostname, UDP-Port und Gerätefristen
+Servers, standardmäßig `localhost:5680`. Gerätehostname, UDP-Port und Gerätefristen
 stehen ausschließlich in `/etc/airctrld.cfg`.
 
 ## Endpunkt und Sicherheit

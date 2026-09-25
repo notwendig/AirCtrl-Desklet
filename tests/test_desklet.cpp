@@ -223,22 +223,22 @@ private slots:
         c.stop();
     }
     void clientDefaultsContainOnlyServerEndpoint() {
-        ScopedEnvironment host("AIRCTRL_TEST_SERVER_HOST","nadhh");
+        ScopedEnvironment host("AIRCTRL_TEST_SERVER_HOST","server.example");
         ScopedEnvironment port("AIRCTRL_TEST_SERVER_PORT","5680");
-        QCOMPARE(Preferences{}.serverHost, QString("nadhh"));
+        QCOMPARE(Preferences{}.serverHost, QString("server.example"));
         QCOMPARE(Preferences{}.serverPort, 5680);
         QSettings settings;
         settings.setValue("device/host", "ac2729/10");
         settings.setValue("device/port", 5683);
         Preferences saved=Preferences::load();
-        QCOMPARE(saved.serverHost,QString("nadhh"));
+        QCOMPARE(saved.serverHost,QString("server.example"));
         QCOMPARE(saved.serverPort,5680);
         saved.save();
         QVERIFY(!settings.contains("device/host"));
         QVERIFY(!settings.contains("device/port"));
         Controller controller(FAKE_BACKEND);
-        QCOMPARE(controller.host(), QString("nadhh"));
-        QCOMPARE(controller.serverEndpoint(),QString("nadhh:5680"));
+        QCOMPARE(controller.host(), QString("server.example"));
+        QCOMPARE(controller.serverEndpoint(),QString("server.example:5680"));
     }
     void realisticNineteenSecondPauseStaysOnline() {
         qputenv("AIRCTRL_TEST_TICK_MS","19000");

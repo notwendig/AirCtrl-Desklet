@@ -15,7 +15,7 @@ ROOT_FILES = (
     "CHANGELOG.md", "CMakeLists.txt", "CMakePresets.json", "CODE_OF_CONDUCT.md", "Doxyfile",
     "CONTRIBUTING.md", "LICENSE", "README.md", "README.en.md", "SECURITY.md",
     "THIRD_PARTY_NOTICES.md", "VALIDATION.md", "install.sh", "uninstall.sh",
-    "einspielen-v1.05.sh", "einspielen-v1.06.sh",
+    "einspielen-v1.05.sh", "einspielen-v1.06.sh", "einspielen-v2.00.sh",
     "vorschau.png", "alarme-vorschau.png", "diagnose-vorschau.png",
     "embleme-vorschau.png", "filter-vorschau.png", "power-vorschau.png",
 )
