@@ -23,8 +23,16 @@ Preferences Preferences::load() {
     p.serverPort = s.value("server/port", p.serverPort).toInt();
     if (p.serverPort < 1 || p.serverPort > 65535) p.serverPort = defaultAirctrlServerPort();
     p.serverReconnectSeconds = qBound(1, s.value("server/reconnectSeconds", 10).toInt(), 300);
-    p.ageWarningSeconds=qBound(5,s.value("alarms/warningSeconds",45).toInt(),3599);
-    p.ageStaleSeconds=qBound(p.ageWarningSeconds+1,s.value("alarms/staleSeconds",90).toInt(),7200);
+    p.ageWarningSeconds=qBound(1,s.value("alarms/warningMinutes",15).toInt(),1439)*60;
+    p.ageStaleSeconds=qBound(p.ageWarningSeconds/60+1,s.value("alarms/staleMinutes",30).toInt(),1440)*60;
+    p.ageBlinkSeconds=qBound(p.ageStaleSeconds/60+1,s.value("alarms/blinkMinutes",120).toInt(),1441)*60;
+    MetricLimits& m=p.metricLimits;
+    m.humidityGreenDelta=qBound(0,s.value("metrics/humidityGreenDelta",m.humidityGreenDelta).toInt(),98);
+    m.humidityYellowDelta=qBound(m.humidityGreenDelta+1,s.value("metrics/humidityYellowDelta",m.humidityYellowDelta).toInt(),99);
+    m.humidityRedDelta=qBound(m.humidityYellowDelta+1,s.value("metrics/humidityRedDelta",m.humidityRedDelta).toInt(),100);
+    m.pmGreenHigh=qBound(0,s.value("metrics/pmGreenHigh",m.pmGreenHigh).toInt(),997);
+    m.pmYellowHigh=qBound(m.pmGreenHigh+1,s.value("metrics/pmYellowHigh",m.pmYellowHigh).toInt(),998);
+    m.pmRedHigh=qBound(m.pmYellowHigh+1,s.value("metrics/pmRedHigh",m.pmRedHigh).toInt(),999);
     p.desktopAlarms=s.value("alarms/desktop",true).toBool();
     p.alarmSound=s.value("alarms/sound",false).toBool();
     p.desktop = s.value("window/desktop", true).toBool();
@@ -57,8 +65,17 @@ void Preferences::save() const {
     s.remove("device/host");
     s.remove("device/port");
     s.remove("device/interval");
-    s.setValue("alarms/warningSeconds",ageWarningSeconds);
-    s.setValue("alarms/staleSeconds",ageStaleSeconds);
+    s.setValue("alarms/warningMinutes",ageWarningSeconds/60);
+    s.setValue("alarms/staleMinutes",ageStaleSeconds/60);
+    s.setValue("alarms/blinkMinutes",ageBlinkSeconds/60);
+    s.remove("alarms/warningSeconds");
+    s.remove("alarms/staleSeconds");
+    s.setValue("metrics/humidityGreenDelta",metricLimits.humidityGreenDelta);
+    s.setValue("metrics/humidityYellowDelta",metricLimits.humidityYellowDelta);
+    s.setValue("metrics/humidityRedDelta",metricLimits.humidityRedDelta);
+    s.setValue("metrics/pmGreenHigh",metricLimits.pmGreenHigh);
+    s.setValue("metrics/pmYellowHigh",metricLimits.pmYellowHigh);
+    s.setValue("metrics/pmRedHigh",metricLimits.pmRedHigh);
     s.setValue("alarms/desktop",desktopAlarms);
     s.setValue("alarms/sound",alarmSound);
     s.remove("automation/enabled"); // v1.07: enablement belongs to the server state

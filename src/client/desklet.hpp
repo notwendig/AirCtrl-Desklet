@@ -14,7 +14,19 @@
 #include <QSystemTrayIcon>
 #include <QWidget>
 #include <QGridLayout>
+#include <QGraphicsOpacityEffect>
 #include <array>
+
+class MetricLabel : public QLabel {
+public:
+    using QLabel::QLabel;
+    void setTextShown(bool shown) { if(textShown_!=shown) { textShown_=shown; update(); } }
+    bool textShown() const { return textShown_; }
+protected:
+    void paintEvent(QPaintEvent* event) override;
+private:
+    bool textShown_=true;
+};
 
 /**
  * @brief User-facing desktop panel for one AirControl server endpoint.
@@ -37,6 +49,8 @@ public:
     void showAlarms();
     /** @brief Open freshness and desktop-notification settings. */
     void showAlarmSettings();
+    /** @brief Configure color boundaries for humidity and PM2.5 readings. */
+    void showMetricSettings();
     /** @brief Open the Lua automation editor and event log. */
     void showAutomationSettings();
     /** @brief Acknowledge all currently active alarm identities. */
@@ -66,6 +80,7 @@ private:
     void updateControls();
     void updateFooter();
     void updateValues();
+    void updateMetricBlink();
     void updateEmblems();
     void applyAppearance();
     void saveAppearance();
@@ -94,6 +109,8 @@ private:
     QPoint pressPosition_;
     QPoint dragOffset_;
     QTimer longTimerPress_;
+    QTimer metricBlinkTimer_;
+    bool metricBlinkVisible_ = true;
     QDateTime updated_;
     QDateTime packetReceivedAt_;
     QElapsedTimer monitorClock_;
@@ -112,6 +129,8 @@ private:
     std::array<Emblem*,9> emblems_{};
     QWidget* valueArea_;
     QGridLayout* valueLayout_;
-    std::array<QLabel*,5> values_{};
+    std::array<MetricLabel*,5> values_{};
+    std::array<QGraphicsOpacityEffect*,5> metricEffects_{};
+    std::array<bool,5> metricBlinking_{};
     QSystemTrayIcon* tray_ = nullptr;
 };

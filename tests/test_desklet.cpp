@@ -1,6 +1,7 @@
 #include "desklet.hpp"
 #include "airctrl_version.hpp"
 #include "diagnostics.hpp"
+#include "desklet_support.hpp"
 #include "udp_device.hpp"
 #include <QDir>
 #include <QFile>
@@ -28,6 +29,7 @@
 #include <QClipboard>
 #include <QPainter>
 #include <QPointer>
+#include <QRegularExpression>
 #include <QCheckBox>
 #include <QDBusConnection>
 #include <QDBusContext>
@@ -787,7 +789,7 @@ private slots:
         QVERIFY(widget.toolTip().contains("offline"));
         QLabel* value=widget.findChild<QLabel*>("value_rh");
         QCOMPARE(value->text(),QString("Feuchte 55 %"));
-        QVERIFY(value->accessibleDescription().contains("Letzter Empfang"));
+        QVERIFY(value->accessibleDescription().contains("Letzte Statusmeldung"));
         QVERIFY(value->palette().color(QPalette::WindowText).alpha()<255);
         widget.applyStatus({{"name","other"}});
         QCOMPARE(value->text(),QString("Feuchte —"));
@@ -795,25 +797,125 @@ private slots:
         QVERIFY(!target->isEnabled());
     }
     void receptionAgeThresholdsAndLatch() {
-        MonitoringProbe widget(Preferences{},FAKE_BACKEND);
+        Preferences p; p.ageWarningSeconds=60; p.ageStaleSeconds=120; p.ageBlinkSeconds=180;
+        MonitoringProbe widget(p,FAKE_BACKEND);
         MonitorBar* bar=widget.findChild<MonitorBar*>();
         QSignalSpy raised(&widget,&Desklet::alarmRaised);
-        QCOMPARE(widget.dataAgeSeconds(),qint64(-1)); QCOMPARE(bar->ageText(),QString("— s"));
+        QCOMPARE(widget.dataAgeSeconds(),qint64(-1)); QCOMPARE(bar->ageText(),QString("—"));
         QCOMPARE(bar->freshness(),DataFreshness::Waiting); QCOMPARE(raised.count(),0);
         widget.applyStatus({{"pwr","1"},{"rh",55}});
-        QCOMPARE(bar->ageColor(),QColor("#2ecc71")); QCOMPARE(bar->ageText(),QString("0 s"));
-        widget.advance(44); QCOMPARE(bar->freshness(),DataFreshness::Fresh); QCOMPARE(raised.count(),0);
-        widget.advance(1); QCOMPARE(bar->ageText(),QString("45 s")); QCOMPARE(bar->ageColor(),QColor("#f1c40f"));
+        QCOMPARE(bar->ageColor(),QColor("#187a3d"));
+        const QString receivedAt=bar->ageText(); QVERIFY(QRegularExpression("^\\d{2}:\\d{2}$").match(receivedAt).hasMatch());
+        widget.advance(59); QCOMPARE(bar->freshness(),DataFreshness::Fresh); QCOMPARE(bar->ageText(),receivedAt); QCOMPARE(raised.count(),0);
+        widget.advance(1); QCOMPARE(bar->ageText(),receivedAt); QCOMPARE(bar->ageColor(),QColor("#8a6400"));
         QCOMPARE(raised.count(),1); QVERIFY(!raised[0][1].toBool());
-        widget.advance(44); QCOMPARE(bar->ageText(),QString("89 s")); QCOMPARE(raised.count(),1);
+        widget.advance(59); QCOMPARE(bar->ageText(),receivedAt); QCOMPARE(raised.count(),1);
         widget.acknowledgeAlarms(); QVERIFY(bar->alarmText().contains("(Q)"));
-        widget.advance(1); QCOMPARE(bar->ageColor(),QColor("#e74c3c")); QCOMPARE(raised.count(),2);
+        widget.advance(1); QCOMPARE(bar->ageColor(),QColor("#b42318")); QCOMPARE(raised.count(),2);
         QVERIFY(raised[1][1].toBool()); QVERIFY(!bar->alarmText().contains("(Q)"));
+        widget.advance(60); QCOMPARE(bar->freshness(),DataFreshness::Blinking);
         widget.setConnectionError("offline"); widget.setConnectionError("offline again");
-        widget.advance(500); QCOMPARE(raised.count(),2); QCOMPARE(widget.dataAgeSeconds(),qint64(590));
+        widget.advance(500); QCOMPARE(raised.count(),2); QCOMPARE(widget.dataAgeSeconds(),qint64(680));
         widget.applyStatus({{"pwr","1"},{"rh",56}});
-        QCOMPARE(bar->ageText(),QString("0 s")); QCOMPARE(bar->alarmText(),QString("Keine Alarme"));
-        widget.advance(45); QCOMPARE(raised.count(),3); QCOMPARE(widget.deliveries,3);
+        QCOMPARE(widget.dataAgeSeconds(),qint64(0)); QCOMPARE(bar->alarmText(),QString("Keine Alarme"));
+        widget.advance(60); QCOMPARE(raised.count(),3); QCOMPARE(widget.deliveries,3);
+    }
+    void oldStatusBlinksAndNewStatusStopsBlinking() {
+        Preferences p; p.ageWarningSeconds=60; p.ageStaleSeconds=120; p.ageBlinkSeconds=180;
+        MonitoringProbe widget(p,FAKE_BACKEND,true); widget.showAndPosition();
+        widget.applyStatus({{"pwr","1"}});
+        MonitorBar* bar=widget.findChild<MonitorBar*>();
+        widget.advance(180);
+        QCOMPARE(bar->freshness(),DataFreshness::Blinking);
+        const auto badgePixel=[bar] { return bar->grab().toImage().pixelColor(4,bar->height()/2); };
+        QCOMPARE(badgePixel().alpha(),0);
+        const QImage withText=bar->grab().toImage();
+        QTRY_VERIFY(bar->grab().toImage()!=withText);
+        QCOMPARE(badgePixel().alpha(),0);
+        widget.applyStatus({{"pwr","1"}});
+        QCOMPARE(bar->freshness(),DataFreshness::Fresh);
+        QCOMPARE(badgePixel().alpha(),0);
+    }
+    void pm25ColorsAndBlinkingFollowCurrentReading() {
+        using desklet_support::MetricLevel;
+        const MetricLimits limits;
+        QCOMPARE(desklet_support::metricLevel("pm25",15,{},limits),MetricLevel::Green);
+        QCOMPARE(desklet_support::metricLevel("pm25",16,{},limits),MetricLevel::Yellow);
+        QCOMPARE(desklet_support::metricLevel("pm25",35,{},limits),MetricLevel::Yellow);
+        QCOMPARE(desklet_support::metricLevel("pm25",36,{},limits),MetricLevel::Red);
+        QCOMPARE(desklet_support::metricLevel("pm25",75,{},limits),MetricLevel::Red);
+        QCOMPARE(desklet_support::metricLevel("pm25",76,{},limits),MetricLevel::Blinking);
+        QCOMPARE(desklet_support::metricLevel("pm25",QJsonValue("n/a"),{},limits),MetricLevel::Unknown);
+        MonitoringProbe widget(Preferences{},FAKE_BACKEND,true); widget.showAndPosition();
+        QLabel* label=widget.findChild<QLabel*>("value_pm25");
+        widget.applyStatus({{"pm25",76},{"rh",50},{"rhset",50}});
+        QVERIFY(label->styleSheet().isEmpty());
+        QCOMPARE(label->palette().color(QPalette::WindowText),QColor("#b42318"));
+        auto* metric=dynamic_cast<MetricLabel*>(label); QVERIFY(metric);
+        const QImage withText=label->grab().toImage();
+        QTRY_VERIFY(!metric->textShown());
+        const QImage blankText=label->grab().toImage();
+        QVERIFY(blankText!=withText);
+        QCOMPARE(blankText.pixelColor(2,blankText.height()/2),withText.pixelColor(2,withText.height()/2));
+        widget.applyStatus({{"pm25",15},{"rh",50},{"rhset",50}});
+        QCOMPARE(label->palette().color(QPalette::WindowText),QColor("#187a3d"));
+        QVERIFY(metric->textShown());
+    }
+    void humidityColorsFollowTargetOnBothSides() {
+        using desklet_support::MetricLevel;
+        const MetricLimits limits;
+        const auto level=[&](int reading,int target) {
+            return desklet_support::metricLevel("rh",reading,target,limits);
+        };
+        QCOMPARE(level(45,50),MetricLevel::Green);
+        QCOMPARE(level(55,50),MetricLevel::Green);
+        QCOMPARE(level(44,50),MetricLevel::Yellow);
+        QCOMPARE(level(56,50),MetricLevel::Yellow);
+        QCOMPARE(level(40,50),MetricLevel::Yellow);
+        QCOMPARE(level(60,50),MetricLevel::Yellow);
+        QCOMPARE(level(39,50),MetricLevel::Red);
+        QCOMPARE(level(61,50),MetricLevel::Red);
+        QCOMPARE(level(29,50),MetricLevel::Blinking);
+        QCOMPARE(level(71,50),MetricLevel::Blinking);
+        QCOMPARE(desklet_support::metricLevel("rh",50,QJsonValue(),limits),MetricLevel::Unknown);
+        MonitoringProbe widget(Preferences{},FAKE_BACKEND,true); widget.showAndPosition();
+        QLabel* label=widget.findChild<QLabel*>("value_rh"); QVERIFY(label);
+        widget.applyStatus({{"rh",44},{"rhset",50}});
+        QCOMPARE(label->palette().color(QPalette::WindowText),QColor("#8a6400"));
+        widget.applyStatus({{"rh",44},{"rhset",40}});
+        QCOMPARE(label->palette().color(QPalette::WindowText),QColor("#187a3d"));
+        widget.applyStatus({{"rh",44}});
+        QVERIFY(label->styleSheet().isEmpty());
+    }
+    void metricSettingsRoundtripAndCancel() {
+        MonitoringProbe widget(Preferences{},FAKE_BACKEND);
+        const std::function<void(bool)> edit=[](bool accept) {
+            QTimer::singleShot(20,[accept] {
+                QDialog* dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget());
+                if(!dialog || dialog->objectName()!="metricSettings") return;
+                dialog->findChild<QSpinBox*>("humidityGreenDelta")->setValue(6);
+                dialog->findChild<QSpinBox*>("humidityYellowDelta")->setValue(12);
+                dialog->findChild<QSpinBox*>("humidityRedDelta")->setValue(24);
+                dialog->findChild<QSpinBox*>("pmGreenHigh")->setValue(12);
+                dialog->findChild<QSpinBox*>("pmYellowHigh")->setValue(30);
+                dialog->findChild<QSpinBox*>("pmRedHigh")->setValue(60);
+                if(accept) dialog->accept(); else dialog->reject();
+            });
+        };
+        edit(false); widget.showMetricSettings();
+        QCOMPARE(Preferences::load().metricLimits.humidityGreenDelta,5);
+        edit(true); widget.showMetricSettings();
+        const MetricLimits saved=Preferences::load().metricLimits;
+        QCOMPARE(saved.humidityGreenDelta,6);
+        QCOMPARE(saved.humidityYellowDelta,12);
+        QCOMPARE(saved.humidityRedDelta,24);
+        QCOMPARE(saved.pmGreenHigh,12);
+        QCOMPARE(saved.pmYellowHigh,30);
+        QCOMPARE(saved.pmRedHigh,60);
+        widget.applyStatus({{"rh",44},{"rhset",50},{"pm25",13}});
+        QCOMPARE(widget.findChild<QLabel*>("value_rh")->palette().color(QPalette::WindowText),QColor("#187a3d"));
+        QCOMPARE(widget.findChild<QLabel*>("value_pm25")->palette().color(QPalette::WindowText),QColor("#8a6400"));
+        QVERIFY(!QFile::exists(log_));
     }
     void controlDoesNotResetAgeAndFollowingStatusDoes() {
         qputenv("AIRCTRL_TEST_WRITE_GATE",temp_.filePath("write.ready").toUtf8());
@@ -825,7 +927,7 @@ private slots:
         const int before=packets.count(); QTest::qWait(250);
         QCOMPARE(packets.count(),before); QCOMPARE(widget.dataAgeSeconds(),qint64(50));
         QCOMPARE(status.count(),published); QVERIFY(c->busy());
-        QCOMPARE(widget.findChild<MonitorBar*>()->freshness(),DataFreshness::Aging);
+        QCOMPARE(widget.findChild<MonitorBar*>()->freshness(),DataFreshness::Fresh);
         QCOMPARE(widget.findChild<Emblem*>("emblem_mode")->icon(),EmblemIcon::Auto);
         QFile gate(temp_.filePath("write.ready")); QVERIFY(gate.open(QIODevice::WriteOnly)); gate.close();
         QTRY_VERIFY(packets.count()>before); QTRY_COMPARE(status.count(),published+1);
@@ -845,7 +947,7 @@ private slots:
         QSignalSpy packets(c,&Controller::statusPacketReceived), errors(c,&Controller::failed);
         widget.start(); QTRY_VERIFY(!errors.isEmpty());
         QCOMPARE(packets.count(),0); QCOMPARE(widget.dataAgeSeconds(),qint64(22));
-        QCOMPARE(widget.findChild<MonitorBar*>()->freshness(),DataFreshness::Disconnected); c->stop();
+        QCOMPARE(widget.findChild<MonitorBar*>()->freshness(),DataFreshness::Fresh); c->stop();
     }
     void warningAlarmsDoNotRepeatAndCanRecur() {
         MonitoringProbe widget(Preferences{},FAKE_BACKEND);
@@ -866,32 +968,37 @@ private slots:
         const std::function<void(bool)> edit=[](bool accept) {
             QTimer::singleShot(20,[accept] {
                 QDialog* dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget()); if(!dialog) return;
-                dialog->findChild<QSpinBox*>("ageWarningSeconds")->setValue(60);
-                dialog->findChild<QSpinBox*>("ageStaleSeconds")->setValue(150);
+                dialog->findChild<QSpinBox*>("ageWarningMinutes")->setValue(1);
+                dialog->findChild<QSpinBox*>("ageStaleMinutes")->setValue(2);
+                dialog->findChild<QSpinBox*>("ageBlinkMinutes")->setValue(3);
                 dialog->findChild<QCheckBox*>("desktopAlarms")->setChecked(false);
                 dialog->findChild<QCheckBox*>("alarmSound")->setChecked(true);
                 if(accept) dialog->accept(); else dialog->reject();
             });
         };
-        edit(false); widget.showAlarmSettings(); QCOMPARE(Preferences::load().ageWarningSeconds,45);
+        edit(false); widget.showAlarmSettings(); QCOMPARE(Preferences::load().ageWarningSeconds,900);
         edit(true); widget.showAlarmSettings(); const Preferences p=Preferences::load();
-        QCOMPARE(p.ageWarningSeconds,60); QCOMPARE(p.ageStaleSeconds,150); QVERIFY(!p.desktopAlarms); QVERIFY(p.alarmSound);
+        QCOMPARE(p.ageWarningSeconds,60); QCOMPARE(p.ageStaleSeconds,120); QCOMPARE(p.ageBlinkSeconds,180);
+        QVERIFY(!p.desktopAlarms); QVERIFY(p.alarmSound);
         widget.applyStatus({{"pwr","1"}}); widget.advance(59);
         QCOMPARE(widget.findChild<MonitorBar*>()->freshness(),DataFreshness::Fresh);
         widget.advance(1); QCOMPARE(widget.findChild<MonitorBar*>()->freshness(),DataFreshness::Aging);
         QVERIFY(!QFile::exists(log_));
-        QSettings settings; settings.setValue("alarms/warningSeconds",-1); settings.setValue("alarms/staleSeconds",0);
-        const Preferences sanitized=Preferences::load(); QCOMPARE(sanitized.ageWarningSeconds,5); QCOMPARE(sanitized.ageStaleSeconds,6);
+        QSettings settings; settings.setValue("alarms/warningMinutes",-1); settings.setValue("alarms/staleMinutes",0);
+        settings.setValue("alarms/blinkMinutes",0);
+        const Preferences sanitized=Preferences::load(); QCOMPARE(sanitized.ageWarningSeconds,60);
+        QCOMPARE(sanitized.ageStaleSeconds,120); QCOMPARE(sanitized.ageBlinkSeconds,180);
     }
     void monitoringAlarmDialogAndContextMenu() {
-        MonitoringProbe widget(Preferences{},FAKE_BACKEND); widget.showAndPosition();
-        widget.applyStatus({{"pwr","1"}}); widget.advance(45);
+        Preferences p; p.ageWarningSeconds=60; p.ageStaleSeconds=120; p.ageBlinkSeconds=180;
+        MonitoringProbe widget(p,FAKE_BACKEND); widget.showAndPosition();
+        widget.applyStatus({{"pwr","1"}}); widget.advance(60);
         bool opened=false, readable=false;
         QTimer::singleShot(30,[&] {
             QDialog* dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget()); if(!dialog) return;
             opened=dialog->objectName()=="alarmsDialog";
             QPlainTextEdit* report=dialog->findChild<QPlainTextEdit*>("activeAlarmReport");
-            readable=report && report->toPlainText().contains("45 s");
+            readable=report && report->toPlainText().contains("60 s");
             dialog->findChild<QPushButton*>("acknowledgeAlarms")->click(); dialog->accept();
         });
         QTest::mouseClick(widget.findChild<MonitorBar*>(),Qt::LeftButton);
@@ -935,14 +1042,14 @@ private slots:
     void monitoringPreviewAndDemoSilence() {
         QImage preview(327,720,QImage::Format_ARGB32_Premultiplied); preview.fill(QColor("#dddddd"));
         QPainter painter(&preview); painter.setPen(Qt::black); QFont caption=painter.font(); caption.setPixelSize(13); painter.setFont(caption);
-        const QStringList names{"Aktuelle Daten · OK","45 Sekunden · Achtung","90 Sekunden · Daten zu alt","Gerätewarnung · Daten aktuell"};
+        const QStringList names{"Aktuelle Daten · OK","15 Minuten · Achtung","30 Minuten · Daten zu alt","Gerätewarnung · Daten aktuell"};
         for(int i=0;i<4;++i) {
             MonitoringProbe widget(Preferences{},FAKE_BACKEND,true);
             QJsonObject status{{"pwr","1"},{"modelid","AC2729/10"},{"mode","P"},{"func","PH"},
                 {"rh",55},{"rhset",50},{"temp",24},{"pm25",1},{"wl",i==3 ? 0 : 100}};
-            widget.applyStatus(status); widget.showAndPosition(); widget.advance(i==1 ? 45 : i==2 ? 90 : 3);
+            widget.applyStatus(status); widget.showAndPosition(); widget.advance(i==1 ? 900 : i==2 ? 1800 : 3);
             QCoreApplication::processEvents(); QCOMPARE(widget.deliveries,0);
-            QCOMPARE(widget.size(),QSize(287,142));
+            QVERIFY(widget.width()<=307); QVERIFY(widget.height()<=160);
             painter.drawText(20,i*180+20,names[i]); painter.drawPixmap(20,i*180+28,widget.grab());
         }
         painter.end(); const QString path=qEnvironmentVariable("AIRCTRL_TEST_ALARMS_PNG");
@@ -959,8 +1066,8 @@ private slots:
             if(points<=10) QCOMPARE(bar->height(),26);
             QVERIFY(bar->height()<qMax(40,qCeil(QFontMetricsF(p.valueFont).height()*2.4)));
             const QSize before=widget.size();
-            QCOMPARE(bar->ageCircle().width(),bar->ageCircle().height());
-            QCOMPARE(bar->alarmCircle().size(),bar->ageCircle().size());
+            QVERIFY(bar->ageCircle().width()>bar->ageCircle().height());
+            QCOMPARE(bar->alarmCircle().height(),bar->ageCircle().height());
             QVERIFY(bar->ageCircle().right()<bar->alarmCircle().left());
             QVERIFY(QRectF(bar->rect()).contains(bar->ageCircle()));
             QVERIFY(QRectF(bar->rect()).contains(bar->alarmCircle()));
@@ -970,16 +1077,20 @@ private slots:
             const std::function<QPoint(const QRectF&)> sample=[&](const QRectF& circle) {
                 return bar->mapTo(&widget,QPoint(qRound(circle.left()+3),qRound(circle.center().y())));
             };
-            QCOMPARE(pixels.pixelColor(sample(bar->ageCircle())),QColor("#2ecc71"));
+            const QColor ageBackground=pixels.pixelColor(sample(bar->ageCircle()));
+            QCOMPARE(bar->ageColor(),QColor("#187a3d"));
             QCOMPARE(pixels.pixelColor(sample(bar->alarmCircle())),QColor("#e4e4e4"));
-            widget.advance(45); pixels=widget.grab().toImage();
-            QCOMPARE(pixels.pixelColor(sample(bar->ageCircle())),QColor("#f1c40f"));
+            widget.advance(900); pixels=widget.grab().toImage();
+            QCOMPARE(pixels.pixelColor(sample(bar->ageCircle())),ageBackground);
+            QCOMPARE(bar->ageColor(),QColor("#8a6400"));
             QCOMPARE(pixels.pixelColor(sample(bar->alarmCircle())),QColor("#f1c40f"));
-            widget.advance(45); pixels=widget.grab().toImage();
-            QCOMPARE(pixels.pixelColor(sample(bar->ageCircle())),QColor("#e74c3c"));
+            widget.advance(900); pixels=widget.grab().toImage();
+            QCOMPARE(pixels.pixelColor(sample(bar->ageCircle())),ageBackground);
+            QCOMPARE(bar->ageColor(),QColor("#b42318"));
             QCOMPARE(bar->alarmColor(),QColor("#e74c3c"));
             widget.acknowledgeAlarms(); QVERIFY(bar->accessibleName().contains("(Q)"));
-            widget.advance(123366); QCOMPARE(bar->ageText(),QString("123456 s"));
+            const QString displayedTime=bar->ageText();
+            widget.advance(123366); QCOMPARE(bar->ageText(),displayedTime);
             QCOMPARE(widget.size(),before); QVERIFY(widget.rect().contains(QRect(bar->mapTo(&widget,QPoint()),bar->size())));
         }
         QVERIFY(!QFile::exists(log_));
@@ -1488,6 +1599,8 @@ private slots:
             Desklet widget(p,FAKE_BACKEND,true);
             widget.applyStatus({{"rh",55},{"rhset",50},{"temp",24},{"pm25",1}});
             widget.showAndPosition(); QCoreApplication::processEvents();
+            QCOMPARE(widget.findChild<MonitorBar*>()->ageColor(),QColor("#2ecc71"));
+            QCOMPARE(widget.findChild<QLabel*>("value_rh")->palette().color(QPalette::WindowText),QColor("#2ecc71"));
             const QImage image=widget.grab().toImage();
             const int expectedAlpha=qRound((100-transparency)*2.55);
             const QList<QPoint> backgroundPoints{{0,0},{image.width()-1,0},
@@ -1495,13 +1608,21 @@ private slots:
                 {image.width()/2,image.height()-3}};
             for(const QPoint& point:backgroundPoints)
                 QVERIFY(qAbs(image.pixelColor(point).alpha()-expectedAlpha)<=1);
-            QLabel* value=widget.findChild<QLabel*>("value_rh");
+            QLabel* value=widget.findChild<QLabel*>("value_rhset");
             QCOMPARE(value->palette().color(QPalette::WindowText),p.foreground);
             int opaquePixels=0;
             const QImage textImage=value->grab().toImage();
             for(int y=0;y<textImage.height();++y) for(int x=0;x<textImage.width();++x)
                 if(textImage.pixelColor(x,y).alpha()>240) ++opaquePixels;
             QVERIFY(opaquePixels>5); // background transparency must not fade the text
+            const QImage targetImage=widget.findChild<QLabel*>("value_rhset")->grab().toImage();
+            int foregroundPixels=0;
+            for(int y=0;y<targetImage.height();++y) for(int x=0;x<targetImage.width();++x) {
+                const QColor pixel=targetImage.pixelColor(x,y);
+                if(pixel.alpha()>200 && pixel.red()>=160 && pixel.green()>=190 && pixel.blue()>=220)
+                    ++foregroundPixels;
+            }
+            QVERIFY(foregroundPixels>5); // uncolored metrics must remain readable after color styling
             QVERIFY(!QFile::exists(log_));
         }
     }

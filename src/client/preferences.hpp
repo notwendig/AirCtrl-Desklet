@@ -8,6 +8,15 @@
 #include <QColor>
 #include <QFont>
 #include <QStringList>
+/** @brief Local color boundaries for current humidity and PM2.5 readings. */
+struct MetricLimits {
+    int humidityGreenDelta = 5;
+    int humidityYellowDelta = 10;
+    int humidityRedDelta = 20;
+    int pmGreenHigh = 15;
+    int pmYellowHigh = 35;
+    int pmRedHigh = 75;
+};
 /** @brief Complete per-user configuration consumed by the desklet client. */
 struct Preferences {
     /** @brief Construct preferences with the documented server defaults. */
@@ -18,8 +27,10 @@ struct Preferences {
     int serverPort;
     ///< Delay before the client retries a lost server connection.
     int serverReconnectSeconds = 10;
-    int ageWarningSeconds = 45;
-    int ageStaleSeconds = 90;
+    int ageWarningSeconds = 15 * 60;
+    int ageStaleSeconds = 30 * 60;
+    int ageBlinkSeconds = 120 * 60;
+    MetricLimits metricLimits;
     bool desktopAlarms = true;
     bool alarmSound = false;
     bool desktop = true;

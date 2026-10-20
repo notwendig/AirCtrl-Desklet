@@ -88,6 +88,7 @@ Die Geräteadresse steht ausschließlich in `/etc/airctrld.cfg`:
 [server]
 listen_address=0.0.0.0
 port=5680
+allowed_hosts=nadhh.fritz.box,minik.fritz.box,minitab.fritz.box
 
 [logging]
 status_file=/var/log/airctrl.log
@@ -105,6 +106,13 @@ keepalive_ms=20000
 observe_refreshes=1
 cancel_grace_ms=300
 ```
+
+`allowed_hosts` begrenzt TCP-Zugriff auf die aufgelisteten Rechner. Der Server
+löst die Namen beim Start auf und prüft die IP-Adresse jeder neuen Verbindung;
+`127.0.0.1` und `::1` bleiben für lokale Administration erlaubt. Ohne diesen
+Eintrag bleibt das bisherige Verhalten erhalten. Nach einer IP-Änderung eines
+erlaubten Rechners den Server neu starten. Eine bestehende `/etc/airctrld.cfg`
+wird vom Installer nicht überschrieben.
 
 Jeder gültige, vom Gerät bestätigte Status wird an `/var/log/airctrl.log`
 angehängt. Die erste Zeile enthält die Feldnamen, danach folgt je Status eine
@@ -172,9 +180,19 @@ Power bleibt anklickbar: **orange** ohne Verbindung, **weiß** bei ausgeschaltet
 und **grün** bei eingeschaltetem Gerät. Während eines laufenden Befehls werden
 keine zusätzlichen Power-Befehle gesendet.
 
-Links zählt der Kreis Sekunden seit dem letzten gültigen Datenpaket: standardmäßig
-grün unter 45 s, gelb ab 45 s und rot ab 90 s. Rechts stehen Haken oder Alarmanzahl.
-Die Kreise messen bei Standardschrift 26 px und wachsen mit der Schriftgröße.
+Links zeigt das Statusfeld die lokale Uhrzeit des letzten gültigen Datenpakets:
+standardmäßig grün unter 15 Minuten, gelb ab 15 Minuten, rot ab 30 Minuten und
+rot blinkend ab 2 Stunden. Die Grenzen sind einstellbar. Rechts stehen Haken
+oder Alarmanzahl.
+
+Die Feuchte erhält Farben nach dem Abstand zur eingestellten Zielfeuchte: bis
+±5 Prozentpunkte grün, bis ±10 gelb, bis ±20 rot, darüber rot blinkend. Das
+gilt gleichermaßen unter und über dem Ziel. PM2,5 ist bis 15 µg/m³ grün, bis
+35 gelb, bis 75 rot und darüber rot blinkend. Unter **Rechtsklick → Farben für
+Feuchte und PM2,5** lassen sich alle sechs Grenzen ändern. Die PM2,5-Farbe
+bezieht sich auf den aktuellen Messwert, nicht auf einen Tagesmittelwert.
+Die Farben betreffen nur die Schrift. Der Hintergrund bleibt unverändert, auch
+wenn rote Schrift blinkt.
 
 ## Lua-Automatik
 

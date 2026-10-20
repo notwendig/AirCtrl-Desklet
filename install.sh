@@ -252,7 +252,16 @@ desktop.write_text(content.replace('Exec=airctrl-desklet', 'Exec="' + escaped + 
 PY
 fi
 
-if ((install_server)); then
+if ((install_server)) && [[ "${AIRCTRL_SKIP_SYSTEMD:-0}" != "1" ]] &&
+   command -v systemctl >/dev/null &&
+   { systemctl is-active --quiet airctrl-server.service ||
+     systemctl is-enabled --quiet airctrl-server.service; }; then
+    if systemctl --user is-active --quiet airctrl-server.service ||
+       systemctl --user is-enabled --quiet airctrl-server.service; then
+        systemctl --user disable --now airctrl-server.service
+    fi
+    printf '%s\n' 'Systemdienst airctrl-server.service vorhanden; kein zweiter Benutzerdienst wird aktiviert.'
+elif ((install_server)); then
     service_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
     service_file="$service_dir/airctrl-server.service"
     mkdir -p -- "$service_dir"

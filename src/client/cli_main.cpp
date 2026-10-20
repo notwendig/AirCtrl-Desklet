@@ -8,12 +8,37 @@
 
 #include <QCoreApplication>
 #include <QCommandLineParser>
+#include <QHostInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTcpSocket>
 #include <iostream>
 
 namespace {
+void connectToEndpoint(QTcpSocket& socket, const QString& host, quint16 port) {
+    QList<QHostAddress> addresses;
+    QHostAddress numeric;
+    if (numeric.setAddress(host)) {
+        addresses.append(numeric);
+    } else {
+        const QHostInfo result = QHostInfo::fromName(host);
+        if (result.error() != QHostInfo::NoError)
+            throw std::runtime_error(result.errorString().toStdString());
+        for (const QHostAddress& address : result.addresses())
+            if (address.protocol() == QAbstractSocket::IPv4Protocol && !addresses.contains(address))
+                addresses.append(address);
+        for (const QHostAddress& address : result.addresses())
+            if (address.protocol() == QAbstractSocket::IPv6Protocol && !addresses.contains(address))
+                addresses.append(address);
+    }
+    if (addresses.isEmpty()) throw std::runtime_error("Servername hat keine IP-Adresse");
+    for (const QHostAddress& address : addresses) {
+        socket.connectToHost(address, port);
+        if (socket.waitForConnected(3000)) return;
+        socket.abort();
+    }
+    throw std::runtime_error("AirControl-Server ist auf keiner seiner Adressen erreichbar");
+}
 /** @brief Convert CLI text to the public control schema's JSON value type. */
 QJsonValue typedValue(const QString& key,const QString& text) {
     if(key=="cl") {
@@ -83,8 +108,7 @@ int main(int argc,char** argv) {
     }
     try {
         QTcpSocket socket;
-        socket.connectToHost(host,static_cast<quint16>(port));
-        if(!socket.waitForConnected(3000)) throw std::runtime_error(socket.errorString().toStdString());
+        connectToEndpoint(socket,host,static_cast<quint16>(port));
         if(command=="refresh") { writeLine(socket,{{"_airctrl","refresh"}}); return 0; }
         if(command=="set") {
             QJsonObject values;

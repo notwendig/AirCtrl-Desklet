@@ -4,6 +4,7 @@
  */
 #include "alerts.hpp"
 #include "emblems.hpp"
+#include "status_colors.hpp"
 #include <QFontMetrics>
 #include <QPainter>
 #include <QPainterPath>
@@ -13,9 +14,9 @@
 #include <algorithm>
 #include <functional>
 
-DataFreshness dataFreshness(qint64 seconds, bool failed, int warningAfter, int staleAfter) {
-    if(failed) return DataFreshness::Disconnected;
+DataFreshness dataFreshness(qint64 seconds, int warningAfter, int staleAfter, int blinkAfter) {
     if(seconds<0) return DataFreshness::Waiting;
+    if(seconds>=blinkAfter) return DataFreshness::Blinking;
     if(seconds>=staleAfter) return DataFreshness::Stale;
     return seconds>=warningAfter ? DataFreshness::Aging : DataFreshness::Fresh;
 }
@@ -72,21 +73,23 @@ MonitorBar::MonitorBar(QWidget* parent) : QWidget(parent) {
     setObjectName("monitorBar"); setCursor(Qt::PointingHandCursor);
     setAttribute(Qt::WA_TranslucentBackground);
     setSizePolicy(QSizePolicy::Fixed,QSizePolicy::Fixed);
+    blinkTimer_.setInterval(700);
+    connect(&blinkTimer_,&QTimer::timeout,this,[this] { blinkVisible_=!blinkVisible_; update(); });
 }
 int MonitorBar::diameter() const {
     return qMax(26,qCeil(QFontMetricsF(font()).height()*1.4));
 }
 QSize MonitorBar::sizeHint() const {
-    return {2*diameter()+6,diameter()};
+    return {diameter()+qMax(52,2*diameter())+6,diameter()};
 }
-QRectF MonitorBar::ageCircle() const { return QRectF(0,0,diameter(),diameter()).adjusted(1,1,-1,-1); }
-QRectF MonitorBar::alarmCircle() const { return ageCircle().translated(diameter()+6,0); }
+QRectF MonitorBar::ageCircle() const { return QRectF(0,0,qMax(52,2*diameter()),diameter()).adjusted(1,1,-1,-1); }
+QRectF MonitorBar::alarmCircle() const { return QRectF(ageCircle().right()+7,1,diameter()-2,diameter()-2); }
 QColor MonitorBar::ageColor() const {
     switch(freshness_) {
-    case DataFreshness::Fresh: return QColor("#2ecc71");
-    case DataFreshness::Aging: return QColor("#f1c40f");
-    case DataFreshness::Stale: case DataFreshness::Disconnected: return QColor("#e74c3c");
-    case DataFreshness::Waiting: return QColor("#d8d8d8");
+    case DataFreshness::Fresh: return statusGreen(lightSurface_);
+    case DataFreshness::Aging: return statusYellow(lightSurface_);
+    case DataFreshness::Stale: case DataFreshness::Blinking: return statusRed(lightSurface_);
+    case DataFreshness::Waiting: return QColor(lightSurface_ ? "#666666" : "#d8d8d8");
     }
     return QColor("#d8d8d8");
 }
@@ -106,11 +109,14 @@ QString MonitorBar::alarmText() const {
     if(acknowledged_) text+=" (Q)";
     return text;
 }
-void MonitorBar::setState(qint64 seconds, DataFreshness freshness, const QList<Alert>& alerts,
+void MonitorBar::setState(const QDateTime& receivedAt, DataFreshness freshness, const QList<Alert>& alerts,
                          bool acknowledged, const QString& detail) {
     const QSize old=sizeHint();
-    seconds_=seconds; freshness_=freshness; alerts_=alerts; acknowledged_=acknowledged;
-    setAccessibleName("Datenalter: "+ageText()+" · "+alarmText());
+    receivedAt_=receivedAt; freshness_=freshness; alerts_=alerts; acknowledged_=acknowledged;
+    if(freshness_==DataFreshness::Blinking) {
+        if(!blinkTimer_.isActive()) { blinkVisible_=true; blinkTimer_.start(); }
+    } else { blinkTimer_.stop(); blinkVisible_=true; }
+    setAccessibleName("Letzte Statusmeldung: "+ageText()+" · "+alarmText());
     setAccessibleDescription(detail); setToolTip(detail+
         "\nLinksklick: Alarme · Rechtsklick: Menü · Ziehen: Verschieben");
     if(sizeHint()!=old) updateGeometry();
@@ -120,9 +126,10 @@ void MonitorBar::paintEvent(QPaintEvent*) {
     QPainter p(this); p.setRenderHint(QPainter::Antialiasing);
     const QRectF age=ageCircle(), alarm=alarmCircle();
     const QColor ink("#151515");
-    p.setPen(Qt::NoPen); p.setBrush(ageColor()); p.drawEllipse(age);
+    p.setPen(Qt::NoPen);
     p.setBrush(alarmColor()); p.drawEllipse(alarm);
-    const std::function<void(const QString&,const QRectF&,qreal)> text=[&](const QString& value,const QRectF& area,qreal scale) {
+    const std::function<void(const QString&,const QRectF&,qreal,const QColor&)> text=
+        [&](const QString& value,const QRectF& area,qreal scale,const QColor& color) {
         QFont f=font();
         const qreal pixels=QFontMetricsF(f).height()*0.82*scale;
         f.setPixelSize(qMax(1,qRound(pixels)));
@@ -130,15 +137,13 @@ void MonitorBar::paintEvent(QPaintEvent*) {
         const qreal ratio=std::min({1.0,area.width()/qMax(1.0,metrics.horizontalAdvance(value)),
                                area.height()/qMax(1.0,metrics.height())});
         f.setPixelSize(qMax(1,qFloor(f.pixelSize()*ratio)));
-        p.setFont(f); p.setPen(ink); p.drawText(area,Qt::AlignCenter,value);
+        p.setFont(f); p.setPen(color); p.drawText(area,Qt::AlignCenter,value);
     };
     const std::function<QRectF(const QRectF&,qreal,qreal)> zone=[](const QRectF& circle,qreal top,qreal h) {
         return QRectF(circle.left()+circle.width()*0.12,circle.top()+circle.height()*top,
                       circle.width()*0.76,circle.height()*h);
     };
-    // One centered line remains legible in the smaller circle. Exact seconds
-    // and their unit are also available in the tooltip and accessible name.
-    text(seconds_<0 ? QString("—") : QString::number(seconds_),zone(age,0.16,0.68),1.0);
+    if(blinkVisible_) text(ageText(),zone(age,0.16,0.68),1.0,ageColor());
     // Native vectors keep the OK/bell symbols independent of installed fonts.
     p.save(); p.translate(alarm.topLeft()); p.scale(alarm.width()/40,alarm.height()/40);
     p.setPen(QPen(ink,1.8,Qt::SolidLine,Qt::RoundCap,Qt::RoundJoin)); p.setBrush(Qt::NoBrush);
@@ -150,5 +155,5 @@ void MonitorBar::paintEvent(QPaintEvent*) {
         p.drawPath(bell); p.drawLine(QPointF(19,22),QPointF(21,22));
     }
     p.restore();
-    if(!alerts_.isEmpty()) text(QString::number(alerts_.size())+(acknowledged_ ? "Q" : ""),zone(alarm,0.59,0.30),0.78);
+    if(!alerts_.isEmpty()) text(QString::number(alerts_.size())+(acknowledged_ ? "Q" : ""),zone(alarm,0.59,0.30),0.78,ink);
 }

@@ -7,6 +7,7 @@
 #include "ipc.hpp"
 
 #include <QFileInfo>
+#include <QHostInfo>
 #include <QJsonDocument>
 #include <QJsonParseError>
 #include <QProcess>
@@ -25,6 +26,17 @@ Controller::Controller(QString serverExecutable, QObject* parent)
         socket_.abort();
     });
     connect(&connectWatchdog_, &QTimer::timeout, this, [this] {
+        if (resolving_) {
+            resolving_ = false;
+            ++lookupGeneration_;
+            connectionFailed("Namensauflösung des AirControl-Servers dauerte zu lange.");
+            return;
+        }
+        if (connecting_) {
+            socket_.abort();
+            tryNextAddress();
+            return;
+        }
         socket_.abort();
         connectionFailed("Keine Verbindung zum AirControl-Server.");
     });
@@ -40,6 +52,8 @@ Controller::Controller(QString serverExecutable, QObject* parent)
     });
     connect(&socket_, &QTcpSocket::connected, this, [this] {
         connectWatchdog_.stop();
+        connecting_ = false;
+        addresses_.clear();
         heartbeatWatchdog_.stop();
         heartbeat_.start(heartbeatMs_);
         failureReported_ = false;
@@ -47,6 +61,7 @@ Controller::Controller(QString serverExecutable, QObject* parent)
     });
     connect(&socket_, &QTcpSocket::readyRead, this, &Controller::readServer);
     connect(&socket_, &QTcpSocket::disconnected, this, [this] {
+        if (connecting_) return;
         connectWatchdog_.stop();
         heartbeat_.stop();
         heartbeatWatchdog_.stop();
@@ -63,6 +78,20 @@ Controller::Controller(QString serverExecutable, QObject* parent)
     });
     connect(&socket_, &QTcpSocket::errorOccurred, this, [this](QAbstractSocket::SocketError error) {
         if (!active_ || error == QAbstractSocket::RemoteHostClosedError) return;
+        if (connecting_) {
+            connectWatchdog_.stop();
+            if (!executable_.isEmpty() && !launchAttempted_ &&
+                error == QAbstractSocket::ConnectionRefusedError) {
+                connecting_ = false;
+                socket_.abort();
+                launchServer();
+                reconnect_.start(100);
+                return;
+            }
+            socket_.abort();
+            tryNextAddress();
+            return;
+        }
         if (!executable_.isEmpty() && !launchAttempted_ &&
             error == QAbstractSocket::ConnectionRefusedError) {
             launchServer();
@@ -82,6 +111,11 @@ void Controller::configure(QString host, int port, int reconnectSeconds) {
     serverPort_ = port;
     reconnectMs_ = qBound(1, reconnectSeconds, 300) * 1000;
     if(endpointChanged && active_) {
+        ++lookupGeneration_;
+        resolving_ = false;
+        connecting_ = false;
+        addresses_.clear();
+        connectWatchdog_.stop();
         socket_.abort();
         reconnect_.stop();
         connectServer();
@@ -116,6 +150,10 @@ void Controller::start() {
 }
 void Controller::stop() {
     active_ = false;
+    ++lookupGeneration_;
+    resolving_ = false;
+    connecting_ = false;
+    addresses_.clear();
     refreshScheduled_ = false;
     reconnect_.stop();
     connectWatchdog_.stop();
@@ -134,18 +172,57 @@ void Controller::stop() {
     setBusy(false);
 }
 void Controller::connectServer() {
-    if (!active_ || socket_.state() != QAbstractSocket::UnconnectedState) return;
+    if (!active_ || resolving_ || connecting_ ||
+        socket_.state() != QAbstractSocket::UnconnectedState) return;
     const QString error = addressError();
     if (!error.isEmpty()) {
         connectionFailed(error);
         return;
     }
     progress_ = "Verbinde mit AirControl-Server "+serverEndpoint();
-    // Start first: connecting to an already listening local server may emit
-    // connected() before connectToHost() returns. Starting the watchdog
-    // afterwards would arm a stale timer that aborts the healthy socket.
+    QHostAddress numeric;
+    if (numeric.setAddress(serverHost_)) {
+        addresses_ = {numeric};
+        nextAddress_ = 0;
+        tryNextAddress();
+        return;
+    }
+    resolving_ = true;
+    const quint64 generation = ++lookupGeneration_;
     connectWatchdog_.start(3000);
-    socket_.connectToHost(serverHost_,static_cast<quint16>(serverPort_),QIODevice::ReadWrite);
+    QHostInfo::lookupHost(serverHost_, this, [this, generation](const QHostInfo& result) {
+        if (!active_ || generation != lookupGeneration_) return;
+        resolving_ = false;
+        connectWatchdog_.stop();
+        if (result.error() != QHostInfo::NoError || result.addresses().isEmpty()) {
+            connectionFailed("AirControl-Server "+serverEndpoint()+" nicht auflösbar: "+result.errorString());
+            return;
+        }
+        addresses_.clear();
+        // Try IPv4 first when a host advertises both families; keep IPv6-only hosts working.
+        for (const QHostAddress& address : result.addresses())
+            if (address.protocol() == QAbstractSocket::IPv4Protocol && !addresses_.contains(address))
+                addresses_.append(address);
+        for (const QHostAddress& address : result.addresses())
+            if (address.protocol() == QAbstractSocket::IPv6Protocol && !addresses_.contains(address))
+                addresses_.append(address);
+        nextAddress_ = 0;
+        tryNextAddress();
+    });
+}
+void Controller::tryNextAddress() {
+    if (!active_) return;
+    if (nextAddress_ >= addresses_.size()) {
+        connecting_ = false;
+        addresses_.clear();
+        connectionFailed("AirControl-Server "+serverEndpoint()+" auf keiner seiner Adressen erreichbar.");
+        return;
+    }
+    const QHostAddress address = addresses_.at(nextAddress_++);
+    connecting_ = true;
+    // Arm before connectToHost: localhost may connect synchronously.
+    connectWatchdog_.start(3000);
+    socket_.connectToHost(address, static_cast<quint16>(serverPort_), QIODevice::ReadWrite);
 }
 void Controller::launchServer() {
     launchAttempted_ = true;

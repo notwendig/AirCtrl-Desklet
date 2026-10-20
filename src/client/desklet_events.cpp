@@ -195,6 +195,8 @@ void Desklet::openMenu(const QPoint& point) {
     acknowledge->setObjectName("acknowledgeAlarms"); acknowledge->setEnabled(!activeAlerts_.isEmpty());
     QAction* alarmSettings=menu.addAction("Datenalter und Alarme …",this,&Desklet::showAlarmSettings);
     alarmSettings->setObjectName("alarmSettings");
+    QAction* metricSettings=menu.addAction("Farben für Feuchte und PM2,5 …",this,&Desklet::showMetricSettings);
+    metricSettings->setObjectName("metricSettings");
     QAction* automationSettings=menu.addAction(QString("Lua-Automatik … [%1]")
         .arg(automationStateLabel(automationState_)),this,&Desklet::showAutomationSettings);
     automationSettings->setObjectName("automationSettingsAction");

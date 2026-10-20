@@ -93,6 +93,11 @@ if(BUILD_TESTING)
     set_tests_properties(statuslog PROPERTIES TIMEOUT 10)
 
     if(AIRCTRL_COMPONENT STREQUAL "server")
+        find_package(Python3 REQUIRED COMPONENTS Interpreter)
+        add_test(NAME server-access COMMAND
+            ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/test_server_access.py
+            $<TARGET_FILE:airctrl-server>)
+        set_tests_properties(server-access PROPERTIES TIMEOUT 10)
         add_executable(automation-tests
             tests/test_server_automation.cpp
             src/server/automation.cpp

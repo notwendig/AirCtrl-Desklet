@@ -17,6 +17,8 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 namespace airctrl {
 
@@ -38,6 +40,8 @@ struct DeviceConfig {
 struct ServerConfig {
     std::string listenAddress = "0.0.0.0";
     std::uint16_t listenPort = 5680;
+    std::vector<std::string> allowedHosts;
+    std::unordered_set<std::string> allowedAddresses;
     std::string statusLogPath = "/var/log/airctrl.log";
     DeviceConfig device;
     AutomationConfig automation;

@@ -10,7 +10,7 @@ target_link_libraries(airctrl_client_common PUBLIC
 
 add_library(desklet_ui STATIC
     controller.cpp controller.hpp
-    alerts.cpp alerts.hpp
+    alerts.cpp alerts.hpp status_colors.hpp
     emblems.cpp emblems.hpp
     diagnostics.cpp diagnostics.hpp
     panel.cpp panel.hpp

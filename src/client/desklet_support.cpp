@@ -13,11 +13,41 @@ namespace desklet_support {
 const QStringList metricKeys{"rh","rhset","temp","pm25","iaql"};
 const QStringList metricNames{"Luftfeuchtigkeit","Zielfeuchte","Temperatur","PM2,5","IAI"};
 
-QString metricText(const QString& key, const QJsonValue& value) {
+std::optional<double> metricValue(const QString& key, const QJsonValue& value) {
     bool ok=value.isDouble();
     const double n=ok ? value.toDouble() : value.toString().toDouble(&ok);
     const bool humidity=key=="rh" || key=="rhset";
-    ok=ok && std::isfinite(n) && n<=(humidity ? 100 : 999) && n>=(key=="temp" ? -100 : 0);
+    return ok && std::isfinite(n) && n<=(humidity ? 100 : 999) && n>=(key=="temp" ? -100 : 0)
+        ? std::optional<double>(n) : std::nullopt;
+}
+
+MetricLevel metricLevel(const QString& key, const QJsonValue& value, const QJsonValue& humidityTarget,
+                        const MetricLimits& limits) {
+    const std::optional<double> number=metricValue(key,value);
+    if(!number) return MetricLevel::Unknown;
+    const double n=*number;
+    if(key=="rh") {
+        const std::optional<double> target=metricValue("rhset",humidityTarget);
+        if(!target || *target<=0) return MetricLevel::Unknown;
+        const double distance=std::abs(n-*target);
+        if(distance>limits.humidityRedDelta) return MetricLevel::Blinking;
+        if(distance>limits.humidityYellowDelta) return MetricLevel::Red;
+        if(distance>limits.humidityGreenDelta) return MetricLevel::Yellow;
+        return MetricLevel::Green;
+    }
+    if(key=="pm25") {
+        if(n>limits.pmRedHigh) return MetricLevel::Blinking;
+        if(n>limits.pmYellowHigh) return MetricLevel::Red;
+        if(n>limits.pmGreenHigh) return MetricLevel::Yellow;
+        return MetricLevel::Green;
+    }
+    return MetricLevel::Unknown;
+}
+
+QString metricText(const QString& key, const QJsonValue& value) {
+    const std::optional<double> measured=metricValue(key,value);
+    const bool ok=measured.has_value();
+    const double n=measured.value_or(0);
     const QString number=ok ? QString::number(n,'f',n==std::floor(n) ? 0 : 1) : QString("—");
     if(key=="rh") return "Feuchte " + number + (ok ? " %" : "");
     if(key=="rhset") return "Ziel " + number + (ok ? " %" : "");

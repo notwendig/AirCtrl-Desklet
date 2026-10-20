@@ -69,6 +69,50 @@ std::string defaultAutomationDirectory() {
     return (std::filesystem::path(home) / ".config" / "airctrl-server").string();
 }
 
+std::string numericAddress(const sockaddr* address, socklen_t length) {
+    if (address->sa_family == AF_INET6) {
+        const auto* ipv6 = reinterpret_cast<const sockaddr_in6*>(address);
+        if (IN6_IS_ADDR_V4MAPPED(&ipv6->sin6_addr)) {
+            char mapped[INET_ADDRSTRLEN]{};
+            const auto* bytes = reinterpret_cast<const unsigned char*>(&ipv6->sin6_addr);
+            return inet_ntop(AF_INET, bytes + 12, mapped, sizeof(mapped)) == nullptr ? "" : mapped;
+        }
+    }
+    char host[NI_MAXHOST]{};
+    if (getnameinfo(address, length, host, sizeof(host), nullptr, 0, NI_NUMERICHOST) != 0)
+        return {};
+    return host;
+}
+
+bool resolveAllowedHosts(ServerConfig* config, std::string* error) {
+    config->allowedAddresses.clear();
+    for (const std::string& host : config->allowedHosts) {
+        addrinfo hints{};
+        hints.ai_family = AF_UNSPEC;
+        hints.ai_socktype = SOCK_STREAM;
+        addrinfo* addresses = nullptr;
+        const int lookup = getaddrinfo(host.c_str(), nullptr, &hints, &addresses);
+        if (lookup != 0) {
+            if (error) *error = "Erlaubter Host nicht auflösbar: " + host + ": " + gai_strerror(lookup);
+            return false;
+        }
+        bool found = false;
+        for (addrinfo* address = addresses; address != nullptr; address = address->ai_next) {
+            const std::string numeric = numericAddress(address->ai_addr, address->ai_addrlen);
+            if (!numeric.empty()) {
+                config->allowedAddresses.insert(numeric);
+                found = true;
+            }
+        }
+        freeaddrinfo(addresses);
+        if (!found) {
+            if (error) *error = "Erlaubter Host hat keine IP-Adresse: " + host;
+            return false;
+        }
+    }
+    return true;
+}
+
 /** @brief Parse the mandatory INI configuration without a Qt dependency. */
 bool loadConfig(const std::string& path, ServerConfig* config, std::string* error) {
     std::ifstream file(path);
@@ -99,6 +143,8 @@ bool loadConfig(const std::string& path, ServerConfig* config, std::string* erro
     }
     const std::unordered_map<std::string, std::string>::const_iterator address =
         values.find("server/listen_address");
+    const std::unordered_map<std::string, std::string>::const_iterator allowedHosts =
+        values.find("server/allowed_hosts");
     const std::unordered_map<std::string, std::string>::const_iterator host = values.find("device/host");
     const std::unordered_map<std::string, std::string>::const_iterator statusLog =
         values.find("logging/status_file");
@@ -109,6 +155,22 @@ bool loadConfig(const std::string& path, ServerConfig* config, std::string* erro
     const std::unordered_map<std::string, std::string>::const_iterator automationEnabled =
         values.find("automation/enabled");
     config->listenAddress = address == values.end() ? "0.0.0.0" : trim(address->second);
+    config->allowedHosts.clear();
+    if (allowedHosts != values.end()) {
+        const std::string list = allowedHosts->second;
+        std::size_t first = 0;
+        for (;;) {
+            const std::size_t comma = list.find(',', first);
+            const std::string host = trim(list.substr(first, comma - first));
+            if (host.empty() || host.find_first_of(" \t\r\n") != std::string::npos) {
+                if (error) *error = "Ungültiger Wert in " + path + ": server/allowed_hosts";
+                return false;
+            }
+            config->allowedHosts.push_back(host);
+            if (comma == std::string::npos) break;
+            first = comma + 1U;
+        }
+    }
     config->device.host = host == values.end() ? "AC2729-10" : trim(host->second);
     config->statusLogPath = statusLog == values.end() ? "/var/log/airctrl.log" : trim(statusLog->second);
     const std::string automationDirectory = defaultAutomationDirectory();
@@ -185,7 +247,7 @@ bool loadConfig(const std::string& path, ServerConfig* config, std::string* erro
     config->device.keepaliveMs = keepaliveMs;
     config->device.observeRefreshes = observeRefreshes;
     config->device.cancelGraceMs = cancelGraceMs;
-    return true;
+    return resolveAllowedHosts(config, error);
 }
 
 bool requestId(const Json& request, std::uint64_t* id) {
@@ -368,7 +430,9 @@ void AirCtrlServer::shutdown() {
 
 void AirCtrlServer::acceptClients() {
     for (;;) {
-        const int descriptor = accept(listener_, nullptr, nullptr);
+        sockaddr_storage peer{};
+        socklen_t peerLength = sizeof(peer);
+        const int descriptor = accept(listener_, reinterpret_cast<sockaddr*>(&peer), &peerLength);
         if (descriptor < 0) {
             if (errno == EINTR) continue;
             if (errno != EAGAIN && errno != EWOULDBLOCK)
@@ -378,6 +442,15 @@ void AirCtrlServer::acceptClients() {
         if (setNonBlocking(descriptor) != 0) {
             close(descriptor);
             continue;
+        }
+        if (!config_.allowedHosts.empty()) {
+            const std::string address = numericAddress(reinterpret_cast<const sockaddr*>(&peer), peerLength);
+            if (address != "127.0.0.1" && address != "::1" &&
+                config_.allowedAddresses.count(address) == 0U) {
+                std::cerr << "AirControl-Server: Client nicht erlaubt: " << address << '\n';
+                close(descriptor);
+                continue;
+            }
         }
         const std::uint64_t id = nextClient_++;
         clients_.emplace(id, ClientConnection{descriptor, {}, {}, false});

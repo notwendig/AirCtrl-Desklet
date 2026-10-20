@@ -4,6 +4,7 @@
  */
 #include "desklet.hpp"
 #include "desklet_support.hpp"
+#include "status_colors.hpp"
 
 #include <QFontMetrics>
 #include <QLayout>
@@ -13,6 +14,10 @@
 #include <algorithm>
 
 using namespace desklet_support;
+
+void MetricLabel::paintEvent(QPaintEvent* event) {
+    if(textShown_) QLabel::paintEvent(event);
+}
 
 void Desklet::paintEvent(QPaintEvent*) {
     QPainter painter(this);
@@ -47,6 +52,7 @@ void Desklet::applyAppearance() {
         button->setFont(preferences_.valueFont);
     }
     monitorBar_->setFont(preferences_.valueFont);
+    monitorBar_->setLightSurface(statusOnLightSurface(preferences_.foreground));
     monitorBar_->setFixedSize(monitorBar_->sizeHint());
     updateEmblems();
     updateValues();
@@ -63,15 +69,42 @@ void Desklet::saveAppearance() {
 void Desklet::updateValues() {
     QColor color=preferences_.foreground;
     if(!connected_ && updated_.isValid()) color.setAlpha(140);
+    bool anyBlinking=false;
     for(int i=0;i<5;++i) {
         QLabel* value=values_[i];
         value->setText(metricText(metricKeys[i],status_.value(metricKeys[i])));
+        const MetricLevel level=metricLevel(metricKeys[i],status_.value(metricKeys[i]),
+            status_.value("rhset"),preferences_.metricLimits);
+        metricBlinking_[i]=level==MetricLevel::Blinking;
+        anyBlinking=anyBlinking || metricBlinking_[i];
+        QColor ink=color;
+        const bool lightSurface=statusOnLightSurface(preferences_.foreground);
+        switch(level) {
+        case MetricLevel::Green: ink=statusGreen(lightSurface); break;
+        case MetricLevel::Yellow: ink=statusYellow(lightSurface); break;
+        case MetricLevel::Red: case MetricLevel::Blinking: ink=statusRed(lightSurface); break;
+        case MetricLevel::Unknown: break;
+        }
+        value->setStyleSheet({});
         QPalette palette=value->palette();
-        palette.setColor(QPalette::WindowText,color);
+        palette.setColor(QPalette::WindowText,ink);
         value->setPalette(palette);
         value->setAccessibleName(metricNames[i]+": "+value->text());
     }
+    if(anyBlinking) {
+        if(!metricBlinkTimer_.isActive()) { metricBlinkVisible_=true; metricBlinkTimer_.start(); }
+    } else { metricBlinkTimer_.stop(); metricBlinkVisible_=true; }
+    updateMetricBlink();
     resizeToContent();
+}
+
+void Desklet::updateMetricBlink() {
+    for(int i=0;i<5;++i) {
+        if(!metricEffects_[i]) continue;
+        const qreal fade=!connected_ && updated_.isValid() ? 0.55 : 1.0;
+        metricEffects_[i]->setOpacity(fade);
+        values_[i]->setTextShown(!metricBlinking_[i] || metricBlinkVisible_);
+    }
 }
 
 void Desklet::updateEmblems() {

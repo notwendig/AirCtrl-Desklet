@@ -5,6 +5,7 @@
 #pragma once
 #include <QObject>
 #include <QJsonObject>
+#include <QHostAddress>
 #include <QTcpSocket>
 #include <QTimer>
 
@@ -88,6 +89,7 @@ signals:
     void automationSaved(QJsonObject state);
 private:
     void connectServer();
+    void tryNextAddress();
     void launchServer();
     void readServer();
     void handleEnvelope(const QJsonObject& envelope);
@@ -110,6 +112,10 @@ private:
     quint64 nextCommandId_ = 1, pendingCommandId_ = 0;
     QString progress_;
     QTcpSocket socket_;
+    QList<QHostAddress> addresses_;
+    qsizetype nextAddress_ = 0;
+    quint64 lookupGeneration_ = 0;
+    bool resolving_ = false, connecting_ = false;
     QTimer reconnect_, connectWatchdog_, writeWatchdog_, confirmation_;
     QTimer heartbeat_, heartbeatWatchdog_;
     QTimer automationWatchdog_;

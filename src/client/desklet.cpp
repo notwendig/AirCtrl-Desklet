@@ -33,6 +33,7 @@
 #include <QDebug>
 #include <QFileInfo>
 #include <QFormLayout>
+#include <QGroupBox>
 #include <QFontDatabase>
 #include <QGuiApplication>
 #include <QHeaderView>
@@ -55,8 +56,9 @@ using namespace desklet_support;
 Desklet::Desklet(Preferences preferences, QString backend, bool demo)
     : preferences_(std::move(preferences)), controller_(std::move(backend), this), demo_(demo) {
     monitorClock_.start();
-    preferences_.ageWarningSeconds=qBound(5,preferences_.ageWarningSeconds,3599);
-    preferences_.ageStaleSeconds=qBound(preferences_.ageWarningSeconds+1,preferences_.ageStaleSeconds,7200);
+    preferences_.ageWarningSeconds=qBound(60,preferences_.ageWarningSeconds,86340);
+    preferences_.ageStaleSeconds=qBound(preferences_.ageWarningSeconds+60,preferences_.ageStaleSeconds,86400);
+    preferences_.ageBlinkSeconds=qBound(preferences_.ageStaleSeconds+60,preferences_.ageBlinkSeconds,86460);
     waylandSession_=QGuiApplication::platformName().startsWith("wayland") ||
         qEnvironmentVariable("XDG_SESSION_TYPE")=="wayland" ||
         (!qEnvironmentVariableIsEmpty("WAYLAND_DISPLAY") && qEnvironmentVariable("XDG_SESSION_TYPE")!="x11");
@@ -134,10 +136,18 @@ Desklet::Desklet(Preferences preferences, QString backend, bool demo)
     valueLayout_=new QGridLayout(valueArea_); valueLayout_->setContentsMargins(0,0,0,0);
     valueLayout_->setHorizontalSpacing(14); valueLayout_->setVerticalSpacing(3);
     for(int i=0;i<5;++i) {
-        QLabel* value=new QLabel(valueArea_); values_[i]=value;
+        MetricLabel* value=new MetricLabel(valueArea_); values_[i]=value;
         value->setObjectName("value_"+metricKeys[i]); value->setTextFormat(Qt::PlainText);
         value->setAlignment(Qt::AlignCenter); value->installEventFilter(this);
+        if(metricKeys[i]=="rh" || metricKeys[i]=="pm25") {
+            auto* effect=new QGraphicsOpacityEffect(value);
+            effect->setOpacity(1.0); value->setGraphicsEffect(effect); metricEffects_[i]=effect;
+        }
     }
+    metricBlinkTimer_.setInterval(700);
+    connect(&metricBlinkTimer_,&QTimer::timeout,this,[this] {
+        metricBlinkVisible_=!metricBlinkVisible_; updateMetricBlink();
+    });
     root->addWidget(valueArea_);
     QShortcut* contextShortcut=new QShortcut(QKeySequence("Shift+F10"),this);
     connect(contextShortcut,&QShortcut::activated,this,[this] { openMenu(mapToGlobal(rect().center())); });
@@ -296,15 +306,21 @@ void Desklet::updateControls() {
 }
 void Desklet::updateFooter() {
     QString age="Noch kein Empfang";
-    if(lastDataAt_>=0) {
-        age="Letzter Empfang vor "+QString::number(dataAgeSeconds())+" s";
-    }
+    if(packetReceivedAt_.isValid()) age="Letzte Statusmeldung: "+packetReceivedAt_.toString("dd.MM.yyyy HH:mm:ss")+
+        " (vor "+QString::number(dataAgeSeconds())+" s)";
     const QString connection=demo_ ? QString("Vorschau – keine Gerätesteuerung") : connected_ ? QString("Verbunden") : QString("Keine Verbindung");
     const QString detail=connection+"\nServer "+endpointText(preferences_.serverHost,preferences_.serverPort)+"\n"+age+"\n"+notice_+
         "\nRechtsklick: Menü · Ziehen: Verschieben · F1: Diagnose";
     setToolTip(detail); setAccessibleDescription(detail);
-    for(QLabel* value:values_) {
-        value->setToolTip(detail); value->setAccessibleDescription(detail);
+    for(int i=0;i<5;++i) {
+        QString metricDetail=detail;
+        const MetricLimits& m=preferences_.metricLimits;
+        if(metricKeys[i]=="rh") metricDetail+=QString("\nFeuchte: %1 · Abweichung bis ±%2 Prozentpunkte grün, bis ±%3 gelb, bis ±%4 rot; darüber rot blinkend.")
+            .arg(metricText("rhset",status_.value("rhset")))
+            .arg(m.humidityGreenDelta).arg(m.humidityYellowDelta).arg(m.humidityRedDelta);
+        if(metricKeys[i]=="pm25") metricDetail+=QString("\nPM2,5-Farben: grün bis %1, gelb bis %2, rot bis %3 µg/m³; darüber rot blinkend. Momentanwert, kein 24-Stunden-Mittel.")
+            .arg(m.pmGreenHigh).arg(m.pmYellowHigh).arg(m.pmRedHigh);
+        values_[i]->setToolTip(metricDetail); values_[i]->setAccessibleDescription(metricDetail);
     }
     updateMonitoring();
 }
@@ -323,9 +339,10 @@ void Desklet::recordReception() {
 }
 void Desklet::updateMonitoring() {
     const qint64 seconds=dataAgeSeconds();
-    const DataFreshness freshness=dataFreshness(seconds,receptionFailed_,preferences_.ageWarningSeconds,preferences_.ageStaleSeconds);
+    const DataFreshness freshness=dataFreshness(seconds,preferences_.ageWarningSeconds,
+        preferences_.ageStaleSeconds,preferences_.ageBlinkSeconds);
     activeAlerts_=deviceAlerts(status_);
-    if(receptionFailed_ || freshness==DataFreshness::Stale) {
+    if(receptionFailed_ || freshness==DataFreshness::Stale || freshness==DataFreshness::Blinking) {
         activeAlerts_.prepend({"reception",AlertLevel::Error,receptionFailed_ ?
             "Statusverbindung ausgefallen: "+error_ : "Daten zu alt: seit "+QString::number(seconds)+" s kein gültiges Statuspaket."});
     } else if(freshness==DataFreshness::Aging) {
@@ -341,15 +358,17 @@ void Desklet::updateMonitoring() {
     for(const Alert& alert:activeAlerts_) acknowledged=acknowledged && alarmLatch_.acknowledged(alert);
     const QString state=freshness==DataFreshness::Waiting ? QString("Noch kein Datenempfang") :
         freshness==DataFreshness::Fresh ? QString("OK") : freshness==DataFreshness::Aging ? QString("Achtung") :
-        freshness==DataFreshness::Stale ? QString("Daten zu alt") : QString("Verbindung ausgefallen");
-    QString detail=state+" · Sekunden seit dem letzten gültigen Statuspaket\n"+
-        QString("Grün: 0–%1 s · Gelb: %2–%3 s · Rot: ab %4 s oder Verbindungsfehler\n")
-        .arg(preferences_.ageWarningSeconds-1).arg(preferences_.ageWarningSeconds)
-        .arg(preferences_.ageStaleSeconds-1).arg(preferences_.ageStaleSeconds)+alertReport(activeAlerts_);
+        freshness==DataFreshness::Blinking ? QString("Daten sehr alt") : QString("Daten zu alt");
+    QString detail=state+" · Letzte Statusmeldung: "+
+        (packetReceivedAt_.isValid() ? packetReceivedAt_.toString("dd.MM.yyyy HH:mm:ss") : QString("noch keine"))+"\n"+
+        QString("Datenalter: %1 s · Grün: unter %2 min · Gelb: %2–%3 min · Rot: ab %3 min · Rot blinkend: ab %4 min\n")
+        .arg(seconds<0 ? QString("—") : QString::number(seconds))
+        .arg(preferences_.ageWarningSeconds/60).arg(preferences_.ageStaleSeconds/60)
+        .arg(preferences_.ageBlinkSeconds/60)+alertReport(activeAlerts_);
     if(!connected_ && updated_.isValid()) detail+="\nGerätewarnungen stammen aus dem letzten bestätigten Status.";
     if(acknowledged) detail+="\nAlarme quittiert (Q); ihre Ursache bleibt sichtbar.";
     if(alarmsPaused_) detail+="\nEmpfang für Verbindungseinstellungen pausiert; Benachrichtigungen ausgesetzt.";
-    monitorBar_->setState(seconds,freshness,activeAlerts_,acknowledged,detail);
+    monitorBar_->setState(packetReceivedAt_,freshness,activeAlerts_,acknowledged,detail);
     if(alarmsPaused_) return;
     const QList<Alert> fresh=alarmLatch_.update(activeAlerts_);
     if(!fresh.isEmpty()) {
@@ -405,11 +424,15 @@ void Desklet::showAlarms() {
 void Desklet::showAlarmSettings() {
     QDialog dialog(this); dialog.setObjectName("alarmSettings"); dialog.setWindowTitle("Datenalter und Alarme");
     QVBoxLayout* layout=new QVBoxLayout(&dialog); QFormLayout* form=new QFormLayout;
-    QSpinBox warning,stale; warning.setObjectName("ageWarningSeconds"); stale.setObjectName("ageStaleSeconds");
-    warning.setRange(5,3599); warning.setSuffix(" s"); warning.setValue(preferences_.ageWarningSeconds);
-    stale.setRange(warning.value()+1,7200); stale.setSuffix(" s"); stale.setValue(preferences_.ageStaleSeconds);
+    QSpinBox warning,stale,blink;
+    warning.setObjectName("ageWarningMinutes"); stale.setObjectName("ageStaleMinutes"); blink.setObjectName("ageBlinkMinutes");
+    warning.setRange(1,1439); warning.setSuffix(" min"); warning.setValue(preferences_.ageWarningSeconds/60);
+    stale.setRange(warning.value()+1,1440); stale.setSuffix(" min"); stale.setValue(preferences_.ageStaleSeconds/60);
+    blink.setRange(stale.value()+1,1441); blink.setSuffix(" min"); blink.setValue(preferences_.ageBlinkSeconds/60);
     connect(&warning,&QSpinBox::valueChanged,&stale,[&](int value) { stale.setMinimum(value+1); });
-    form->addRow("Gelb / Achtung ab",&warning); form->addRow("Rot / zu alt ab",&stale); layout->addLayout(form);
+    connect(&stale,&QSpinBox::valueChanged,&blink,[&](int value) { blink.setMinimum(value+1); });
+    form->addRow("Gelb / Achtung ab",&warning); form->addRow("Rot / zu alt ab",&stale);
+    form->addRow("Rot blinkend ab",&blink); layout->addLayout(form);
     QCheckBox desktop("Desktop-Benachrichtigungen"),sound("Zusätzlicher Signalton");
     desktop.setObjectName("desktopAlarms"); sound.setObjectName("alarmSound");
     desktop.setChecked(preferences_.desktopAlarms); sound.setChecked(preferences_.alarmSound);
@@ -422,10 +445,65 @@ void Desklet::showAlarmSettings() {
     connect(buttons,&QDialogButtonBox::accepted,&dialog,&QDialog::accept);
     connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject); layout->addWidget(buttons);
     if(dialog.exec()!=QDialog::Accepted) return;
-    preferences_.ageWarningSeconds=warning.value(); preferences_.ageStaleSeconds=stale.value();
+    preferences_.ageWarningSeconds=warning.value()*60; preferences_.ageStaleSeconds=stale.value()*60;
+    preferences_.ageBlinkSeconds=blink.value()*60;
     preferences_.desktopAlarms=desktop.isChecked(); preferences_.alarmSound=sound.isChecked();
     if(!demo_) preferences_.save();
     updateMonitoring();
+}
+void Desklet::showMetricSettings() {
+    QDialog dialog(this); dialog.setObjectName("metricSettings");
+    dialog.setWindowTitle("Farben für Feuchte und PM2,5");
+    QVBoxLayout* layout=new QVBoxLayout(&dialog);
+    QGroupBox* humidityGroup=new QGroupBox("Feuchte: Abweichung vom Geräteziel (Prozentpunkte)",&dialog);
+    QFormLayout* humidityForm=new QFormLayout(humidityGroup);
+    QSpinBox rhGreen,rhYellow,rhRed;
+    const MetricLimits& m=preferences_.metricLimits;
+    const auto init=[](QSpinBox& spin,const char* name,int value,int maximum,const QString& suffix) {
+        spin.setObjectName(name); spin.setRange(0,maximum); spin.setSuffix(suffix); spin.setValue(value);
+    };
+    init(rhGreen,"humidityGreenDelta",m.humidityGreenDelta,100," pp");
+    init(rhYellow,"humidityYellowDelta",m.humidityYellowDelta,100," pp");
+    init(rhRed,"humidityRedDelta",m.humidityRedDelta,100," pp");
+    humidityForm->addRow("Grün bis ±",&rhGreen);
+    humidityForm->addRow("Gelb bis ±",&rhYellow);
+    humidityForm->addRow("Rot bis ±",&rhRed);
+    layout->addWidget(humidityGroup);
+    QGroupBox* pmGroup=new QGroupBox("PM2,5 (µg/m³)",&dialog);
+    QFormLayout* pmForm=new QFormLayout(pmGroup);
+    QSpinBox pmGreen,pmYellow,pmRed;
+    init(pmGreen,"pmGreenHigh",m.pmGreenHigh,999," µg/m³");
+    init(pmYellow,"pmYellowHigh",m.pmYellowHigh,999," µg/m³");
+    init(pmRed,"pmRedHigh",m.pmRedHigh,999," µg/m³");
+    pmForm->addRow("Grün bis",&pmGreen);
+    pmForm->addRow("Gelb bis",&pmYellow);
+    pmForm->addRow("Rot bis",&pmRed);
+    layout->addWidget(pmGroup);
+    QLabel* note=new QLabel("Oberhalb der roten PM2,5-Grenze blinkt der Wert. Die Grenzen gelten für Momentanwerte und sind keine Gesundheitsbewertung oder 24-Stunden-Mittelwerte.",&dialog);
+    note->setWordWrap(true); layout->addWidget(note);
+    QDialogButtonBox* buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel,&dialog);
+    buttons->button(QDialogButtonBox::Save)->setText("Speichern");
+    buttons->button(QDialogButtonBox::Cancel)->setText("Abbrechen");
+    const auto validate=[&] {
+        const bool valid=rhGreen.value()<rhYellow.value() && rhYellow.value()<rhRed.value() &&
+            pmGreen.value()<pmYellow.value() && pmYellow.value()<pmRed.value();
+        buttons->button(QDialogButtonBox::Save)->setEnabled(valid);
+        note->setText(valid ? "Oberhalb der roten PM2,5-Grenze blinkt der Wert. Die Grenzen gelten für Momentanwerte und sind keine Gesundheitsbewertung oder 24-Stunden-Mittelwerte."
+            : "Die Grenzen müssen von links nach rechts streng ansteigen.");
+    };
+    for(QSpinBox* spin:{&rhGreen,&rhYellow,&rhRed,&pmGreen,&pmYellow,&pmRed})
+        connect(spin,&QSpinBox::valueChanged,&dialog,[&](int) { validate(); });
+    validate();
+    connect(buttons,&QDialogButtonBox::accepted,&dialog,&QDialog::accept);
+    connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
+    layout->addWidget(buttons);
+    if(dialog.exec()!=QDialog::Accepted) return;
+    MetricLimits& next=preferences_.metricLimits;
+    next.humidityGreenDelta=rhGreen.value(); next.humidityYellowDelta=rhYellow.value();
+    next.humidityRedDelta=rhRed.value();
+    next.pmGreenHigh=pmGreen.value(); next.pmYellowHigh=pmYellow.value(); next.pmRedHigh=pmRed.value();
+    if(!demo_) preferences_.save();
+    updateValues(); updateFooter();
 }
 void Desklet::showAutomationSettings() {
     if(demo_) return;
@@ -623,7 +701,9 @@ void Desklet::showDetails() {
         {"Statusmeldungen",QString::number(controller_.statusCount()),"Anzahl gültiger Statuszeilen seit Programmstart."},
         {"Datenalter",dataAgeSeconds()<0 ? "noch kein Status" : QString::number(dataAgeSeconds())+" s","Seit dem letzten gültigen Statuspaket. Schalt-ACKs und Fehler setzen den Zähler nicht zurück."},
         {"Letztes Statuspaket",packetReceivedAt_.isValid() ? packetReceivedAt_.toString(Qt::ISODate) : "noch keines","Empfangszeit des letzten gültigen Pakets, unabhängig von der Bestätigung eines Schaltbefehls."},
-        {"Datenalter-Grenzen",QString("Gelb ab %1 s; Rot ab %2 s").arg(preferences_.ageWarningSeconds).arg(preferences_.ageStaleSeconds),"Lokale Alarmgrenzen. Verbindungsfehler sind sofort rot. Der CoAP-Timeout wird dadurch nicht verändert."},
+        {"Datenalter-Grenzen",QString("Gelb ab %1 min; Rot ab %2 min; Rot blinkend ab %3 min")
+            .arg(preferences_.ageWarningSeconds/60).arg(preferences_.ageStaleSeconds/60).arg(preferences_.ageBlinkSeconds/60),
+            "Lokale Alarmgrenzen. Verbindungsfehler erscheinen separat als Alarm. Der CoAP-Timeout wird dadurch nicht verändert."},
         {"Filter-Vorwarngrenze",QString::number(FilterWarningHours)+" Betriebsstunden","Lokale Desklet-Grenze für AC2729: A3, C7 und F1 einzeln gelb bei 1–120 h, rot bei 0 h. Keine gesichert dokumentierte Philips-Frühwarnschwelle; keine Bitmasken-Deutung von err."},
         {"Lua-Automatik",automationStateLabel(automationState_),"Ereignis- und zeitgesteuerte Regeln laufen ausschließlich im zentralen Server."},
         {"Lua-Version",automationState_.value("lua_version").toString("unbekannt")+" (Server)","Im Server eingebettete Lua-Laufzeit mit begrenzter Sandbox."},

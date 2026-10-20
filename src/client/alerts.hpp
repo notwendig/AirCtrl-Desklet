@@ -8,11 +8,13 @@
 #include <QMap>
 #include <QWidget>
 #include <QDBusMessage>
+#include <QDateTime>
+#include <QTimer>
 
 /** @brief Severity assigned by local alert policy. */
 enum class AlertLevel { None, Warning, Error };
 /** @brief Connection freshness derived from monotonic packet age. */
-enum class DataFreshness { Waiting, Fresh, Aging, Stale, Disconnected };
+enum class DataFreshness { Waiting, Fresh, Aging, Stale, Blinking };
 /** @brief Stable alert identity, severity, and localized presentation text. */
 struct Alert {
     QString key;
@@ -20,7 +22,7 @@ struct Alert {
     QString message;
 };
 /** @brief Classify a packet age using the configured warning thresholds. */
-DataFreshness dataFreshness(qint64 seconds, bool failed, int warningAfter, int staleAfter);
+DataFreshness dataFreshness(qint64 seconds, int warningAfter, int staleAfter, int blinkAfter);
 /** @brief Derive active alerts from an unchanged device status snapshot. */
 QList<Alert> deviceAlerts(const QJsonObject& status);
 /** @brief Format a list of alerts for diagnostics or a details dialog. */
@@ -52,21 +54,25 @@ class MonitorBar : public QWidget {
 public:
     explicit MonitorBar(QWidget* parent=nullptr);
     /** @brief Replace the complete monitoring state and schedule repainting. */
-    void setState(qint64 seconds, DataFreshness freshness, const QList<Alert>& alerts,
+    void setState(const QDateTime& receivedAt, DataFreshness freshness, const QList<Alert>& alerts,
                   bool acknowledged, const QString& detail);
     QSize sizeHint() const override;
     QColor ageColor() const;
     QColor alarmColor() const;
     QRectF ageCircle() const;
     QRectF alarmCircle() const;
-    QString ageText() const { return seconds_<0 ? QString("— s") : QString::number(seconds_)+" s"; }
+    QString ageText() const { return receivedAt_.isValid() ? receivedAt_.toString("HH:mm") : QString("—"); }
     DataFreshness freshness() const { return freshness_; }
+    void setLightSurface(bool light) { if(lightSurface_!=light) { lightSurface_=light; update(); } }
     QString alarmText() const;
 protected:
     void paintEvent(QPaintEvent*) override;
 private:
     int diameter() const;
-    qint64 seconds_=-1;
+    QDateTime receivedAt_;
+    QTimer blinkTimer_;
+    bool blinkVisible_=true;
+    bool lightSurface_=true;
     DataFreshness freshness_=DataFreshness::Waiting;
     QList<Alert> alerts_;
     bool acknowledged_=false;

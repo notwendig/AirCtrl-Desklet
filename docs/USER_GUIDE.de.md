@@ -56,26 +56,29 @@ alle übrigen Gerätetasten sind deaktiviert. „Vorschau“ steht im Tooltip un
 
 ## Datenalter und Alarme
 
-Der Zähler zeigt **Sekunden seit dem letzten gültigen Statuspaket**, nicht Minuten.
-Er wird jede Sekunde aktualisiert und bei jedem vollständig empfangenen, gültigen
-JSON-Statuspaket auf null gesetzt – auch während der Bestätigung eines Schaltbefehls.
-Ein Schreib-ACK, eine ungültige/unvollständige JSON-Zeile, ein Fehler oder ein neuer
-Verbindungsversuch setzen ihn nicht zurück. Unter Linux nutzt er
-[CLOCK_BOOTTIME](https://man7.org/linux/man-pages/man2/clock_gettime.2.html):
-Uhrzeitkorrekturen verändern ihn nicht, Suspend-Zeit wird mitgezählt.
+Das linke Statusfeld zeigt die **lokale Uhrzeit der letzten gültigen Statusmeldung**
+im Format HH:mm. Das genaue Datum und die Sekunden stehen im Tooltip und in der
+Diagnose. Ein Schreib-ACK, eine ungültige/unvollständige JSON-Zeile, ein Fehler
+oder ein neuer Verbindungsversuch ändern diesen Zeitpunkt nicht. Das Alter für
+die Farben wird unabhängig von Änderungen der Systemuhr mit
+[CLOCK_BOOTTIME](https://man7.org/linux/man-pages/man2/clock_gettime.2.html)
+berechnet; Suspend-Zeit wird mitgezählt.
 
 | Farbe | Standardgrenze |
 |---|---|
-| Grün · OK | 0 bis 44 Sekunden |
-| Gelb · Achtung | 45 bis 89 Sekunden |
-| Rot · Zu alt | Ab 90 Sekunden |
-| Rot · Verbindungsfehler | Sofort bei gemeldetem Empfangsfehler, unabhängig vom Alter |
-| Grau · Noch keine Daten | „—“ im Kreis, bis erstmals ein Statuspaket eingetroffen ist |
+| Grün · OK | Unter 15 Minuten |
+| Gelb · Achtung | 15 bis unter 30 Minuten |
+| Rot · Zu alt | 30 Minuten bis unter 2 Stunden |
+| Rot blinkend | Ab 2 Stunden |
+| Grau · Noch keine Daten | „—“, bis erstmals ein Statuspaket eingetroffen ist |
+
+Nur die Schrift der Uhrzeit wechselt die Farbe und blinkt; der Hintergrund
+bleibt unverändert.
 
 Die Grenzen lassen sich unter **Rechtsklick → Datenalter und Alarme …** ändern.
-Die rote Grenze muss größer als die gelbe sein. Das verändert nur Anzeige/Alarme,
-nicht die getrennten Serverfristen für Observe. Schaltfehler machen den
-Alarmbereich rot, aber nicht den weiterhin frischen Datenzähler.
+Die Grenzen müssen aufsteigend sein. Das verändert nur Anzeige/Alarme, nicht die
+getrennten Serverfristen für Observe. Verbindungs- und Schaltfehler erscheinen im
+Alarmbereich; die Altersfarbe richtet sich weiterhin nach der letzten Statusmeldung.
 
 **Alarmquellen:** ausbleibende Daten, Verbindungsfehler, abgelehnte/nicht bestätigte
 Schaltbefehle sowie die bekannten Wasser-, Reinigungs- und Filterwechselhinweise
@@ -89,15 +92,14 @@ pro Störung, erneut bei Verschärfung (Gelb → Rot) oder wenn eine zwischenzei
 behobene Störung wieder auftritt. Wiederholte Empfangsfehler erzeugen keinen
 Alarmsturm. Die Demo erzeugt weder Desktop-Meldungen noch Töne.
 
-**Linksklick auf einen der beiden Kreise → aktive Alarme.** Das Fenster wird laufend
+**Linksklick auf Statusfeld oder Alarmkreis → aktive Alarme.** Das Fenster wird laufend
 aktualisiert. Alternativ: Rechtsklick → Aktive Alarme / Alarme quittieren.
 Quittierung markiert andauernde Ursachen mit „(Q)“; sie bleiben farbig sichtbar.
 Ein vergangener Schaltfehler verschwindet nach Quittierung oder erfolgreicher
 Bestätigung eines späteren Befehls aus den aktiven Alarmen, bleibt aber als letzter
 Schaltfehler in der Diagnose. Quittieren sendet keinen Befehl zum Gerät und setzt
 keinen Wartungszähler zurück. Ziehen an den Kreisen verschiebt weiterhin das Widget.
-Auch lange Zeiträume bleiben Sekundenwerte; die Zahl wird bei Bedarf im Kreis
-verkleinert, ohne den Kreis oder das Fenster im Sekundentakt zu vergrößern.
+Die Uhrzeit im Statusfeld bleibt auch bei langen Datenpausen lesbar.
 Die Einheit „Sekunden“ steht im Tooltip und in den Alarmdetails; im kleinen Kreis
 steht nur die Zahl. Beide Kreise bleiben gemeinsam anklickbar und skalieren mit
 der gewählten Schriftgröße.
@@ -225,6 +227,18 @@ einzeln ein- oder ausblenden. Standardmäßig sind die ersten vier eingeschaltet
 Alle Darstellungsoptionen werden nach Bestätigung sofort angewendet und gespeichert.
 Abbrechen verwirft die Auswahl. Die Vorschau speichert keine Änderungen.
 Diese Optionen verändern das Widget; die Lichttaste oben steuert das reale Gerät.
+
+**Rechtsklick → Farben für Feuchte und PM2,5:** Die Feuchtefarbe richtet sich
+nach der absoluten Abweichung von der aktuellen Zielfeuchte des Geräts. Mit
+den Standardgrenzen sind Abweichungen bis ±5 Prozentpunkte grün, bis ±10 gelb,
+bis ±20 rot und darüber rot blinkend. Ein Ziel von 50 % bewertet also 45 %
+und 55 % gleich. Ohne gültige Zielfeuchte gibt es keine Feuchtefarbe.
+PM2,5 ist bis 15 µg/m³ grün, bis 35 gelb, bis 75 rot und darüber rot blinkend.
+Auch bei diesen beiden Messwerten wechseln und blinken nur die Schriftfarben;
+der Hintergrund bleibt unverändert.
+Alle sechs Grenzen lassen sich im Dialog ändern; sie müssen je Messgröße
+aufsteigend sein. Die PM2,5-Farbe bewertet einen Momentanwert und ersetzt
+keinen 24-Stunden-Mittelwert.
 
 ## Lua-Automatik
 
@@ -437,6 +451,7 @@ und überschreibt spätere Änderungen nicht:
 [server]
 listen_address=0.0.0.0
 port=5680
+allowed_hosts=nadhh.fritz.box,minik.fritz.box,minitab.fritz.box
 
 [logging]
 status_file=/var/log/airctrl.log
@@ -459,8 +474,15 @@ observe_refreshes=1
 cancel_grace_ms=300
 ```
 
-Nach einer Änderung ist `systemctl --user restart airctrl-server.service`
-erforderlich. Im Desklet unter **Verbindung und Autostart** stehen dagegen nur
+`allowed_hosts` enthält die erlaubten Client-Rechner, durch Kommas getrennt.
+Der Server vergleicht die Quell-IP mit den beim Start aufgelösten Adressen.
+Lokale Verbindungen über `127.0.0.1` oder `::1` bleiben erlaubt. Fehlt der
+Eintrag, werden wie bisher alle TCP-Clients angenommen. Bei geänderten
+Client-IP-Adressen muss der Server neu gestartet werden. Auf `gnubbel` läuft
+der Systemdienst; dort lautet der Befehl `sudo systemctl restart airctrl-server.service`.
+Bei einer Installation als Benutzerdienst lautet er
+`systemctl --user restart airctrl-server.service`. Im Desklet unter
+**Verbindung und Autostart** stehen nur
 AirControl-Server, TCP-Port und die Client-Wiederverbindung.
 
 Ein langlebiger `airctrl-server` besitzt genau einen UDP-Socket sowie einen
